@@ -43,8 +43,8 @@ def validate_strategy(strategy: dict) -> dict:
     if not isinstance(strategy, dict):
         raise StrategyValidationError("Strategy must be an object.")
     rules = strategy.get("rules")
-    if not isinstance(rules, list) or not rules:
-        raise StrategyValidationError("Strategy must contain at least one rule.")
+    if not isinstance(rules, list):
+        raise StrategyValidationError("Strategy rules must be a list.")
     if len(rules) > MAX_RULES:
         raise StrategyValidationError(f"Maximum {MAX_RULES} rules are allowed.")
     seen_priorities = set()
