@@ -1,0 +1,64 @@
+{% load static %}
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Football Arena</title>
+<link rel="stylesheet" href="{% static 'game/styles.css' %}">
+</head>
+<body>
+<div class="app">
+<header>
+  <div><h1>⚽ AI Football Arena</h1><p>نسخه Django/Python — فیزیک و Rule Engine روی سرور پایتون اجرا می‌شود.</p></div>
+  <div class="nav"><button id="builderTab" class="active">🧠 ساخت ربات</button><button id="arenaTab">⚽ مسابقه</button></div>
+</header>
+{% csrf_token %}
+<section id="builderView" class="view active">
+  <div class="grid two">
+    <div class="card">
+      <h2>مغز رباتت را بساز</h2>
+      <p class="muted">فقط انتخاب کن در هر موقعیت ربات چه کاری انجام دهد. ترتیب تصمیم‌ها مهم است.</p>
+      <div class="llm-box">
+        <div class="llm-title">✨ ساخت با هوش مصنوعی</div>
+        <p class="muted">استراتژی را با زبان خودت بنویس. هوش مصنوعی فقط منطق تو را به قوانین بازی تبدیل می‌کند و اجازه ندارد آن را بهتر کند.</p>
+        <textarea id="strategyText" rows="7" maxlength="5000" placeholder="مثلاً: اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ."></textarea>
+        <div class="actions">
+          <button id="fillAiSample">نمونه متن</button>
+          <button id="compileWithAI" class="primary">✨ تبدیل استراتژی</button>
+        </div>
+        <div id="llmMeta" class="llm-meta"></div>
+      </div>
+      <div class="separator"><span>یا دستی بساز</span></div>
+      <div class="presets">
+        <button data-quick="attack">⚽ مهاجم</button><button data-quick="defend">🛡 دفاعی</button>
+        <button data-quick="smart">🧠 هوشمند</button><button data-quick="late">⏱ دقایق آخر</button>
+      </div>
+      <div id="simpleRules"></div>
+      <div class="actions"><button id="addRule">＋ تصمیم جدید</button><button id="buildBot" class="primary">✓ ساخت مغز ربات</button></div>
+      <div id="feedback" class="feedback">یکی از نمونه‌ها را انتخاب کن یا تصمیم جدید بساز.</div>
+    </div>
+    <div class="card">
+      <h2>ربات من</h2><div id="humanBrain" class="brain empty">هنوز Strategy ساخته نشده.</div>
+      <details><summary>جزئیات فنی Strategy JSON</summary><pre id="jsonView"></pre></details>
+      <button id="testBot" class="success" disabled>⚽ آزمایش ربات من</button>
+    </div>
+  </div>
+</section>
+<section id="arenaView" class="view">
+  <div class="arena-toolbar">
+    <label>آبی: <select id="blueSelect"></select></label><label>قرمز: <select id="redSelect"></select></label>
+    <label>Seed: <input id="seedInput" type="number" value="1"></label><button id="playMatch" class="primary">▶ اجرای مسابقه</button>
+  </div>
+  <div class="scoreline"><span id="blueName" class="blue">Blue</span><strong id="score">0 : 0</strong><span id="redName" class="red">Red</span><span id="time">60.0s</span></div>
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div class="grid two lower">
+    <div class="card"><h2>وضعیت زنده</h2><div class="debug-grid">
+      <div><b class="blue">آبی</b><p>Rule: <span id="blueRule">-</span></p><p>Action: <span id="blueAction">IDLE</span></p></div>
+      <div><b class="red">قرمز</b><p>Rule: <span id="redRule">-</span></p><p>Action: <span id="redAction">IDLE</span></p></div>
+    </div></div>
+    <div class="card"><h2>Batch Test</h2><div class="actions"><select id="batchCount"><option value="20">20 بازی</option><option value="50">50 بازی</option><option value="100" selected>100 بازی</option><option value="250">250 بازی</option></select><button id="runBatch">🧪 اجرا</button></div><div id="batchResult" class="batch-result"></div></div>
+  </div>
+</section>
+</div>
+<script src="{% static 'game/game.js' %}"></script>
+</body></html>
