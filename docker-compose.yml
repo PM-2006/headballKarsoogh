@@ -1,5 +1,6 @@
 services:
   web:
+    image: ghcr.io/pm-2006/headballkarsoogh:${TAG:-latest}
     build: .
     ports:
       - "8000:8000"
