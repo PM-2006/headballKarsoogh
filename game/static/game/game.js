@@ -123,14 +123,43 @@ async function buildBot(){
 function setFeedback(text,kind=""){$("feedback").textContent=text;$("feedback").className="feedback "+kind}
 function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw new Error("اول My Bot را بساز.");return{strategy:myStrategy}}return{preset:selection}}
 async function runMatch(){
-  if(playbackHandle)cancelAnimationFrame(playbackHandle);
+  if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
   try{
     $("playMatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;
     const result=await postJSON("api/simulate/",{blue:strategyPayload(blue),red:strategyPayload(red),seed:Number($("seedInput").value)||1});
     $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);playFrames(result.frames,result.record_fps);
   }catch(err){alert(err.message)}finally{$("playMatch").disabled=false}
 }
-function playFrames(frames,fps){const start=performance.now(),frameMs=1000/fps;function tick(now){const idx=Math.min(frames.length-1,Math.floor((now-start)/frameMs));drawFrame(frames[idx]);if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick)}playbackHandle=requestAnimationFrame(tick)}
+function isFiniteNumber(value){return typeof value==="number"&&Number.isFinite(value)}
+function isValidReplayFrame(frame){
+  if(!frame||typeof frame!=="object"||!isFiniteNumber(frame.time))return false;
+  if(!Array.isArray(frame.score)||frame.score.length<2||!frame.score.slice(0,2).every(isFiniteNumber))return false;
+  if(!Array.isArray(frame.players)||frame.players.length<2)return false;
+  if(!frame.players.slice(0,2).every(player=>player&&isFiniteNumber(player.x)&&isFiniteNumber(player.y)&&isFiniteNumber(player.face)))return false;
+  return Boolean(frame.ball&&isFiniteNumber(frame.ball.x)&&isFiniteNumber(frame.ball.y));
+}
+function validateReplay(frames,fps){
+  if(!Array.isArray(frames)||frames.length===0)throw new Error("سرور هیچ فریمی برای پخش مسابقه برنگرداند.");
+  if(!isFiniteNumber(fps)||fps<=0)throw new Error("سرعت پخش Replay از سرور معتبر نیست.");
+  const invalidIndex=frames.findIndex(frame=>!isValidReplayFrame(frame));
+  if(invalidIndex!==-1){
+    console.error(`Invalid replay frame at index ${invalidIndex}`,frames[invalidIndex]);
+    throw new Error(`فریم شماره ${invalidIndex} از سرور معتبر نیست.`);
+  }
+}
+function playFrames(frames,fps){
+  validateReplay(frames,fps);
+  const frameMs=1000/fps;
+  const start=performance.now();
+  drawFrame(frames[0]);
+  if(frames.length===1){playbackHandle=null;return}
+  function tick(now){
+    const idx=Math.min(frames.length-1,Math.floor((now-start)/frameMs));
+    drawFrame(frames[idx]);
+    if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);else playbackHandle=null;
+  }
+  playbackHandle=requestAnimationFrame(tick);
+}
 function drawFrame(frame){
   const canvas=$("game"),ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height,G=610,GW=105,GH=135;
   const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,"#74c9ff");grad.addColorStop(1,"#e5f6ff");ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
@@ -140,7 +169,15 @@ function drawFrame(frame){
   $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};$("blueRule").textContent=d0.rule??"-";$("blueAction").textContent=d0.action??"IDLE";$("redRule").textContent=d1.rule??"-";$("redAction").textContent=d1.action??"IDLE";
 }
 function drawGoal(ctx,right,W,G,GW,GH){ctx.strokeStyle="#eff8ff";ctx.lineWidth=9;ctx.beginPath();if(!right){ctx.moveTo(0,G);ctx.lineTo(0,G-GH);ctx.lineTo(GW,G-GH)}else{ctx.moveTo(W,G);ctx.lineTo(W,G-GH);ctx.lineTo(W-GW,G-GH)}ctx.stroke()}
-function drawPlayer(ctx,p,color,w,h,G){ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(p.x+w/2,G+6,38,9,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(p.x,p.y,w,h,16);ctx.fill();ctx.fillStyle="#101722";ctx.beginPath();ctx.roundRect(p.x+9,p.y+15,w-18,25,9);ctx.fill();ctx.fillStyle="#e5fbff";ctx.beginPath();ctx.arc(p.face>0?p.x+36:p.x+18,p.y+27,4,0,Math.PI*2);ctx.fill()}
+function roundedRectPath(ctx,x,y,w,h,r){
+  const radius=Math.max(0,Math.min(r,w/2,h/2));
+  if(typeof ctx.roundRect==="function"){ctx.roundRect(x,y,w,h,radius);return}
+  ctx.moveTo(x+radius,y);ctx.lineTo(x+w-radius,y);ctx.quadraticCurveTo(x+w,y,x+w,y+radius);
+  ctx.lineTo(x+w,y+h-radius);ctx.quadraticCurveTo(x+w,y+h,x+w-radius,y+h);
+  ctx.lineTo(x+radius,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-radius);
+  ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);ctx.closePath();
+}
+function drawPlayer(ctx,p,color,w,h,G){ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(p.x+w/2,G+6,38,9,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=color;ctx.beginPath();roundedRectPath(ctx,p.x,p.y,w,h,16);ctx.fill();ctx.fillStyle="#101722";ctx.beginPath();roundedRectPath(ctx,p.x+9,p.y+15,w-18,25,9);ctx.fill();ctx.fillStyle="#e5fbff";ctx.beginPath();ctx.arc(p.face>0?p.x+36:p.x+18,p.y+27,4,0,Math.PI*2);ctx.fill()}
 async function runBatch(){
   try{$("runBatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});$("batchResult").innerHTML=`<b>${labelFor(blue)}</b>: ${result.blue_wins} برد — ${result.blue_goals} گل<br><b>${labelFor(red)}</b>: ${result.red_wins} برد — ${result.red_goals} گل<br>مساوی: ${result.draws}<br>میانگین گل: ${result.blue_goals_per_match} / ${result.red_goals_per_match}`}
   catch(err){$("batchResult").textContent=err.message}finally{$("runBatch").disabled=false}
