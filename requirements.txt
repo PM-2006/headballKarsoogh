@@ -1,2 +1,4 @@
 Django>=5.2,<6.1
 openai>=1.0
+gunicorn>=23.0
+whitenoise>=6.7
