@@ -29,10 +29,11 @@ PRESETS = {
     "aggressive": {
         "label": "Aggressive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(2, [condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 120)], "JUMP"),
-            rule(3, [condition("ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(4, [condition("ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(3, [condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 120)], "JUMP"),
+            rule(4, [condition("ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(5, [condition("ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "IDLE",
     },
@@ -60,8 +61,8 @@ PRESETS = {
     "counter": {
         "label": "Counter Attack",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_LOW"),
-            rule(2, [condition("can_kick", "==", True), condition("ball_in_own_half", "==", True)], "KICK_HIGH"),
+            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(2, [condition("can_kick", "==", True), condition("ball_in_own_half", "==", True)], "KICK_CLEAR"),
             rule(3, [condition("ball_in_own_half", "==", True), condition("opponent_distance_to_ball", "<", "distance_to_ball", "sensor")], "MOVE_TO_GOAL"),
             rule(4, [condition("ball_in_enemy_half", "==", True)], "MOVE_TO_CENTER"),
             rule(5, [condition("distance_to_ball", "<", "opponent_distance_to_ball", "sensor")], "MOVE_TO_BALL"),
@@ -72,7 +73,7 @@ PRESETS = {
         "label": "Adaptive",
         "rules": [
             rule(1, [condition("can_kick", "==", True), condition("ball_in_own_half", "==", True)], "KICK_CLEAR"),
-            rule(2, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_LOW"),
+            rule(2, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
             rule(3, [condition("remaining_time", "<", 15), condition("score_difference", "<", 0)], "MOVE_TO_BALL"),
             rule(4, [condition("remaining_time", "<", 15), condition("score_difference", ">", 0)], "MOVE_TO_GOAL"),
             rule(5, [condition("distance_to_ball", "<", "opponent_distance_to_ball", "sensor")], "MOVE_TO_BALL"),
