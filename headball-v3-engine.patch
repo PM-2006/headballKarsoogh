@@ -1,0 +1,358 @@
+--- a/game/engine.py
++++ b/game/engine.py
+@@ -7,7 +7,7 @@
+ from .validators import validate_strategy
+ 
+ 
+-PHYSICS_VERSION = "v2-headball-arcade"
++PHYSICS_VERSION = "v3-headball-fast-arcade"
+ 
+ 
+ @dataclass(frozen=True)
+@@ -17,60 +17,74 @@
+     width: float = 1280.0
+     height: float = 720.0
+     ground_y: float = 610.0
+-    gravity: float = 1550.0
++    gravity: float = 1700.0
+     goal_depth: float = 105.0
+     goal_height: float = 135.0
+     ball_radius: float = 22.0
+-    ball_max_speed: float = 920.0
++    ball_max_speed: float = 1450.0
+     player_width: float = 58.0
+     player_height: float = 72.0
+-    player_speed: float = 320.0
+-    player_jump_speed: float = 700.0
+-    jump_cooldown: float = 0.44
++    player_speed: float = 385.0
++    player_jump_speed: float = 790.0
++    jump_cooldown: float = 0.38
+     kickoff_freeze: float = 0.90
+     match_time: float = 60.0
+     physics_fps: int = 60
+     record_fps: int = 20
+     body_ball_impulse_scale: float = 0.05  # kept for config compatibility
+-    floor_bounce: float = 0.54
+-    floor_friction: float = 0.965
+-    horizontal_drag_per_60fps: float = 0.997
++    floor_bounce: float = 0.58
++    floor_friction: float = 0.980
++    horizontal_drag_per_60fps: float = 0.999
+ 
+     # Physics V2 additions.
+     physics_substeps: int = 2
+-    player_acceleration: float = 2100.0
+-    player_deceleration: float = 2700.0
+-    player_air_acceleration: float = 900.0
+-    player_air_deceleration: float = 160.0
+-    player_gravity: float = 1850.0
++    player_acceleration: float = 2800.0
++    player_deceleration: float = 3400.0
++    player_air_acceleration: float = 1300.0
++    player_air_deceleration: float = 90.0
++    player_gravity: float = 2050.0
+ 
+     # Head Ball-style player collider: round head + compact torso.
+-    head_radius: float = 25.0
+-    head_center_y: float = 19.0
+-    body_inset_x: float = 7.0
+-    body_top_offset: float = 30.0
++    head_radius: float = 27.0
++    head_center_y: float = 18.0
++    body_inset_x: float = 10.0
++    body_top_offset: float = 36.0
+ 
+     goal_post_radius: float = 7.0
+-    ball_wall_bounce: float = 0.78
+-    ball_ceiling_bounce: float = 0.72
+-    ball_body_restitution: float = 0.34
+-    ball_head_restitution: float = 0.60
+-    ball_contact_impulse_cap: float = 470.0
+-    ball_sleep_speed: float = 14.0
+-
+-    kick_reach: float = 115.0
+-    kick_low_x: float = 500.0
+-    kick_low_y: float = -130.0
+-    kick_high_x: float = 390.0
+-    kick_high_y: float = -450.0
+-    kick_clear_x: float = 610.0
+-    kick_clear_y: float = -270.0
+-    kick_low_cooldown: float = 0.56
+-    kick_high_cooldown: float = 0.66
+-    kick_clear_cooldown: float = 0.78
+-    kick_keep_ball_velocity: float = 0.26
+-    kick_player_velocity_transfer: float = 0.28
+-    move_deadzone: float = 9.0
++    ball_wall_bounce: float = 0.84
++    ball_ceiling_bounce: float = 0.82
++    ball_body_restitution: float = 0.46
++    ball_head_restitution: float = 0.78
++    ball_contact_impulse_cap: float = 850.0
++    ball_sleep_speed: float = 8.0
++
++    kick_reach: float = 126.0
++    kick_low_x: float = 850.0
++    kick_low_y: float = -170.0
++    kick_high_x: float = 760.0
++    kick_high_y: float = -620.0
++    kick_clear_x: float = 1000.0
++    kick_clear_y: float = -360.0
++    kick_low_cooldown: float = 0.40
++    kick_high_cooldown: float = 0.46
++    kick_clear_cooldown: float = 0.52
++    kick_keep_ball_velocity: float = 0.38
++    kick_player_velocity_transfer: float = 0.52
++    move_deadzone: float = 6.0
++
++    # Anti-lock / fast-arcade tuning. Players rebound instead of becoming
++    # a motionless wall, and truly contested ball touches pop upward.
++    player_bump_restitution: float = 0.32
++    player_bump_extra_separation: float = 1.5
++    player_contact_velocity_transfer: float = 0.18
++    running_touch_lift: float = 135.0
++    contested_ball_pop_y: float = 640.0
++    contested_ball_horizontal_keep: float = 0.65
++    contested_player_recoil: float = 95.0
++    contested_kick_pop_y: float = 820.0
++    contested_kick_horizontal_keep: float = 0.55
++    contested_kick_recoil: float = 135.0
++    contested_escape_x: float = 175.0
+ 
+ 
+ CONFIG = GameConfig()
+@@ -104,6 +118,7 @@
+     remaining_time: float = CONFIG.match_time
+     freeze: float = 0.0
+     debug: list[dict] = field(default_factory=lambda: [{}, {}])
++    contest_escape_dir: int = 1
+ 
+ 
+ @dataclass(frozen=True)
+@@ -164,6 +179,7 @@
+     # Head Ball than the old hard horizontal launch. The tiny seeded drift prevents every kickoff from being identical. Batch
+     # comparisons swap sides, so this randomness does not favor one strategy.
+     direction = rng.choice((-1, 1))
++    world.contest_escape_dir = direction
+     world.ball.x = config.width / 2
+     world.ball.y = 150.0
+     world.ball.vx = direction * rng.uniform(30.0, 65.0)
+@@ -336,6 +352,7 @@
+         direction = 1 if team == 0 else -1
+         impulses.append(
+             (
++                team,
+                 direction * kick_x
+                 + player.vx * config.kick_player_velocity_transfer,
+                 kick_y,
+@@ -346,18 +363,51 @@
+     if not impulses:
+         return
+ 
+-    # Simultaneous kicks are solved symmetrically. No blue/red processing bias.
+-    count = len(impulses)
+-    impulse_x = sum(ix for ix, _ in impulses) / count
+-    impulse_y = sum(iy for _, iy in impulses) / count
+     ball = world.ball
+-    ball.vx = ball.vx * config.kick_keep_ball_velocity + impulse_x
+-    ball.vy = ball.vy * config.kick_keep_ball_velocity + impulse_y
++
++    if len(impulses) >= 2:
++        # When both players kick the same ball from opposite sides, averaging
++        # the horizontal impulses used to pin the ball between them forever.
++        # Head Ball-style contested kicks instead "squirt" the ball upward and
++        # recoil both players away from the collision.
++        impulse_x = sum(ix for _, ix, _ in impulses) / len(impulses)
++        impulse_y = sum(iy for _, _, iy in impulses) / len(impulses)
++        ball.vx = (
++            ball.vx * config.contested_kick_horizontal_keep
++            + impulse_x * 0.35
++        )
++        if abs(ball.vx) < config.contested_escape_x:
++            ball.vx = world.contest_escape_dir * config.contested_escape_x
++        ball.vy = min(
++            ball.vy * config.kick_keep_ball_velocity + impulse_y,
++            -config.contested_kick_pop_y,
++        )
++
++        centres = [
++            (_player_center(world.players[team], config)[0], team)
++            for team, _, _ in impulses
++        ]
++        centres.sort()
++        if len(centres) >= 2:
++            left_team = centres[0][1]
++            right_team = centres[-1][1]
++            world.players[left_team].vx = min(
++                world.players[left_team].vx,
++                -config.contested_kick_recoil,
++            )
++            world.players[right_team].vx = max(
++                world.players[right_team].vx,
++                config.contested_kick_recoil,
++            )
++    else:
++        _, impulse_x, impulse_y = impulses[0]
++        ball.vx = ball.vx * config.kick_keep_ball_velocity + impulse_x
++        ball.vy = ball.vy * config.kick_keep_ball_velocity + impulse_y
++
+     _limit_ball_speed(ball, config)
+ 
+     for team, cooldown in cooldowns:
+         world.players[team].kick_cd = cooldown
+-
+ 
+ def _apply_jump_intents(world: World, intents: list[Intent], config: GameConfig):
+     for team, intent in enumerate(intents):
+@@ -436,20 +486,26 @@
+     if overlap_x <= 0 or overlap_y <= 0:
+         return
+ 
+-    # Horizontal separation is much more stable for this side-view arcade
+-    # game than the old order-sensitive push logic.
+     a_center = a.x + config.player_width / 2
+     b_center = b.x + config.player_width / 2
+-    direction = -1.0 if a_center <= b_center else 1.0
+-    correction = overlap_x / 2 + 0.01
+-    a.x += direction * correction
+-    b.x -= direction * correction
+-
+-    closing_speed = (a.vx - b.vx) * direction
+-    if closing_speed < 0:
+-        shared_vx = (a.vx + b.vx) / 2
+-        a.vx = shared_vx
+-        b.vx = shared_vx
++    left, right = (a, b) if a_center <= b_center else (b, a)
++
++    correction = (
++        overlap_x / 2
++        + config.player_bump_extra_separation
++    )
++    left.x -= correction
++    right.x += correction
++
++    # Equal-mass 1D collision with a small restitution. The old solver set
++    # both velocities to their average (usually zero), so two charging bots
++    # repeatedly froze nose-to-nose. Now they visibly bump and separate.
++    if left.vx > right.vx:
++        lv = left.vx
++        rv = right.vx
++        e = config.player_bump_restitution
++        left.vx = ((1.0 - e) * lv + (1.0 + e) * rv) / 2.0
++        right.vx = ((1.0 + e) * lv + (1.0 - e) * rv) / 2.0
+ 
+     for player in (a, b):
+         player.x = _clamp(
+@@ -457,7 +513,6 @@
+             config.goal_depth,
+             config.width - config.goal_depth - config.player_width,
+         )
+-
+ 
+ def _circle_circle_contact(
+     cx: float,
+@@ -541,37 +596,58 @@
+     ball = world.ball
+ 
+     # Resolve every player contact from one shared ball snapshot, then apply
+-    # the combined correction/impulse once. This removes blue/red iteration
+-    # order from contested touches.
++    # the combined result once. This keeps the simulation side-neutral.
+     for _ in range(2):
+         base_x, base_y = ball.x, ball.y
+         base_vx, base_vy = ball.vx, ball.vy
+         corrections = []
+         velocity_changes = []
+-
+-        for player in world.players:
++        touching_players = []
++
++        for index, player in enumerate(world.players):
+             probe = Ball(base_x, base_y, base_vx, base_vy)
+             contact = _best_player_ball_contact(player, probe, config)
+             if contact is None:
+                 continue
+ 
++            touching_players.append(index)
+             nx, ny, penetration, restitution = contact
+-            corrections.append((nx * (penetration + 0.01), ny * (penetration + 0.01)))
++            corrections.append(
++                (
++                    nx * (penetration + 0.01),
++                    ny * (penetration + 0.01),
++                )
++            )
+ 
+             relative_vx = base_vx - player.vx
+             relative_vy = base_vy - player.vy
+             normal_speed = relative_vx * nx + relative_vy * ny
++
++            dvx = player.vx * config.player_contact_velocity_transfer
++            dvy = 0.0
++
++            # A fast side-on run nudges the ball upward instead of bulldozing
++            # it along the floor. This creates the quick headers/volleys that
++            # make Head Ball-style play readable and prevents ground pinning.
++            if (
++                abs(nx) > 0.60
++                and abs(player.vx) > 120.0
++                and base_y > player.y + config.head_center_y
++            ):
++                dvy -= min(
++                    config.running_touch_lift,
++                    abs(player.vx) * 0.38,
++                )
++
+             if normal_speed < 0:
+                 impulse = min(
+                     config.ball_contact_impulse_cap,
+                     -(1.0 + restitution) * normal_speed,
+                 )
+-                velocity_changes.append(
+-                    (
+-                        impulse * nx + player.vx * 0.04,
+-                        impulse * ny,
+-                    )
+-                )
++                dvx += impulse * nx
++                dvy += impulse * ny
++
++            velocity_changes.append((dvx, dvy))
+ 
+         if not corrections:
+             break
+@@ -585,8 +661,33 @@
+             ball.vx = base_vx + sum(dvx for dvx, _ in velocity_changes) / vcount
+             ball.vy = base_vy + sum(dvy for _, dvy in velocity_changes) / vcount
+ 
++        if len(touching_players) >= 2:
++            # Two bodies squeezing the ball is an arcade contest, not a static
++            # equilibrium. Pop the ball and recoil the players to create space.
++            ball.vx *= config.contested_ball_horizontal_keep
++            if abs(ball.vx) < config.contested_escape_x:
++                ball.vx = world.contest_escape_dir * config.contested_escape_x
++            ball.vy = min(ball.vy, -config.contested_ball_pop_y)
++
++            centres = sorted(
++                (
++                    _player_center(world.players[index], config)[0],
++                    index,
++                )
++                for index in touching_players
++            )
++            left_index = centres[0][1]
++            right_index = centres[-1][1]
++            world.players[left_index].vx = min(
++                world.players[left_index].vx,
++                -config.contested_player_recoil,
++            )
++            world.players[right_index].vx = max(
++                world.players[right_index].vx,
++                config.contested_player_recoil,
++            )
++
+         _limit_ball_speed(ball, config)
+-
+ 
+ def _resolve_crossbar(ball: Ball, x: float, y: float, config: GameConfig):
+     contact = _circle_circle_contact(
