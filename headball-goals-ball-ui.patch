@@ -1,0 +1,164 @@
+--- a/game/static/game/game.js
++++ b/game/static/game/game.js
+@@ -1,5 +1,158 @@
+-  drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);drawPlayer(ctx,frame.players[0],"#2f9bff",58,72,G);drawPlayer(ctx,frame.players[1],"#ff5262",58,72,G);
+-  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,22,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#18263a";ctx.lineWidth=3;ctx.stroke();ctx.fillStyle="#18263a";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,7,0,Math.PI*2);ctx.fill();
++  drawGoal(ctx,false,W,G,GW,GH,"#2f9bff");
++  drawGoal(ctx,true,W,G,GW,GH,"#ff5262");
++  drawPlayer(ctx,frame.players[0],"#2f9bff",58,72,G);
++  drawPlayer(ctx,frame.players[1],"#ff5262",58,72,G);
++  drawBall(ctx,frame.ball,22);
+   $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};$("blueRule").textContent=d0.rule??"-";$("blueAction").textContent=d0.action??"IDLE";$("redRule").textContent=d1.rule??"-";$("redAction").textContent=d1.action??"IDLE";
+ }
+-function drawGoal(ctx,right,W,G,GW,GH){ctx.strokeStyle="#eff8ff";ctx.lineWidth=9;ctx.beginPath();if(!right){ctx.moveTo(0,G);ctx.lineTo(0,G-GH);ctx.lineTo(GW,G-GH)}else{ctx.moveTo(W,G);ctx.lineTo(W,G-GH);ctx.lineTo(W-GW,G-GH)}ctx.stroke()}
++function drawGoal(ctx,right,W,G,GW,GH,accent){
++  const backX=right?W:0;
++  const frontX=right?W-GW:GW;
++  const left=Math.min(backX,frontX);
++  const top=G-GH;
++
++  ctx.save();
++
++  // Goal interior / depth.
++  const shade=ctx.createLinearGradient(left,top,left,G);
++  shade.addColorStop(0,"rgba(255,255,255,.10)");
++  shade.addColorStop(1,"rgba(20,35,55,.10)");
++  ctx.fillStyle=shade;
++  ctx.fillRect(left,top,GW,GH);
++
++  // Net grid.
++  ctx.strokeStyle="rgba(255,255,255,.56)";
++  ctx.lineWidth=1.5;
++  const cols=6,rows=7;
++  for(let i=1;i<cols;i++){
++    const x=left+GW*i/cols;
++    ctx.beginPath();
++    ctx.moveTo(x,top+3);
++    ctx.lineTo(x,G-2);
++    ctx.stroke();
++  }
++  for(let j=1;j<rows;j++){
++    const y=top+GH*j/rows;
++    ctx.beginPath();
++    ctx.moveTo(left+2,y);
++    ctx.lineTo(left+GW-2,y);
++    ctx.stroke();
++  }
++
++  // Subtle team glow behind the goal.
++  ctx.fillStyle=accent+"22";
++  ctx.fillRect(left,top,GW,GH);
++
++  // Chunky arcade frame: back post + roof.
++  ctx.strokeStyle="#f7fbff";
++  ctx.lineWidth=10;
++  ctx.lineCap="round";
++  ctx.lineJoin="round";
++  ctx.beginPath();
++  ctx.moveTo(backX,G-1);
++  ctx.lineTo(backX,top);
++  ctx.lineTo(frontX,top);
++  ctx.stroke();
++
++  // Dark under-stroke gives the bars more volume.
++  ctx.strokeStyle="rgba(33,52,72,.22)";
++  ctx.lineWidth=3;
++  ctx.beginPath();
++  ctx.moveTo(backX+(right?-3:3),G-2);
++  ctx.lineTo(backX+(right?-3:3),top+3);
++  ctx.lineTo(frontX,top+3);
++  ctx.stroke();
++
++  // Front crossbar cap; matches the physics crossbar position.
++  ctx.fillStyle="#ffffff";
++  ctx.beginPath();
++  ctx.arc(frontX,top,7,0,Math.PI*2);
++  ctx.fill();
++  ctx.strokeStyle=accent;
++  ctx.lineWidth=2;
++  ctx.stroke();
++
++  // Small colored base pad to make each side instantly readable.
++  ctx.fillStyle=accent;
++  ctx.beginPath();
++  const baseX=right?backX-18:backX;
++  roundedRectPath(ctx,baseX,G-8,18,8,4);
++  ctx.fill();
++
++  ctx.restore();
++}
++function drawBall(ctx,ball,r){
++  const x=ball.x,y=ball.y;
++
++  ctx.save();
++
++  // Fast arcade shadow directly under the ball.
++  const shadowY=Math.min(608,y+34);
++  const heightFactor=Math.max(.28,1-Math.max(0,588-y)/520);
++  ctx.fillStyle=`rgba(0,0,0,${.18*heightFactor})`;
++  ctx.beginPath();
++  ctx.ellipse(x,shadowY,18*heightFactor,5*heightFactor,0,0,Math.PI*2);
++  ctx.fill();
++
++  ctx.translate(x,y);
++  // Give the pattern a visual roll even though physics does not track spin.
++  ctx.rotate((ball.x+ball.y*.35)*.025);
++
++  // Outer ball.
++  const grad=ctx.createRadialGradient(-7,-9,3,0,0,r);
++  grad.addColorStop(0,"#ffffff");
++  grad.addColorStop(.68,"#f5f7fa");
++  grad.addColorStop(1,"#cfd6df");
++  ctx.fillStyle=grad;
++  ctx.beginPath();
++  ctx.arc(0,0,r,0,Math.PI*2);
++  ctx.fill();
++  ctx.strokeStyle="#26313e";
++  ctx.lineWidth=2.4;
++  ctx.stroke();
++
++  // Classic centre pentagon.
++  function polygon(cx,cy,radius,sides,rotation){
++    ctx.beginPath();
++    for(let i=0;i<sides;i++){
++      const a=rotation+i*Math.PI*2/sides;
++      const px=cx+Math.cos(a)*radius;
++      const py=cy+Math.sin(a)*radius;
++      if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
++    }
++    ctx.closePath();
++  }
++  ctx.fillStyle="#202a35";
++  polygon(0,1,6.5,5,-Math.PI/2);
++  ctx.fill();
++
++  // Five outer dark patches + seam connections.
++  const patches=[];
++  for(let i=0;i<5;i++){
++    const a=-Math.PI/2+i*Math.PI*2/5;
++    patches.push({x:Math.cos(a)*14.2,y:Math.sin(a)*14.2,a});
++  }
++
++  ctx.strokeStyle="#596572";
++  ctx.lineWidth=1.2;
++  for(const p of patches){
++    ctx.beginPath();
++    ctx.moveTo(Math.cos(p.a)*5.8,1+Math.sin(p.a)*5.8);
++    ctx.lineTo(p.x*.76,p.y*.76);
++    ctx.stroke();
++  }
++
++  ctx.fillStyle="#26313c";
++  for(const p of patches){
++    polygon(p.x,p.y,4.6,5,p.a+Math.PI/2);
++    ctx.fill();
++  }
++
++  // Gloss highlight.
++  ctx.fillStyle="rgba(255,255,255,.60)";
++  ctx.beginPath();
++  ctx.ellipse(-7,-9,5,3,-.45,0,Math.PI*2);
++  ctx.fill();
++
++  ctx.restore();
++}
