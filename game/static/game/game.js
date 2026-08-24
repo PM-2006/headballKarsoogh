@@ -177,7 +177,127 @@ function roundedRectPath(ctx,x,y,w,h,r){
   ctx.lineTo(x+radius,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-radius);
   ctx.lineTo(x,y+radius);ctx.quadraticCurveTo(x,y,x+radius,y);ctx.closePath();
 }
-function drawPlayer(ctx,p,color,w,h,G){ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(p.x+w/2,G+6,38,9,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=color;ctx.beginPath();roundedRectPath(ctx,p.x,p.y,w,h,16);ctx.fill();ctx.fillStyle="#101722";ctx.beginPath();roundedRectPath(ctx,p.x+9,p.y+15,w-18,25,9);ctx.fill();ctx.fillStyle="#e5fbff";ctx.beginPath();ctx.arc(p.face>0?p.x+36:p.x+18,p.y+27,4,0,Math.PI*2);ctx.fill()}
+function drawHeadSpike(ctx,x,y,angle,length,width,color){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(angle);
+  ctx.fillStyle=color;
+  ctx.beginPath();
+  ctx.moveTo(0,-width/2);
+  ctx.quadraticCurveTo(length*.36,-width*.58,length,0);
+  ctx.quadraticCurveTo(length*.36,width*.58,0,width/2);
+  ctx.quadraticCurveTo(length*.10,width*.22,0,0);
+  ctx.quadraticCurveTo(length*.10,-width*.22,0,-width/2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function drawSmile(ctx,x,y,width,height,color){
+  ctx.strokeStyle=color;
+  ctx.lineWidth=3;
+  ctx.lineCap="round";
+  ctx.beginPath();
+  ctx.moveTo(x-width/2,y);
+  ctx.quadraticCurveTo(x,y+height,x+width/2,y);
+  ctx.stroke();
+}
+function drawLimb(ctx,x1,y1,x2,y2,thickness,color){
+  ctx.strokeStyle=color;
+  ctx.lineWidth=thickness;
+  ctx.lineCap="round";
+  ctx.beginPath();
+  ctx.moveTo(x1,y1);
+  ctx.lineTo(x2,y2);
+  ctx.stroke();
+}
+function drawPlayer(ctx,p,color,w,h,G){
+  const isRed=color.toLowerCase()==="#ff5262";
+  const palette=isRed
+    ?{head:"#ff5353",headDark:"#df2f35",jersey:"#d91f2a",boots:"#d52b34",skin:"#ff5353"}
+    :{head:"#55a8ff",headDark:"#2d82df",jersey:"#126bd8",boots:"#2475d6",skin:"#55a8ff"};
+
+  const cx=p.x+w/2;
+  const headCx=cx;
+  const headCy=p.y+15;
+  const headRx=35;
+  const headRy=31;
+  const bodyTop=p.y+39;
+
+  ctx.fillStyle="rgba(0,0,0,.16)";
+  ctx.beginPath();
+  ctx.ellipse(cx,G+6,34,8,0,0,Math.PI*2);
+  ctx.fill();
+
+  drawHeadSpike(ctx,headCx,headCy-27,-Math.PI/2,20,18,palette.headDark);
+  drawHeadSpike(ctx,headCx-24,headCy-18,-2.28,17,17,palette.headDark);
+  drawHeadSpike(ctx,headCx+24,headCy-18,-.86,17,17,palette.headDark);
+  drawHeadSpike(ctx,headCx-34,headCy+2,Math.PI,17,17,palette.headDark);
+  drawHeadSpike(ctx,headCx+34,headCy+2,0,17,17,palette.headDark);
+
+  ctx.fillStyle=palette.head;
+  ctx.beginPath();
+  ctx.ellipse(headCx,headCy,headRx,headRy,0,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="rgba(255,255,255,.14)";
+  ctx.beginPath();
+  ctx.ellipse(headCx-10,headCy-9,15,9,-.35,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#20232a";
+  ctx.beginPath();
+  ctx.ellipse(headCx-10,headCy,4.5,9.5,0,0,Math.PI*2);
+  ctx.ellipse(headCx+10,headCy,4.5,9.5,0,0,Math.PI*2);
+  ctx.fill();
+
+  drawSmile(ctx,headCx,headCy+13,21,7,"#20232a");
+
+  ctx.fillStyle=palette.skin;
+  ctx.beginPath();
+  roundedRectPath(ctx,cx-6,bodyTop-4,12,9,4);
+  ctx.fill();
+
+  ctx.fillStyle=palette.jersey;
+  ctx.beginPath();
+  roundedRectPath(ctx,cx-17,bodyTop,34,20,8);
+  ctx.fill();
+
+  ctx.strokeStyle="#fff";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(cx-7,bodyTop+2);
+  ctx.lineTo(cx,bodyTop+8);
+  ctx.lineTo(cx+7,bodyTop+2);
+  ctx.stroke();
+
+  ctx.fillStyle="#fff";
+  ctx.font="bold 10px Arial";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.fillText(isRed?"7":"10",cx,bodyTop+13);
+
+  drawLimb(ctx,cx-17,bodyTop+7,cx-25,bodyTop+14,5.5,palette.skin);
+  drawLimb(ctx,cx+17,bodyTop+7,cx+25,bodyTop+14,5.5,palette.skin);
+  ctx.fillStyle=palette.skin;
+  ctx.beginPath();
+  ctx.arc(cx-27,bodyTop+15,4,0,Math.PI*2);
+  ctx.arc(cx+27,bodyTop+15,4,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle="#fff";
+  ctx.beginPath();
+  roundedRectPath(ctx,cx-15,p.y+57,30,8,4);
+  ctx.fill();
+
+  drawLimb(ctx,cx-7,p.y+63,cx-8,p.y+68,5.5,palette.skin);
+  drawLimb(ctx,cx+7,p.y+63,cx+8,p.y+68,5.5,palette.skin);
+
+  ctx.fillStyle=palette.boots;
+  ctx.beginPath();
+  roundedRectPath(ctx,cx-17,p.y+66,15,6,3);
+  roundedRectPath(ctx,cx+2,p.y+66,15,6,3);
+  ctx.fill();
+}
 async function runBatch(){
   try{$("runBatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});$("batchResult").innerHTML=`<b>${labelFor(blue)}</b>: ${result.blue_wins} برد — ${result.blue_goals} گل<br><b>${labelFor(red)}</b>: ${result.red_wins} برد — ${result.red_goals} گل<br>مساوی: ${result.draws}<br>میانگین گل: ${result.blue_goals_per_match} / ${result.red_goals_per_match}`}
   catch(err){$("batchResult").textContent=err.message}finally{$("runBatch").disabled=false}
