@@ -76,6 +76,10 @@ class GameConfig:
     # a motionless wall, and truly contested ball touches pop upward.
     player_bump_restitution: float = 0.32
     player_bump_extra_separation: float = 1.5
+    # Player-vs-player collision uses a narrower box than the full sprite width
+    # so two players can stand shoulder-to-shoulder without an ugly visible gap.
+    # Effective bump width = player_width - 2*player_collision_inset.
+    player_collision_inset: float = 6.0
     player_contact_velocity_transfer: float = 0.18
     running_touch_lift: float = 135.0
     contested_ball_pop_y: float = 640.0
@@ -95,8 +99,8 @@ class GameConfig:
     # keeps moving. All nudges are deterministic (toward pitch center), so
     # batch/side-swapped comparisons stay fair.
     stall_speed_threshold: float = 45.0   # px/s; below this the ball is "dead"
-    stall_pop_after: float = 2.5          # seconds dead before the gentle pop
-    stall_kickoff_after: float = 5.0      # seconds dead before a full kickoff
+    stall_pop_after: float = 6          # seconds dead before the gentle pop
+    stall_kickoff_after: float = 10      # seconds dead before a full kickoff
     stall_pop_vx: float = 220.0           # horizontal nudge toward center
     stall_pop_vy: float = 640.0           # upward pop strength
 
@@ -326,7 +330,16 @@ def _resolve_intent(action: str, state: dict, team: int, config: GameConfig) -> 
             move_dir=_direction_to_target(state["my_x"], target, config.move_deadzone),
         )
     if action == "JUMP":
-        return Intent(action, jump=True)
+        # Jump TOWARD the ball instead of straight up, so a bot can run under a
+        # high ball and actually head it. Previously JUMP carried move_dir=0,
+        # which stopped the bot dead -- you could never move and jump at once.
+        return Intent(
+            action,
+            jump=True,
+            move_dir=_direction_to_target(
+                state["my_x"], state["ball_x"], config.move_deadzone
+            ),
+        )
     if action.startswith("KICK_"):
         return Intent(action, kick=action)
     return Intent("IDLE")
@@ -490,10 +503,10 @@ def _integrate_player(
 
 def _resolve_players(world: World, config: GameConfig):
     a, b = world.players
-    overlap_x = min(
-        a.x + config.player_width,
-        b.x + config.player_width,
-    ) - max(a.x, b.x)
+    inset = config.player_collision_inset
+    a_left, a_right = a.x + inset, a.x + config.player_width - inset
+    b_left, b_right = b.x + inset, b.x + config.player_width - inset
+    overlap_x = min(a_right, b_right) - max(a_left, b_left)
     overlap_y = min(
         a.y + config.player_height,
         b.y + config.player_height,
