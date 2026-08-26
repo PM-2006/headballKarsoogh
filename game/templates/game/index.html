@@ -61,7 +61,8 @@
   </div>
   <div id="arenaMsg" class="feedback" style="display:none"></div>
   <div class="scoreline"><span id="blueName" class="blue">Blue</span><strong id="score">0 : 0</strong><span id="redName" class="red">Red</span><span id="time">60.0s</span></div>
-  <canvas id="game" width="1280" height="720"></canvas>
+  <canvas id="game" width="{{ game_config.width|default:1280 }}" height="{{ game_config.height|default:720 }}"></canvas>
+  {{ game_config|json_script:"game-config-data" }}
   <div class="grid two lower">
     <div class="card"><h2>وضعیت زنده</h2><div class="debug-grid">
       <div><b class="blue">آبی</b><p>Rule: <span id="blueRule">-</span></p><p>Action: <span id="blueAction">IDLE</span></p></div>

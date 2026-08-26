@@ -99,9 +99,11 @@ def get_preset(name: str) -> dict:
     return deepcopy(PRESETS[name])
 
 def vocabulary() -> dict:
+    from .engine import get_game_config
     return {
         "sensors": SENSORS,
         "operators": list(OPERATORS),
         "actions": list(ACTIONS),
         "presets": {key: value["label"] for key, value in PRESETS.items()},
+        "config": get_game_config().to_dict(),
     }

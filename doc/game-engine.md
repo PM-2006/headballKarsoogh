@@ -109,6 +109,25 @@ classDiagram
 - **نرخ محاسبات فیزیک (`physics_fps`):** `60 Hz` با ۲ ریزگام زمانی (`physics_substeps = 2`) که دقت برخوردها را تا معادل **۱۲۰ هرتز** بالا می‌برد و مانع از رد شدن توپ از موانع سریع (Tunneling Effect) می‌شود.
 - **نرخ ذخیره فریم‌ها برای کلاینت (`record_fps`):** `20 Hz`. سرور تنها ۲۰ فریم در هر ثانیه به مرورگر می‌فرستد تا حجم داده‌های شبکه و ترافیک کاربر بسیار بهینه باقی بماند.
 
+## ۷. پیکربندی داینامیک با متغیرهای محیطی (Dynamic Environment Configuration)
+
+تمامی پارامترها و ابعاد فیزیکی بالا از طریق متغیرهای محیطی در زمان اجرای سرور قابل تنظیم هستند. در صورت عدم تعیین، مقادیر پیش‌فرض استاندارد اعمال می‌شوند:
+
+```mermaid
+flowchart LR
+    Env[".env / Environment Variables"] --> Engine["GameConfig (engine.py)"]
+    Engine --> Sim["موتور فیزیک و شبیه‌سازی سرور"]
+    Engine --> View["تزریق JSON به Canvas فرانت‌اند"]
+```
+
+| حوزه پارامترها | متغیرهای محیطی مرتبط | فایل راهنما |
+| :--- | :--- | :--- |
+| **زمین و دروازه‌ها** | `GAME_PLAYGROUND_WIDTH`, `GAME_PLAYGROUND_HEIGHT`, `GAME_GROUND_Y`, `GAME_GOAL_DEPTH`, `GAME_GOAL_HEIGHT` | [`.env.example`](../.env.example) |
+| **توپ و الاستیسیته** | `GAME_BALL_RADIUS`, `GAME_GRAVITY`, `GAME_BALL_MAX_SPEED`, `GAME_FLOOR_BOUNCE`, `GAME_FLOOR_FRICTION`, `GAME_BALL_AIR_DRAG`, `GAME_BALL_IMPULSE_SCALE` | [`.env.example`](../.env.example) |
+| **بازیکن و حرکت** | `GAME_PLAYER_WIDTH`, `GAME_PLAYER_HEIGHT`, `GAME_PLAYER_SPEED`, `GAME_PLAYER_JUMP_SPEED`, `GAME_PLAYER_GRAVITY`, `GAME_PLAYER_ACCELERATION` | [`.env.example`](../.env.example) |
+| **شوت‌ها و نبردها** | `GAME_KICK_REACH`, `GAME_KICK_LOW_X/Y`, `GAME_KICK_HIGH_X/Y`, `GAME_KICK_CLEAR_X/Y`, `GAME_RUNNING_TOUCH_LIFT` | [`.env.example`](../.env.example) |
+| **زمان‌بندی و دقت** | `GAME_MATCH_TIME`, `GAME_PHYSICS_FPS`, `GAME_RECORD_FPS`, `GAME_PHYSICS_SUBSTEPS` | [`.env.example`](../.env.example) |
+
 ---
 
 ## ناوبری مستندات

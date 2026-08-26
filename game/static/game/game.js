@@ -1,8 +1,42 @@
 const $ = (id) => document.getElementById(id);
-const csrf = document.querySelector("[name=csrfmiddlewaretoken]").value;
+const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
 let vocabulary = null;
 let myStrategy = null;
 let playbackHandle = null;
+
+let gameConfig = {
+  width: 1280,
+  height: 720,
+  ground_y: 610,
+  goal_depth: 105,
+  goal_height: 135,
+  ball_radius: 22,
+  player_width: 58,
+  player_height: 72,
+  match_time: 60,
+};
+
+function readInjectedConfig() {
+  const el = $("game-config-data");
+  if (el && el.textContent) {
+    try {
+      const cfg = JSON.parse(el.textContent);
+      if (cfg && typeof cfg === "object") {
+        Object.assign(gameConfig, cfg);
+        updateCanvasDimensions();
+      }
+    } catch (e) {}
+  }
+}
+
+function updateCanvasDimensions() {
+  const canvas = $("game");
+  if (canvas) {
+    if (gameConfig.width) canvas.width = gameConfig.width;
+    if (gameConfig.height) canvas.height = gameConfig.height;
+  }
+}
+readInjectedConfig();
 
 // Fixed conditions carry a ready `conditions` array. Parametric conditions
 // carry a `param` whose number the student fills in ("…" in the label is
@@ -246,11 +280,20 @@ function playFrames(frames,fps){
   playbackHandle=requestAnimationFrame(tick);
 }
 function drawFrame(frame){
-  const canvas=$("game"),ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height,G=610,GW=105,GH=135;
+  const canvas=$("game"),ctx=canvas.getContext("2d");
+  const W=gameConfig.width||canvas.width;
+  const H=gameConfig.height||canvas.height;
+  const G=gameConfig.ground_y||610;
+  const GW=gameConfig.goal_depth||105;
+  const GH=gameConfig.goal_height||135;
+  const PW=gameConfig.player_width||58;
+  const PH=gameConfig.player_height||72;
+  const BR=gameConfig.ball_radius||22;
+
   const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,"#74c9ff");grad.addColorStop(1,"#e5f6ff");ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
   ctx.fillStyle="#4dca69";ctx.fillRect(0,G,W,H-G);ctx.fillStyle="#38a957";ctx.fillRect(0,G+22,W,H-G-22);ctx.strokeStyle="rgba(255,255,255,.75)";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(W/2,G);ctx.lineTo(W/2,H);ctx.stroke();
-  drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);drawPlayer(ctx,frame.players[0],"#2f9bff",58,72,G);drawPlayer(ctx,frame.players[1],"#ff5262",58,72,G);
-  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,22,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#18263a";ctx.lineWidth=3;ctx.stroke();ctx.fillStyle="#18263a";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,7,0,Math.PI*2);ctx.fill();
+  drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);drawPlayer(ctx,frame.players[0],"#2f9bff",PW,PH,G);drawPlayer(ctx,frame.players[1],"#ff5262",PW,PH,G);
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,BR,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#18263a";ctx.lineWidth=3;ctx.stroke();ctx.fillStyle="#18263a";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,Math.max(2,BR*0.32),0,Math.PI*2);ctx.fill();
   $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};$("blueRule").textContent=d0.rule??"-";$("blueAction").textContent=d0.action??"IDLE";$("redRule").textContent=d1.rule??"-";$("redAction").textContent=d1.action??"IDLE";
 }
 function drawGoal(ctx,right,W,G,GW,GH){ctx.strokeStyle="#eff8ff";ctx.lineWidth=9;ctx.beginPath();if(!right){ctx.moveTo(0,G);ctx.lineTo(0,G-GH);ctx.lineTo(GW,G-GH)}else{ctx.moveTo(W,G);ctx.lineTo(W,G-GH);ctx.lineTo(W-GW,G-GH)}ctx.stroke()}
@@ -303,76 +346,71 @@ function drawPlayer(ctx,p,color,w,h,G){
 
   const cx=p.x+w/2;
   const facing=p.face>=0?1:-1;
-  const headCx=cx+2;
-  const headCy=p.y+15;
-  const headRx=35;
-  const headRy=31;
-  const bodyTop=p.y+39;
+  const sx = w / 58;
+  const sy = h / 72;
 
   // Shadow stays in world coordinates.
   ctx.fillStyle="rgba(0,0,0,.16)";
   ctx.beginPath();
-  ctx.ellipse(cx,G+6,34,8,0,0,Math.PI*2);
+  ctx.ellipse(cx,G+6,Math.max(8,34*sx),Math.max(3,8*sy),0,0,Math.PI*2);
   ctx.fill();
 
-  // Draw one right-facing mascot and mirror the whole character when face < 0.
-  // The pose is intentionally asymmetric, so direction is obvious at a glance.
   ctx.save();
   ctx.translate(cx,0);
-  ctx.scale(facing,1);
+  ctx.scale(facing*sx,sy);
   ctx.translate(-cx,0);
 
   // Head spikes: the front/right spike is longer than the rear/left spike.
-  drawHeadSpike(ctx,headCx,headCy-27,-Math.PI/2,20,18,palette.headDark);
-  drawHeadSpike(ctx,headCx-23,headCy-18,-2.28,15,16,palette.headDark);
-  drawHeadSpike(ctx,headCx+24,headCy-18,-.86,18,17,palette.headDark);
-  drawHeadSpike(ctx,headCx-33,headCy+3,Math.PI,14,16,palette.headDark);
-  drawHeadSpike(ctx,headCx+35,headCy+1,0,22,18,palette.headDark);
+  drawHeadSpike(ctx,cx+2,p.y+15-27,-Math.PI/2,20,18,palette.headDark);
+  drawHeadSpike(ctx,cx+2-23,p.y+15-18,-2.28,15,16,palette.headDark);
+  drawHeadSpike(ctx,cx+2+24,p.y+15-18,-.86,18,17,palette.headDark);
+  drawHeadSpike(ctx,cx+2-33,p.y+15+3,Math.PI,14,16,palette.headDark);
+  drawHeadSpike(ctx,cx+2+35,p.y+15+1,0,22,18,palette.headDark);
 
   ctx.fillStyle=palette.head;
   ctx.beginPath();
-  ctx.ellipse(headCx,headCy,headRx,headRy,0,0,Math.PI*2);
+  ctx.ellipse(cx+2,p.y+15,35,31,0,0,Math.PI*2);
   ctx.fill();
 
   ctx.fillStyle="rgba(255,255,255,.14)";
   ctx.beginPath();
-  ctx.ellipse(headCx-9,headCy-9,15,9,-.35,0,Math.PI*2);
+  ctx.ellipse(cx+2-9,p.y+15-9,15,9,-.35,0,Math.PI*2);
   ctx.fill();
 
   // Face looks slightly toward the movement direction.
   ctx.fillStyle="#20232a";
   ctx.beginPath();
-  ctx.ellipse(headCx-7,headCy,4.3,9.3,0,0,Math.PI*2);
-  ctx.ellipse(headCx+12,headCy,4.8,9.8,0,0,Math.PI*2);
+  ctx.ellipse(cx+2-7,p.y+15,4.3,9.3,0,0,Math.PI*2);
+  ctx.ellipse(cx+2+12,p.y+15,4.8,9.8,0,0,Math.PI*2);
   ctx.fill();
-  drawSmile(ctx,headCx+3,headCy+13,20,7,"#20232a");
+  drawSmile(ctx,cx+2+3,p.y+15+13,20,7,"#20232a");
 
   ctx.fillStyle=palette.skin;
   ctx.beginPath();
-  roundedRectPath(ctx,cx-5,bodyTop-4,12,9,4);
+  roundedRectPath(ctx,cx-5,p.y+39-4,12,9,4);
   ctx.fill();
 
   // Body leans a little forward.
   ctx.fillStyle=palette.jersey;
   ctx.beginPath();
-  roundedRectPath(ctx,cx-15,bodyTop,34,20,8);
+  roundedRectPath(ctx,cx-15,p.y+39,34,20,8);
   ctx.fill();
 
   ctx.strokeStyle="#fff";
   ctx.lineWidth=2;
   ctx.beginPath();
-  ctx.moveTo(cx-5,bodyTop+2);
-  ctx.lineTo(cx+2,bodyTop+8);
-  ctx.lineTo(cx+9,bodyTop+2);
+  ctx.moveTo(cx-5,p.y+39+2);
+  ctx.lineTo(cx+2,p.y+39+8);
+  ctx.lineTo(cx+9,p.y+39+2);
   ctx.stroke();
 
   // Rear arm is lower; front arm reaches forward.
-  drawLimb(ctx,cx-14,bodyTop+8,cx-24,bodyTop+17,5.5,palette.skin);
-  drawLimb(ctx,cx+18,bodyTop+7,cx+31,bodyTop+10,5.5,palette.skin);
+  drawLimb(ctx,cx-14,p.y+39+8,cx-24,p.y+39+17,5.5,palette.skin);
+  drawLimb(ctx,cx+18,p.y+39+7,cx+31,p.y+39+10,5.5,palette.skin);
   ctx.fillStyle=palette.skin;
   ctx.beginPath();
-  ctx.arc(cx-26,bodyTop+18,4,0,Math.PI*2);
-  ctx.arc(cx+33,bodyTop+10,4,0,Math.PI*2);
+  ctx.arc(cx-26,p.y+39+18,4,0,Math.PI*2);
+  ctx.arc(cx+33,p.y+39+10,4,0,Math.PI*2);
   ctx.fill();
 
   ctx.fillStyle="#fff";
@@ -394,10 +432,10 @@ function drawPlayer(ctx,p,color,w,h,G){
 
   // Draw the shirt number after restoring so text never appears mirrored.
   ctx.fillStyle="#fff";
-  ctx.font="bold 10px Arial";
+  ctx.font=`bold ${Math.max(8, Math.round(10*Math.min(sx, sy)))}px Arial`;
   ctx.textAlign="center";
   ctx.textBaseline="middle";
-  ctx.fillText(isRed?"7":"10",cx+2,bodyTop+13);
+  ctx.fillText(isRed?"7":"10",cx+2*sx,p.y+39+13*sy);
 }
 async function runBatch(){
   try{$("runBatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});$("batchResult").innerHTML=`<b>${labelFor(blue)}</b>: ${result.blue_wins} برد — ${result.blue_goals} گل<br><b>${labelFor(red)}</b>: ${result.red_wins} برد — ${result.red_goals} گل<br>مساوی: ${result.draws}<br>میانگین گل: ${result.blue_goals_per_match} / ${result.red_goals_per_match}`}
@@ -411,6 +449,42 @@ function refreshOpponentMenus(){
   if([...$("redSelect").options].some(o=>o.value===currentRed))$("redSelect").value=currentRed;else $("redSelect").value="adaptive";
 }
 async function init(){
-  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());refreshOpponentMenus();quickPreset("smart");$("builderTab").onclick=()=>switchView("builder");$("arenaTab").onclick=()=>switchView("arena");$("addRule").onclick=()=>addSimple();$("buildBot").onclick=buildBot;$("compileWithAI").onclick=compileWithAI;$("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};$("testBot").onclick=()=>{refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));$("playMatch").onclick=runMatch;$("runBatch").onclick=runBatch;drawFrame({time:60,score:[0,0],players:[{x:255,y:538,face:1},{x:967,y:538,face:-1}],ball:{x:640,y:235},debug:[{},{}]});
+  readInjectedConfig();
+  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
+  if(vocabulary&&vocabulary.config){
+    Object.assign(gameConfig,vocabulary.config);
+    updateCanvasDimensions();
+  }
+  refreshOpponentMenus();
+  quickPreset("smart");
+  $("builderTab").onclick=()=>switchView("builder");
+  $("arenaTab").onclick=()=>switchView("arena");
+  $("addRule").onclick=()=>addSimple();
+  $("buildBot").onclick=buildBot;
+  $("compileWithAI").onclick=compileWithAI;
+  $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
+  $("testBot").onclick=()=>{refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
+  document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
+  $("playMatch").onclick=runMatch;
+  $("runBatch").onclick=runBatch;
+
+  const W=gameConfig.width||1280;
+  const H=gameConfig.height||720;
+  const G=gameConfig.ground_y||610;
+  const GW=gameConfig.goal_depth||105;
+  const PW=gameConfig.player_width||58;
+  const PH=gameConfig.player_height||72;
+  const initP0x=GW+150;
+  const initP1x=Math.max(initP0x+PW+10, W-GW-150-PW);
+  const initPy=G-PH;
+  const initBallY=Math.max(50, G-460);
+
+  drawFrame({
+    time: gameConfig.match_time||60,
+    score: [0, 0],
+    players: [{x: initP0x, y: initPy, face: 1}, {x: initP1x, y: initPy, face: -1}],
+    ball: {x: W/2, y: initBallY},
+    debug: [{}, {}]
+  });
 }
 init();

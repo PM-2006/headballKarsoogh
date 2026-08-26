@@ -37,7 +37,8 @@ def _resolve_strategy(payload, key):
 @login_required
 @ensure_csrf_cookie
 def index(request):
-    return render(request, "game/index.html")
+    from .engine import get_game_config
+    return render(request, "game/index.html", {"game_config": get_game_config().to_dict()})
 
 @login_required
 @require_GET

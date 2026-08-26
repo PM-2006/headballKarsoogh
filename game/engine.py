@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from math import hypot
+import os
 import random
 
 from .validators import validate_strategy
@@ -10,73 +11,86 @@ from .validators import validate_strategy
 PHYSICS_VERSION = "v3-headball-fast-arcade"
 
 
+def _env_float(name: str, default: float) -> float:
+    val = os.environ.get(name)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    val = os.environ.get(name)
+    if val is None or val.strip() == "":
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class GameConfig:
-    # Existing public geometry is intentionally preserved so the current
-    # canvas replay stays pixel-perfect with the server simulation.
+    # Playground & Geometry
     width: float = 1280.0
     height: float = 720.0
     ground_y: float = 610.0
-    gravity: float = 1700.0
     goal_depth: float = 105.0
     goal_height: float = 135.0
+    goal_post_radius: float = 7.0
+
+    # Ball Physics & Elasticity
     ball_radius: float = 22.0
+    gravity: float = 1700.0
     ball_max_speed: float = 1450.0
-    player_width: float = 58.0
-    player_height: float = 72.0
-    player_speed: float = 385.0
-    player_jump_speed: float = 790.0
-    jump_cooldown: float = 0.38
-    kickoff_freeze: float = 0.90
-    match_time: float = 60.0
-    physics_fps: int = 60
-    record_fps: int = 20
-    body_ball_impulse_scale: float = 0.05  # kept for config compatibility
     floor_bounce: float = 0.58
     floor_friction: float = 0.980
     horizontal_drag_per_60fps: float = 0.999
-
-    # Physics V2 additions.
-    physics_substeps: int = 2
-    player_acceleration: float = 2800.0
-    player_deceleration: float = 3400.0
-    player_air_acceleration: float = 1300.0
-    player_air_deceleration: float = 90.0
-    player_gravity: float = 2050.0
-
-    # Head Ball-style player collider: round head + compact torso.
-    head_radius: float = 27.0
-    head_center_y: float = 18.0
-    body_inset_x: float = 10.0
-    body_top_offset: float = 36.0
-
-    goal_post_radius: float = 7.0
     ball_wall_bounce: float = 0.84
     ball_ceiling_bounce: float = 0.82
     ball_body_restitution: float = 0.46
     ball_head_restitution: float = 0.78
     ball_contact_impulse_cap: float = 850.0
     ball_sleep_speed: float = 8.0
+    body_ball_impulse_scale: float = 0.05
 
+    # Player Dimensions & Dynamics
+    player_width: float = 58.0
+    player_height: float = 72.0
+    player_speed: float = 385.0
+    player_jump_speed: float = 790.0
+    player_gravity: float = 2050.0
+    player_acceleration: float = 2800.0
+    player_deceleration: float = 3400.0
+    player_air_acceleration: float = 1300.0
+    player_air_deceleration: float = 90.0
+    jump_cooldown: float = 0.38
+    head_radius: float = 27.0
+    head_center_y: float = 18.0
+    body_inset_x: float = 10.0
+    body_top_offset: float = 36.0
+    player_bump_restitution: float = 0.32
+    player_bump_extra_separation: float = 1.5
+    player_contact_velocity_transfer: float = 0.18
+
+    # Kicks & Actions
     kick_reach: float = 126.0
     kick_low_x: float = 850.0
     kick_low_y: float = -170.0
+    kick_low_cooldown: float = 0.40
     kick_high_x: float = 760.0
     kick_high_y: float = -620.0
+    kick_high_cooldown: float = 0.46
     kick_clear_x: float = 1000.0
     kick_clear_y: float = -360.0
-    kick_low_cooldown: float = 0.40
-    kick_high_cooldown: float = 0.46
     kick_clear_cooldown: float = 0.52
     kick_keep_ball_velocity: float = 0.38
     kick_player_velocity_transfer: float = 0.52
     move_deadzone: float = 6.0
 
-    # Anti-lock / fast-arcade tuning. Players rebound instead of becoming
-    # a motionless wall, and truly contested ball touches pop upward.
-    player_bump_restitution: float = 0.32
-    player_bump_extra_separation: float = 1.5
-    player_contact_velocity_transfer: float = 0.18
+    # Anti-Lock & Contested Dynamics
     running_touch_lift: float = 135.0
     contested_ball_pop_y: float = 640.0
     contested_ball_horizontal_keep: float = 0.65
@@ -86,22 +100,110 @@ class GameConfig:
     contested_kick_recoil: float = 135.0
     contested_escape_x: float = 175.0
 
-    # Anti-stall watchdog. Some situations still leave the ball frozen:
-    # wedged on the inner roof of a goal recess where players cannot reach it,
-    # or asleep on the ground in a spot both bots ignore. If the ball stays
-    # slower than stall_speed_threshold continuously, we first give it one
-    # gentle arcade "throw-in" pop toward the center, and if it is still dead
-    # a bit later we force a fresh kickoff. This guarantees the match always
-    # keeps moving. All nudges are deterministic (toward pitch center), so
-    # batch/side-swapped comparisons stay fair.
-    stall_speed_threshold: float = 45.0   # px/s; below this the ball is "dead"
-    stall_pop_after: float = 2.5          # seconds dead before the gentle pop
-    stall_kickoff_after: float = 5.0      # seconds dead before a full kickoff
-    stall_pop_vx: float = 220.0           # horizontal nudge toward center
-    stall_pop_vy: float = 640.0           # upward pop strength
+    # Anti-Stall Watchdog
+    stall_speed_threshold: float = 45.0
+    stall_pop_after: float = 2.5
+    stall_kickoff_after: float = 5.0
+    stall_pop_vx: float = 220.0
+    stall_pop_vy: float = 640.0
+
+    # Match Timing & Precision
+    match_time: float = 60.0
+    kickoff_freeze: float = 0.90
+    physics_fps: int = 60
+    record_fps: int = 20
+    physics_substeps: int = 2
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
-CONFIG = GameConfig()
+def get_game_config() -> GameConfig:
+    return GameConfig(
+        # Playground Geometry
+        width=_env_float("GAME_PLAYGROUND_WIDTH", 1280.0),
+        height=_env_float("GAME_PLAYGROUND_HEIGHT", 720.0),
+        ground_y=_env_float("GAME_GROUND_Y", 610.0),
+        goal_depth=_env_float("GAME_GOAL_DEPTH", 105.0),
+        goal_height=_env_float("GAME_GOAL_HEIGHT", 135.0),
+        goal_post_radius=_env_float("GAME_GOAL_POST_RADIUS", 7.0),
+
+        # Ball Physics & Elasticity
+        ball_radius=_env_float("GAME_BALL_RADIUS", 22.0),
+        gravity=_env_float("GAME_GRAVITY", 1700.0),
+        ball_max_speed=_env_float("GAME_BALL_MAX_SPEED", 1450.0),
+        floor_bounce=_env_float("GAME_FLOOR_BOUNCE", 0.58),
+        floor_friction=_env_float("GAME_FLOOR_FRICTION", 0.980),
+        horizontal_drag_per_60fps=_env_float("GAME_BALL_AIR_DRAG", 0.999),
+        ball_wall_bounce=_env_float("GAME_BALL_WALL_BOUNCE", 0.84),
+        ball_ceiling_bounce=_env_float("GAME_BALL_CEILING_BOUNCE", 0.82),
+        ball_body_restitution=_env_float("GAME_BALL_BODY_RESTITUTION", 0.46),
+        ball_head_restitution=_env_float("GAME_BALL_HEAD_RESTITUTION", 0.78),
+        ball_contact_impulse_cap=_env_float("GAME_BALL_CONTACT_IMPULSE_CAP", 850.0),
+        ball_sleep_speed=_env_float("GAME_BALL_SLEEP_SPEED", 8.0),
+        body_ball_impulse_scale=_env_float("GAME_BALL_IMPULSE_SCALE", 0.05),
+
+        # Player Dimensions & Dynamics
+        player_width=_env_float("GAME_PLAYER_WIDTH", 58.0),
+        player_height=_env_float("GAME_PLAYER_HEIGHT", 72.0),
+        player_speed=_env_float("GAME_PLAYER_SPEED", 385.0),
+        player_jump_speed=_env_float("GAME_PLAYER_JUMP_SPEED", 790.0),
+        player_gravity=_env_float("GAME_PLAYER_GRAVITY", 2050.0),
+        player_acceleration=_env_float("GAME_PLAYER_ACCELERATION", 2800.0),
+        player_deceleration=_env_float("GAME_PLAYER_DECELERATION", 3400.0),
+        player_air_acceleration=_env_float("GAME_PLAYER_AIR_ACCELERATION", 1300.0),
+        player_air_deceleration=_env_float("GAME_PLAYER_AIR_DECELERATION", 90.0),
+        jump_cooldown=_env_float("GAME_JUMP_COOLDOWN", 0.38),
+        head_radius=_env_float("GAME_PLAYER_HEAD_RADIUS", 27.0),
+        head_center_y=_env_float("GAME_PLAYER_HEAD_CENTER_Y", 18.0),
+        body_inset_x=_env_float("GAME_PLAYER_BODY_INSET_X", 10.0),
+        body_top_offset=_env_float("GAME_PLAYER_BODY_TOP_OFFSET", 36.0),
+        player_bump_restitution=_env_float("GAME_PLAYER_BUMP_RESTITUTION", 0.32),
+        player_bump_extra_separation=_env_float("GAME_PLAYER_BUMP_SEPARATION", 1.5),
+        player_contact_velocity_transfer=_env_float("GAME_PLAYER_CONTACT_VELOCITY_TRANSFER", 0.18),
+
+        # Kicks & Actions
+        kick_reach=_env_float("GAME_KICK_REACH", 126.0),
+        kick_low_x=_env_float("GAME_KICK_LOW_X", 850.0),
+        kick_low_y=_env_float("GAME_KICK_LOW_Y", -170.0),
+        kick_low_cooldown=_env_float("GAME_KICK_LOW_COOLDOWN", 0.40),
+        kick_high_x=_env_float("GAME_KICK_HIGH_X", 760.0),
+        kick_high_y=_env_float("GAME_KICK_HIGH_Y", -620.0),
+        kick_high_cooldown=_env_float("GAME_KICK_HIGH_COOLDOWN", 0.46),
+        kick_clear_x=_env_float("GAME_KICK_CLEAR_X", 1000.0),
+        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -360.0),
+        kick_clear_cooldown=_env_float("GAME_KICK_CLEAR_COOLDOWN", 0.52),
+        kick_keep_ball_velocity=_env_float("GAME_KICK_KEEP_BALL_VELOCITY", 0.38),
+        kick_player_velocity_transfer=_env_float("GAME_KICK_PLAYER_VELOCITY_TRANSFER", 0.52),
+        move_deadzone=_env_float("GAME_MOVE_DEADZONE", 6.0),
+
+        # Anti-Lock & Contested Dynamics
+        running_touch_lift=_env_float("GAME_RUNNING_TOUCH_LIFT", 135.0),
+        contested_ball_pop_y=_env_float("GAME_CONTESTED_BALL_POP_Y", 640.0),
+        contested_ball_horizontal_keep=_env_float("GAME_CONTESTED_BALL_HORIZONTAL_KEEP", 0.65),
+        contested_player_recoil=_env_float("GAME_CONTESTED_PLAYER_RECOIL", 95.0),
+        contested_kick_pop_y=_env_float("GAME_CONTESTED_KICK_POP_Y", 820.0),
+        contested_kick_horizontal_keep=_env_float("GAME_CONTESTED_KICK_HORIZONTAL_KEEP", 0.55),
+        contested_kick_recoil=_env_float("GAME_CONTESTED_KICK_RECOIL", 135.0),
+        contested_escape_x=_env_float("GAME_CONTESTED_ESCAPE_X", 175.0),
+
+        # Anti-Stall Watchdog
+        stall_speed_threshold=_env_float("GAME_STALL_SPEED_THRESHOLD", 45.0),
+        stall_pop_after=_env_float("GAME_STALL_POP_AFTER", 2.5),
+        stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 5.0),
+        stall_pop_vx=_env_float("GAME_STALL_POP_VX", 220.0),
+        stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
+
+        # Match Timing & Precision
+        match_time=_env_float("GAME_MATCH_TIME", 60.0),
+        kickoff_freeze=_env_float("GAME_KICKOFF_FREEZE", 0.90),
+        physics_fps=_env_int("GAME_PHYSICS_FPS", 60),
+        record_fps=_env_int("GAME_RECORD_FPS", 20),
+        physics_substeps=_env_int("GAME_PHYSICS_SUBSTEPS", 2),
+    )
+
+
+CONFIG = get_game_config()
 
 
 @dataclass
@@ -129,7 +231,7 @@ class World:
     players: list[Player]
     ball: Ball
     score: list[int] = field(default_factory=lambda: [0, 0])
-    remaining_time: float = CONFIG.match_time
+    remaining_time: float = 60.0
     freeze: float = 0.0
     debug: list[dict] = field(default_factory=lambda: [{}, {}])
     contest_escape_dir: int = 1
@@ -165,13 +267,18 @@ def _head_center(player: Player, config: GameConfig) -> tuple[float, float]:
     return player.x + config.player_width / 2, player.y + config.head_center_y
 
 
-def _new_world(rng: random.Random, config: GameConfig = CONFIG) -> World:
+def _new_world(rng: random.Random, config: GameConfig | None = None) -> World:
+    if config is None:
+        config = get_game_config()
+    p0_x = config.goal_depth + 150.0
+    p1_x = max(p0_x + config.player_width + 10.0, config.width - config.goal_depth - 150.0 - config.player_width)
+    drop_y = max(50.0, config.ground_y - 460.0) if config.ground_y > 460.0 else config.height * 0.2
     world = World(
         players=[
-            Player(255.0, config.ground_y - config.player_height, face=1),
-            Player(config.width - 313.0, config.ground_y - config.player_height, face=-1),
+            Player(p0_x, config.ground_y - config.player_height, face=1),
+            Player(p1_x, config.ground_y - config.player_height, face=-1),
         ],
-        ball=Ball(config.width / 2, 150.0),
+        ball=Ball(config.width / 2, drop_y),
         remaining_time=config.match_time,
     )
     _kickoff(world, rng, config, initial=True)
@@ -180,8 +287,8 @@ def _new_world(rng: random.Random, config: GameConfig = CONFIG) -> World:
 
 def _kickoff(world: World, rng: random.Random, config: GameConfig, initial: bool = False):
     p0, p1 = world.players
-    p0.x = 255.0
-    p1.x = config.width - 313.0
+    p0.x = config.goal_depth + 150.0
+    p1.x = max(p0.x + config.player_width + 10.0, config.width - config.goal_depth - 150.0 - config.player_width)
     for player, face in ((p0, 1), (p1, -1)):
         player.y = config.ground_y - config.player_height
         player.vx = 0.0
@@ -197,7 +304,7 @@ def _kickoff(world: World, rng: random.Random, config: GameConfig, initial: bool
     direction = rng.choice((-1, 1))
     world.contest_escape_dir = direction
     world.ball.x = config.width / 2
-    world.ball.y = 150.0
+    world.ball.y = max(50.0, config.ground_y - 460.0) if config.ground_y > 460.0 else config.height * 0.2
     world.ball.vx = direction * rng.uniform(30.0, 65.0)
     world.ball.vy = rng.uniform(15.0, 35.0)
 
@@ -901,10 +1008,12 @@ def simulate_match(
     *,
     seed: int = 1,
     record_frames: bool = True,
-    config: GameConfig = CONFIG,
+    config: GameConfig | None = None,
 ) -> dict:
     validate_strategy(blue_strategy)
     validate_strategy(red_strategy)
+    if config is None:
+        config = get_game_config()
 
     rng = random.Random(seed)
     world = _new_world(rng, config)
@@ -1010,10 +1119,12 @@ def batch_matches(
     *,
     matches: int = 100,
     seed: int = 1,
-    config: GameConfig = CONFIG,
+    config: GameConfig | None = None,
 ) -> dict:
     validate_strategy(blue_strategy)
     validate_strategy(red_strategy)
+    if config is None:
+        config = get_game_config()
     matches = max(1, min(int(matches), 250))
 
     blue_wins = red_wins = draws = blue_goals = red_goals = 0

@@ -3,21 +3,27 @@ from __future__ import annotations
 import json
 import os
 import re
+from pathlib import Path
+from typing import Any, Tuple
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    InternalServerError,
+    LengthFinishReasonError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
+from pydantic import ValidationError
 
-from game.prompts.strategy_compiler import build_strategy_compiler_prompt
+from game.prompts.strategy_compiler import (
+    StrategyCompilerResponse,
+    build_strategy_compiler_prompt,
+)
 from game.validators import StrategyValidationError, validate_strategy
-
-
-ORCAROUTER_BASE_URL = os.getenv(
-    "ORCAROUTER_BASE_URL",
-    "https://api.orcarouter.ai/v1",
-)
-ORCAROUTER_MODEL = os.getenv(
-    "ORCAROUTER_MODEL",
-    "deepseek/deepseek-v4-flash-free",
-)
 
 
 class LLMConfigurationError(RuntimeError):
@@ -28,21 +34,72 @@ class LLMServiceError(RuntimeError):
     """The external LLM service failed or returned an unusable result."""
 
 
-def _client() -> OpenAI:
+def _discover_fallback_credentials() -> Tuple[str | None, str | None, str | None]:
+    """Look for working API keys in opencode.jsonc if not explicitly set in environment."""
+    home_dir = Path.home()
+    config_path = home_dir / ".config" / "opencode" / "opencode.jsonc"
+    if not config_path.is_file():
+        return None, None, None
+
+    try:
+        raw_text = config_path.read_text(encoding="utf-8")
+        data = json.loads(raw_text)
+        providers = data.get("provider", {})
+        # Check providers in priority order
+        for p_name in ("mwapi", "orcarouter", "hcnsec", "tokenrouter"):
+            p_data = providers.get(p_name)
+            if not p_data:
+                continue
+            opts = p_data.get("options", {})
+            api_key = opts.get("apiKey")
+            base_url = opts.get("baseURL")
+            models = list(p_data.get("models", {}).keys())
+            if api_key and base_url:
+                model_name = models[0] if models else "claude-haiku-4-5-20251001"
+                return api_key, base_url, model_name
+    except Exception:
+        pass
+
+    return None, None, None
+
+
+def _get_llm_config() -> Tuple[str, str, str]:
+    """Retrieve API key, Base URL, and Model name with fallback discovery."""
     api_key = os.getenv("ORCAROUTER_API_KEY")
+    base_url = os.getenv("ORCAROUTER_BASE_URL")
+    model = os.getenv("ORCAROUTER_MODEL")
+
+    if not api_key:
+        fallback_key, fallback_url, fallback_model = _discover_fallback_credentials()
+        if fallback_key:
+            api_key = fallback_key
+            if not base_url and fallback_url:
+                base_url = fallback_url
+            if not model and fallback_model:
+                model = fallback_model
+
+    if not base_url:
+        base_url = "https://api.orcarouter.ai/v1"
+    if not model:
+        model = "deepseek/deepseek-v4-flash-free"
+
     if not api_key:
         raise LLMConfigurationError(
-            "ORCAROUTER_API_KEY تنظیم نشده است. کلید OrcaRouter را فقط روی سرور به‌صورت متغیر محیطی قرار بده."
+            "کلید دسترسی هوش مصنوعی (ORCAROUTER_API_KEY) تنظیم نشده است. لطفاً کلید API را در فایل .env یا متغیرهای محیطی سیستم قرار دهید."
         )
 
+    return api_key, base_url, model
+
+
+def _client(api_key: str, base_url: str) -> OpenAI:
     return OpenAI(
-        base_url=ORCAROUTER_BASE_URL,
+        base_url=base_url,
         api_key=api_key,
-        timeout=45.0,
+        timeout=35.0,
     )
 
 
-def _usage_summary(response) -> dict:
+def _usage_summary(response: Any) -> dict[str, int]:
     usage = getattr(response, "usage", None)
     if usage is None:
         return {
@@ -58,176 +115,193 @@ def _usage_summary(response) -> dict:
     }
 
 
-def _response_content(response) -> str:
-    try:
-        content = response.choices[0].message.content
-    except (AttributeError, IndexError, TypeError) as exc:
-        raise LLMServiceError(
-            "ساختار پاسخ OrcaRouter قابل خواندن نبود."
-        ) from exc
+def _clean_json_text(text: str) -> str:
+    """Strip markdown fences or trailing prose to extract clean JSON string."""
+    if not isinstance(text, str):
+        return ""
+    cleaned = text.lstrip("\ufeff").strip()
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned, re.IGNORECASE)
+    if fence_match:
+        return fence_match.group(1).strip()
+    return cleaned
 
-    if isinstance(content, str):
-        return content.strip()
 
+def _parse_pydantic_response(response: Any) -> StrategyCompilerResponse:
+    """Extract and validate the StrategyCompilerResponse Pydantic model from OpenAI response."""
+    choice = response.choices[0]
+    message = choice.message
+
+    # Check for AI refusal
+    refusal = getattr(message, "refusal", None)
+    if refusal:
+        return StrategyCompilerResponse(
+            valid=False,
+            feedback=[f"مدل از پردازش این درخواست خودداری کرد: {refusal}"],
+            strategy=None,
+        )
+
+    # 1. Direct parsed object from beta.chat.completions.parse
+    parsed = getattr(message, "parsed", None)
+    if isinstance(parsed, StrategyCompilerResponse):
+        return parsed
+    if isinstance(parsed, dict):
+        return StrategyCompilerResponse.model_validate(parsed)
+
+    # 2. Extract from raw content string with clean markdown fence stripping
+    content = message.content or ""
     if isinstance(content, list):
         parts = []
         for part in content:
             if isinstance(part, dict):
-                value = part.get("text") or part.get("content")
+                parts.append(part.get("text") or part.get("content") or "")
             else:
-                value = getattr(part, "text", None)
-            if isinstance(value, str):
-                parts.append(value)
-        return "\n".join(parts).strip()
+                parts.append(getattr(part, "text", "") or "")
+        content = "\n".join(parts)
 
-    return ""
-
-
-def _parse_json_object(content: str) -> dict:
-    """Extract a valid JSON object without inventing or repairing fields."""
-    if not isinstance(content, str):
-        raise json.JSONDecodeError("response is not text", "", 0)
-
-    text = content.lstrip("\ufeff").strip()
-    if not text:
-        raise json.JSONDecodeError("empty response", text, 0)
+    cleaned_json = _clean_json_text(content)
+    if not cleaned_json:
+        raise LLMServiceError("پاسخ دریافتی از مدل هوش مصنوعی خالی بود.")
 
     try:
-        value = json.loads(text)
-        if isinstance(value, dict):
-            return value
-    except json.JSONDecodeError:
-        pass
-
-    fence_match = re.fullmatch(
-        r"\s*```(?:json)?\s*(.*?)\s*```\s*",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    if fence_match:
-        fenced = fence_match.group(1).strip()
-        try:
-            value = json.loads(fenced)
-            if isinstance(value, dict):
-                return value
-        except json.JSONDecodeError:
-            pass
-
-    decoder = json.JSONDecoder()
-    for index, char in enumerate(text):
-        if char != "{":
-            continue
-        try:
-            value, _ = decoder.raw_decode(text[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            return value
-
-    raise json.JSONDecodeError("no valid JSON object found", text, 0)
+        return StrategyCompilerResponse.model_validate_json(cleaned_json)
+    except ValidationError:
+        # Try JSON decoder raw decode for embedded JSON blocks
+        decoder = json.JSONDecoder()
+        for idx, char in enumerate(cleaned_json):
+            if char != "{":
+                continue
+            try:
+                data, _ = decoder.raw_decode(cleaned_json[idx:])
+                if isinstance(data, dict):
+                    return StrategyCompilerResponse.model_validate(data)
+            except Exception:
+                continue
+        raise
 
 
-def _request_orcarouter(text: str, *, strict_retry: bool = False):
-    retry_instruction = ""
-    if strict_retry:
-        retry_instruction = (
-            "\n\nاین درخواست تکراری است چون پاسخ قبلی JSON قابل خواندن نبود. "
-            "این بار پاسخ باید دقیقاً یک JSON object باشد؛ "
-            "اولین کاراکتر { و آخرین کاراکتر } باشد. "
-            "هیچ Markdown، code fence، توضیح یا متن دیگری ننویس."
-        )
-
-    try:
-        return _client().chat.completions.create(
-            model=ORCAROUTER_MODEL,
-            messages=[
-                {
-                    "role": "system",
-                    "content": build_strategy_compiler_prompt(),
-                },
-                {
-                    "role": "user",
-                    "content": (
-                        "متن زیر فقط استراتژی دانش‌آموز است. آن را طبق System Prompt کامپایل کن:\n\n"
-                        + text
-                        + retry_instruction
-                    ),
-                },
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.0 if strict_retry else 0.1,
-            max_tokens=3500,
-        )
-    except Exception as exc:
-        raise LLMServiceError(
-            f"خطا در ارتباط با OrcaRouter: {exc}"
-        ) from exc
-
-
-def _compile_response(response) -> dict:
-    content = _response_content(response)
-    if not content:
-        raise json.JSONDecodeError("empty model response", "", 0)
-    return _parse_json_object(content)
-
-
-def compile_persian_strategy(text: str) -> dict:
+def compile_persian_strategy(text: str) -> dict[str, Any]:
+    """
+    Compile a Persian natural language football strategy into an executable Strategy dictionary
+    using Pydantic structured schemas and the official OpenAI SDK.
+    """
     text = (text or "").strip()
     if not text:
         raise StrategyValidationError("متن استراتژی خالی است.")
     if len(text) > 5000:
-        raise StrategyValidationError("متن استراتژی بیش از حد طولانی است.")
+        raise StrategyValidationError("متن استراتژی بیش از حد مجاز (۵۰۰۰ کاراکتر) است.")
 
-    response = _request_orcarouter(text)
+    api_key, base_url, model = _get_llm_config()
+    client = _client(api_key, base_url)
 
+    system_prompt = build_strategy_compiler_prompt()
+    user_prompt = (
+        "متن زیر فقط استراتژی فوتبال دانش‌آموز است. آن را مطابق با ساختار مشخص‌شده کامپایل کن:\n\n"
+        + text
+    )
+
+    response = None
+    parsed_result = None
+
+    # Step 1: Attempt structured output with client.beta.chat.completions.parse
     try:
-        compiled = _compile_response(response)
-    except json.JSONDecodeError:
-        response = _request_orcarouter(text, strict_retry=True)
-        try:
-            compiled = _compile_response(response)
-        except json.JSONDecodeError as exc:
-            raise LLMServiceError(
-                "مدل حتی پس از تلاش مجدد JSON قابل‌خواندن برنگرداند. دوباره تلاش کن یا متن استراتژی را کمی ساده‌تر بنویس."
-            ) from exc
-
-    if not isinstance(compiled, dict) or "valid" not in compiled:
-        raise LLMServiceError(
-            "خروجی مدل ساختار مورد انتظار را ندارد."
+        response = client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            response_format=StrategyCompilerResponse,
+            temperature=0.1,
+            max_tokens=3500,
         )
-
-    feedback = compiled.get("feedback")
-    if not isinstance(feedback, list):
-        feedback = []
+        parsed_result = _parse_pydantic_response(response)
+    except Exception:
+        # Step 2: Fallback for proxies or models that don't support beta.chat.completions.parse
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": (
+                            user_prompt
+                            + "\n\nپاسخ باید دقیقاً یک JSON معتبر منطبق بر اسکیمای StrategyCompilerResponse باشد."
+                        ),
+                    },
+                ],
+                temperature=0.0,
+                max_tokens=3500,
+            )
+            parsed_result = _parse_pydantic_response(response)
+        except AuthenticationError as exc:
+            raise LLMServiceError(
+                "خطای احراز هویت: کلید دسترسی هوش مصنوعی (API Key) نامعتبر یا منقضی شده است."
+            ) from exc
+        except (PermissionDeniedError, APIStatusError) as exc:
+            status_code = getattr(exc, "status_code", 0)
+            if status_code in (402, 403):
+                raise LLMServiceError(
+                    "اعتبار یا سهمیه مصرف کلید API هوش مصنوعی به پایان رسیده است (Insufficient Quota)."
+                ) from exc
+            raise LLMServiceError(f"خطای سرویس هوش مصنوعی (کد {status_code}): {exc}") from exc
+        except RateLimitError as exc:
+            raise LLMServiceError(
+                "محدودیت تعداد درخواست هوش مصنوعی (Rate Limit) رخ داده است. لطفاً چند لحظه بعد مجدداً تلاش فرمایید."
+            ) from exc
+        except APITimeoutError as exc:
+            raise LLMServiceError(
+                "زمان انتظار برای پاسخ مدل هوش مصنوعی به پایان رسید (Timeout). لطفاً مجدداً تلاش کنید."
+            ) from exc
+        except InternalServerError as exc:
+            raise LLMServiceError(
+                "سرویس‌دهنده هوش مصنوعی موقتاً با اختلال مواجه شده است. لطفاً کمی بعد تلاش کنید."
+            ) from exc
+        except LengthFinishReasonError as exc:
+            raise LLMServiceError(
+                "طول پاسخ مدل از سقف مجاز فراتر رفت. لطفاً استراتژی را خلاصه‌تر بنویسید."
+            ) from exc
+        except APIConnectionError as exc:
+            raise LLMServiceError(
+                "امکان برقراری ارتباط با سرور هوش مصنوعی وجود ندارد. اتصال اینترنت یا آدرس Base URL را بررسی کنید."
+            ) from exc
+        except ValidationError as val_exc:
+            raise LLMServiceError(
+                f"پاسخ هوش مصنوعی با اعتبارسنجی ساختار Pydantic مطابقت ندارد: {val_exc.errors()}"
+            ) from val_exc
+        except Exception as exc:
+            raise LLMServiceError(f"خطای ناشناخته در پردازش استراتژی با هوش مصنوعی: {exc}") from exc
 
     usage_summary = _usage_summary(response)
-    model_name = getattr(response, "model", None) or ORCAROUTER_MODEL
+    model_name = getattr(response, "model", None) or model
 
-    if compiled.get("valid") is not True:
+    # If the student's strategy could not be compiled cleanly
+    if not parsed_result.valid or parsed_result.strategy is None:
         return {
             "valid": False,
-            "feedback": feedback or [
-                "این استراتژی هنوز به شرط‌های دقیق و قابل اجرا تبدیل نمی‌شود."
-            ],
+            "feedback": parsed_result.feedback
+            or ["این استراتژی هنوز به شرط‌های دقیق و قابل اجرا تبدیل نمی‌شود."],
             "strategy": None,
             "model": model_name,
             "usage": usage_summary,
         }
 
-    strategy = compiled.get("strategy")
+    # Convert Pydantic StrategySchema model to Python dictionary
+    strategy_dict = parsed_result.strategy.model_dump()
+    strategy_dict["label"] = "My Bot"
+
+    # Pass through deterministic game engine validator
     try:
-        validate_strategy(strategy)
+        validate_strategy(strategy_dict)
     except StrategyValidationError as exc:
         raise LLMServiceError(
-            f"مدل یک Strategy نامعتبر ساخت و Validator بازی آن را رد کرد: {exc}"
+            f"مدل یک Strategy نامعتبر ساخت و Validator موتور بازی آن را رد کرد: {exc}"
         ) from exc
-
-    strategy["label"] = "My Bot"
 
     return {
         "valid": True,
-        "feedback": feedback,
-        "strategy": strategy,
+        "feedback": parsed_result.feedback,
+        "strategy": strategy_dict,
         "model": model_name,
         "usage": usage_summary,
     }

@@ -49,6 +49,16 @@ POST  /api/compile-strategy/      # ترجمه متن فارسی به استرا
     "counter": "Counter Attack",
     "adaptive": "Adaptive",
     "goalie": "Goal Keeper"
+  },
+  "config": {
+    "width": 1280.0,
+    "height": 720.0,
+    "ground_y": 610.0,
+    "goal_depth": 105.0,
+    "goal_height": 135.0,
+    "ball_radius": 22.0,
+    "gravity": 1700.0,
+    "match_time": 60.0
   }
 }
 ```
