@@ -170,8 +170,23 @@ function renderCompiledStrategy(strategy){
     .sort((a,b)=>a.priority-b.priority)
     .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${r.conditions.map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
     .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
-  $("testBot").disabled=false;
+  markBotReady();
   refreshOpponentMenus();
+}
+function markBotReady(){
+  $("deleteBot").disabled=false;
+  const badge=$("botBadge");if(badge){badge.className="bot-badge on";badge.textContent="آماده ✓";}
+}
+function deleteBot(){
+  if(!myStrategy){showToast("رباتی برای حذف وجود ندارد.","err");return;}
+  myStrategy=null;
+  $("jsonView").textContent="";
+  const hb=$("humanBrain");hb.className="brain empty";
+  hb.innerHTML='هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span>';
+  $("deleteBot").disabled=true;
+  const badge=$("botBadge");if(badge){badge.className="bot-badge off";badge.textContent="ساخته نشده";}
+  refreshOpponentMenus();
+  showToast("ربات حذف شد.","ok");
 }
 async function compileWithAI(){
   const text=$("strategyText").value.trim();
@@ -215,7 +230,7 @@ async function buildBot(){
   try{
     await postJSON("api/validate/",{strategy});myStrategy=strategy;$("jsonView").textContent=JSON.stringify(strategy,null,2);$("humanBrain").classList.remove("empty");
     $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${r.conds.map(condInstanceLabel).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
-    $("testBot").disabled=false;setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
+    markBotReady();setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
   }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
 }
 function setFeedback(text,kind=""){
@@ -613,6 +628,6 @@ function refreshOpponentMenus(){
   if([...$("redSelect").options].some(o=>o.value===currentRed))$("redSelect").value=currentRed;else $("redSelect").value="adaptive";
 }
 async function init(){
-  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());refreshOpponentMenus();quickPreset("smart");$("builderTab").onclick=()=>switchView("builder");$("arenaTab").onclick=()=>switchView("arena");$("addRule").onclick=()=>addSimple();$("buildBot").onclick=buildBot;$("compileWithAI").onclick=compileWithAI;$("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};$("testBot").onclick=()=>{refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));$("playMatch").onclick=runMatch;$("runBatch").onclick=runBatch;$("winClose").onclick=()=>$("winFx").classList.remove("show");drawFrame({time:60,score:[0,0],players:[{x:255,y:538,face:1},{x:967,y:538,face:-1}],ball:{x:640,y:235},debug:[{},{}]});
+  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());refreshOpponentMenus();quickPreset("smart");$("builderTab").onclick=()=>switchView("builder");$("arenaTab").onclick=()=>switchView("arena");$("addRule").onclick=()=>addSimple();$("buildBot").onclick=buildBot;$("compileWithAI").onclick=compileWithAI;$("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};$("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};$("deleteBot").onclick=deleteBot;document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));$("playMatch").onclick=runMatch;$("runBatch").onclick=runBatch;$("winClose").onclick=()=>$("winFx").classList.remove("show");drawFrame({time:60,score:[0,0],players:[{x:255,y:538,face:1},{x:967,y:538,face:-1}],ball:{x:640,y:235},debug:[{},{}]});
 }
 init();

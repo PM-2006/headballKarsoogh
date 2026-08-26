@@ -47,10 +47,14 @@
       <div class="actions"><button id="addRule">＋ تصمیم جدید</button><button id="buildBot" class="primary">✓ ساخت مغز ربات</button></div>
       <div id="feedback" class="feedback">یکی از نمونه‌ها را انتخاب کن یا تصمیم جدید بساز.</div>
     </div>
-    <div class="card">
-      <h2>ربات من</h2><div id="humanBrain" class="brain empty">هنوز Strategy ساخته نشده.</div>
-      <details><summary>جزئیات فنی Strategy JSON</summary><pre id="jsonView"></pre></details>
-      <button id="testBot" class="success" disabled>⚽ آزمایش ربات من</button>
+    <div class="card mybot-card">
+      <div class="mybot-head"><h2>🤖 ربات من</h2><span id="botBadge" class="bot-badge off">ساخته نشده</span></div>
+      <div id="humanBrain" class="brain empty">هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span></div>
+      <details class="json-details"><summary>🔧 جزئیات فنی (Strategy JSON)</summary><pre id="jsonView"></pre></details>
+      <div class="mybot-actions">
+        <button id="testBot" class="success">⚽ آزمایش ربات من</button>
+        <button id="deleteBot" class="btn-danger" disabled>🗑 حذف ربات</button>
+      </div>
     </div>
   </div>
 </section>
