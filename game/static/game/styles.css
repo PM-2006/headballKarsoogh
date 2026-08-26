@@ -23,3 +23,21 @@
 button.mini{padding:6px 9px;font-size:12px;border-radius:8px}
 button.add-cond{background:#123047;border-color:#2f6d97;color:#bfe3ff}
 button.danger{background:#2a1420;border-color:#7b3742;color:#ffc5cb}
+
+/* Auth & User Bar */
+.user-bar{display:flex;align-items:center;gap:10px;font-size:13px}
+.user-name{color:var(--text);font-weight:bold;background:#091522;padding:6px 12px;border-radius:8px;border:1px solid #213956}
+.btn-link{color:var(--blue);text-decoration:none;font-size:12px;padding:6px 10px;border-radius:8px;border:1px solid #213956;background:#091522}
+.btn-link:hover{border-color:var(--blue)}
+.auth-wrapper{min-height:80vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.auth-card{width:100%;max-width:440px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.auth-header{text-align:center;margin-bottom:24px}
+.auth-header h1{font-size:24px;margin-bottom:8px}
+.auth-form{display:flex;flex-direction:column;gap:16px}
+.auth-field{display:flex;flex-direction:column;gap:6px}
+.auth-field label{font-size:13px;font-weight:bold;color:var(--text)}
+.auth-field input{width:100%;padding:11px;font-size:14px;background:#071321;border:1px solid #375170;border-radius:10px}
+.auth-field input:focus{outline:2px solid #2f9bff55;border-color:var(--blue)}
+.auth-submit{width:100%;padding:12px;font-size:15px;margin-top:8px}
+.auth-error{background:#2a1420;border:1px solid #7b3742;color:#ffc5cb;padding:10px 14px;border-radius:9px;font-size:13px;margin-bottom:16px}
+

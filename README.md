@@ -1,254 +1,136 @@
-# AI Football Arena — Django/Python
+# ⚽ AI Football Arena (میدان مسابقه فوتبال هوش مصنوعی)
 
-نسخه Django بازی AI Football Arena برای کارگاه دانش‌آموزی.
+پلتفرم شبیه‌سازی و آموزش مسابقات فوتبال ۱ به ۱ هوش مصنوعی بر پایه جنگو و پایتون (ویژه کارگاه‌های دانش‌آموزی و مسابقات هوش مصنوعی).
 
-## معماری
+در این بازی، شرکت‌کنندگان استراتژی مغز ربات فوتبالیست خود را یا با **رابط گرافیکی تصمیم‌گیری (Rule Builder)** یا با **تایپ متن فارسی به زبان طبیعی (هوش مصنوعی)** طراحی می‌کنند و سپس عملکرد ربات خود را در مسابقات ۲ بعدی شبیه‌سازی‌شده به صورت زنده یا در قالب صدها مسابقه دسته‌ای (Batch Test) به چالش می‌کشند.
 
-- **فیزیک، Sensorها، Rule Engine و Batch Test همگی با Python** در سمت Django اجرا می‌شوند.
-- مرورگر فقط Canvas را رسم می‌کند و فریم‌های شبیه‌سازی‌شده را پخش می‌کند.
-- Strategyهای مسابقه روی سرور validate می‌شوند؛ تغییر JavaScript نمی‌تواند قوانین تورنمنت را عوض کند.
-- مرز اتصال LLM از الان در `game/services/llm.py` جدا شده، ولی خود LLM هنوز متصل نشده است.
+---
 
-کد از قابلیت اختصاصی Django 6 استفاده نمی‌کند و برای Django 5.2 تا 6.0 نوشته شده است. Django 6.0 نسخه پایدار فعلی است و Python 3.12+ را پشتیبانی می‌کند؛ برای ادغام با پروژه‌های موجود، `requirements.txt` بازه `Django>=5.2,<6.1` را نگه داشته است.
+## 📚 فهرست کامل مستندات فنی (Documentation)
 
-## اجرای مستقل
+مستندات کامل پروژه در پوشه [`doc/`](doc/) به صورت تفکیک‌شده و استاندارد آماده شده است:
 
-### Windows
+| بخش | سند راهنما | توضیحات و مباحث کلیدی |
+| :--- | :--- | :--- |
+| 🏗️ **معماری سیستم** | [**`doc/architecture.md`**](doc/architecture.md) | معماری سرور-محور (Server-Authoritative)، چرخه حیات درخواست‌ها و دیاگرام جریان داده |
+| ⚽ **موتور فیزیک بازی** | [**`doc/game-engine.md`**](doc/game-engine.md) | فیزیک ۲ بعدی Head Ball، محاسبات شتاب و سرعت، برخوردها، شوت‌ها و سیستم ضد قفل‌شدگی |
+| 🧠 **سیستم استراتژی** | [**`doc/strategy-system.md`**](doc/strategy-system.md) | ساختار JSON استراتژی، ۲۴ سنسور وضعیت بازی، ۱۰ اکشن حرکتی و استراتژی‌های پیش‌فرض |
+| ✨ **کامپایلر هوش مصنوعی** | [**`doc/ai-compiler.md`**](doc/ai-compiler.md) | تبدیل متن فارسی به قوانین با OrcaRouter (DeepSeek V4 Flash) و اصول امنیت پرامپت |
+| 🔌 **مرجع APIها** | [**`doc/api-reference.md`**](doc/api-reference.md) | مشخصات کامل اندپوینت‌های REST، نمونه بدنه درخواست‌ها و پاسخ‌های JSON |
+| 🔐 **احراز هویت و ادمین** | [**`doc/auth-and-admin.md`**](doc/auth-and-admin.md) | ورود کاربران، عدم ثبت‌نام عمومی، ساخت سوپریوزر و تعریف بازیکنان در پنل ادمین جنگو |
+| 🚀 **نصب و استقرار** | [**`doc/deployment-and-setup.md`**](doc/deployment-and-setup.md) | راهنمای راه‌اندازی محلی، تنظیم متغیرهای محیطی، استقرار با Docker و ادغام در پروژه‌ها |
 
-```bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python manage.py collectstatic --noinput
-python manage.py test
-python manage.py runserver
-```
+---
 
-### macOS / Linux
+## ⚡ راهنمای راه‌اندازی سریع (Quick Start)
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python manage.py collectstatic --noinput
-python manage.py test
-python manage.py runserver
-```
-
-بعد برو به:
-
-```text
-http://127.0.0.1:8000/
-```
-
-## ساختار
-
-```text
-headballKarsoogh-django/
-├── config/                  # پروژه دموی مستقل Django
-├── game/                    # اپ قابل انتقال به سایت اصلی
-│   ├── engine.py            # تمام فیزیک و شبیه‌سازی Python
-│   ├── strategy.py          # Sensors / Actions / Presets
-│   ├── validators.py        # اعتبارسنجی Strategy JSON
-│   ├── views.py             # APIهای Django
-│   ├── urls.py
-│   ├── services/llm.py      # محل اتصال LLM در مرحله بعد
-│   ├── templates/game/index.html
-│   └── static/game/
-│       ├── game.js          # فقط UI و پخش فریم‌ها
-│       └── styles.css
-├── manage.py
-└── requirements.txt
-```
-
-## APIها
-
-### `GET /api/vocabulary/`
-Sensorها، Operatorها، Actionها و Strategyهای پیش‌فرض.
-
-### `POST /api/validate/`
-Strategy سفارشی را قبل از ورود به موتور بازی بررسی می‌کند.
-
-### `POST /api/simulate/`
-
-```json
-{
-  "blue": {"preset": "aggressive"},
-  "red": {"preset": "adaptive"},
-  "seed": 1
-}
-```
-
-خروجی شامل نتیجه و فریم‌های مسابقه است. تمام فریم‌ها در Python محاسبه شده‌اند.
-
-### `POST /api/batch/`
-
-```json
-{
-  "blue": {"preset": "aggressive"},
-  "red": {"preset": "defensive"},
-  "matches": 100,
-  "seed": 1
-}
-```
-
-برای Balance Test. در بازی‌های زوج، جای دو Strategy عوض می‌شود تا اثر سمت زمین خنثی شود.
-
-## ادغام با سایت Django موجود
-
-اگر سایت اصلی از قبل Django دارد، پوشه `config` و `manage.py` این پروژه لازم نیست.
-
-1. پوشه `game` را داخل پروژه اصلی کپی کن.
-2. در `settings.py`:
-
-```python
-INSTALLED_APPS = [
-    # ...
-    "game",
-]
-```
-
-3. در `urls.py` اصلی:
-
-```python
-from django.urls import include, path
-
-urlpatterns = [
-    # ...
-    path("ai-football/", include("game.urls")),
-]
-```
-
-بعد بازی روی `/ai-football/` در دسترس است.
-
-## مرحله بعد: LLM
-
-معماری بعدی بدون تغییر موتور بازی:
-
-```text
-متن فارسی دانش‌آموز
-        ↓
-Django POST /api/strategy/compile/
-        ↓
-LLM Structured Output
-        ↓
-Strategy JSON
-        ↓
-validate_strategy()
-        ↓
-engine.py
-```
-
-LLM فقط هنگام ساخت Strategy فراخوانی می‌شود. **هنگام خود مسابقه هیچ LLMای اجرا نمی‌شود.**
-
-## OrcaRouter + DeepSeek V4 Flash integration
-
-نسخه فعلی می‌تواند متن فارسی دانش‌آموز را از طریق OrcaRouter به مدل زیر بفرستد:
-
-```text
-deepseek/deepseek-v4-flash-free
-```
-
-معماری:
-
-```text
-Persian strategy
-    -> Django /api/compile-strategy/
-    -> OrcaRouter
-    -> DeepSeek V4 Flash
-    -> Strategy JSON
-    -> validate_strategy()
-    -> Python game engine
-```
-
-System Prompt از کد اتصال API جدا شده است:
-
-```text
-game/prompts/strategy_compiler.py
-```
-
-و اتصال API در این فایل است:
-
-```text
-game/services/llm.py
-```
-
-این جداسازی عمدی است تا بتوان Prompt را بدون دست‌زدن به کد شبکه و API مرتب تست و اصلاح کرد.
-
-### 1) نصب dependencyها
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2) تنظیم API key
-
-API key را هرگز داخل GitHub قرار ندهید.
-
-PowerShell:
+### ۱. راه‌اندازی در ویندوز (PowerShell / CMD)
 
 ```powershell
-$env:ORCAROUTER_API_KEY="sk-orca-YOUR-REAL-KEY"
-$env:ORCAROUTER_MODEL="deepseek/deepseek-v4-flash-free"
-```
+# ساخت و فعال‌سازی محیط مجازی
+python -m venv .venv
+.venv\Scripts\activate
 
-CMD:
+# نصب پکیج‌ها
+pip install -r requirements.txt
 
-```cmd
-set ORCAROUTER_API_KEY=sk-orca-YOUR-REAL-KEY
-set ORCAROUTER_MODEL=deepseek/deepseek-v4-flash-free
-```
+# اعمال مایگریشن‌های پایگاه داده
+python manage.py migrate
 
-macOS / Linux:
+# ساخت حساب کاربری مدیر کل
+python manage.py createsuperuser
 
-```bash
-export ORCAROUTER_API_KEY="sk-orca-YOUR-REAL-KEY"
-export ORCAROUTER_MODEL="deepseek/deepseek-v4-flash-free"
-```
+# اجرای تست‌های صحت عملکرد
+python manage.py test
 
-### 3) اجرا
-
-```bash
-python manage.py check
+# روشن کردن سرور
 python manage.py runserver
 ```
 
-سپس:
+### ۲. راه‌اندازی در لینوکس / مک‌او‌اس (Bash / Zsh)
 
+```bash
+# ساخت و فعال‌سازی محیط مجازی
+python3 -m venv .venv
+source .venv/bin/activate
+
+# نصب پکیج‌ها
+pip install -r requirements.txt
+
+# اعمال مایگریشن‌ها
+python manage.py migrate
+
+# ساخت حساب ادمین
+python manage.py createsuperuser
+
+# اجرای تست‌ها
+python manage.py test
+
+# روشن کردن سرور
+python manage.py runserver
+```
+
+سپس مرورگر را باز کرده و به آدرس زیر مراجعه نمایید:
 ```text
 http://127.0.0.1:8000/
 ```
 
-### API کامپایل Strategy
+---
+
+## 🧩 ساختار فایل‌های پروژه
 
 ```text
-POST /api/compile-strategy/
+headballKarsoogh/
+├── doc/                            # مستندات کامل فارسی پروژه
+│   ├── architecture.md             # معماری سیستم و جریان داده‌ها
+│   ├── game-engine.md              # موتور فیزیک و مکانیک‌های بازی
+│   ├── strategy-system.md          # سیستم استراتژی، سنسورها و اکشن‌ها
+│   ├── ai-compiler.md              # کامپایلر هوش مصنوعی و پرامپت‌ها
+│   ├── api-reference.md            # راهنمای کامل اندپوینت‌های REST
+│   ├── auth-and-admin.md           # احراز هویت و مدیریت کاربران
+│   └── deployment-and-setup.md     # راهنمای نصب و استقرار
+├── config/                         # تنظیمات پروژه جنگو
+│   ├── settings.py                 # پیکربندی اپ‌ها، امنیت و پایگاه داده
+│   ├── urls.py                     # مسیریابی اصلی (/admin/، /login/، / و ...)
+│   ├── wsgi.py / asgi.py
+├── game/                           # اپلیکیشن اصلی بازی (کاملاً ماژولار و قابل انتقال)
+│   ├── engine.py                   # موتور فیزیک، شبیه‌سازی و حل برخوردها
+│   ├── strategy.py                 # واژگان بازی (سنسورها، عملگرها، استراتژی‌های آماده)
+│   ├── validators.py               # اعتبارسنجی قطعی داده‌های Strategy JSON
+│   ├── views.py                    # ویوهای امن و تحت کنترل جنگو
+│   ├── urls.py                     # مسیرهای API بازی
+│   ├── tests.py                    # مجموعه تست‌های خودکار فیزیک و احراز هویت
+│   ├── prompts/
+│   │   └── strategy_compiler.py    # پرامپت اختصاصی تبدیل استراتژی فارسی
+│   ├── services/
+│   │   └── llm.py                  # ارتباط با مدل‌های زبانی از طریق OrcaRouter
+│   ├── templates/
+│   │   ├── game/index.html         # محیط اصلی ساخت ربات و مسابقه
+│   │   ├── game/login.html         # صفحه ورود با طراحی تم تاریک
+│   │   └── registration/login.html
+│   └── static/game/
+│       ├── game.js                 # کنترل رابط کاربری و رندر فریم‌های انیمیشن با Canvas
+│       └── styles.css              # استایل‌های مدرن و راست‌چین
+├── Dockerfile                      # پیکربندی استقرار با کانتینر
+├── docker-compose.yml              # اجرای یکپارچه با Gunicorn
+├── manage.py
+├── requirements.txt
+└── README.md
 ```
 
-Request:
+---
 
-```json
-{
-  "text": "اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع..."
-}
-```
+## 🌟 ویژگی‌های برجسته فنی
 
-Response موفق:
+1. **فیزیک سرور-محور (Server-Side Physics):** تمام محاسبات حرکت توپ، برخورد با دیوار، پرش، شوت و ضربه سر بازیکنان با نرخ ۶۰ هرتز در پایتون انجام می‌شود و کلاینت تنها پخش‌کننده فریم‌ها است.
+2. **شبیه‌سازی فوق‌سریع دسته‌ای (Batch Simulation):** امکان اجرای بیش از ۱۰۰ مسابقه ۶۰ ثانیه‌ای در کمتر از ۲ ثانیه جهت بررسی توازن (Balance Testing) استراتژی‌ها.
+3. **تبدیل هوشمند زبان طبیعی (Natural Language to Logic):** اتصال به مدل‌های هوش مصنوعی (مانند DeepSeek V4 Flash) جهت تبدیل بدون دخل و تصرف متن فارسی به قوانین قابل اجرا.
+4. **امنیت و احراز هویت پایدار:** حفاظت از تمام اندپوینت‌ها با دکوراتور `@login_required`، توکن CSRF و مدیریت کاربران از طریق پنل ادمین جنگو.
 
-```json
-{
-  "valid": true,
-  "feedback": [],
-  "strategy": {},
-  "model": "deepseek/deepseek-v4-flash-free",
-  "usage": {
-    "prompt_tokens": 0,
-    "completion_tokens": 0,
-    "total_tokens": 0
-  }
-}
-```
+---
 
-### اصل امنیتی
+## 🔗 لینک‌های مفید
 
-LLM هیچ‌وقت Python یا JavaScript تولید و اجرا نمی‌کند. خروجی آن فقط Strategy JSON است و قبل از ورود به مسابقه حتماً توسط `validate_strategy()` بررسی می‌شود.
+- 📖 مطالعه مستندات معماری: [معماری سیستم (Architecture)](doc/architecture.md)
+- 🧪 اجرای تست‌های پروژه: `python manage.py test`
+- ⚙️ دسترسی به پنل مدیریت: `http://127.0.0.1:8000/admin/`

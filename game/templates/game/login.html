@@ -1,0 +1,47 @@
+{% load static %}
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ورود | AI Football Arena</title>
+<link rel="stylesheet" href="{% static 'game/styles.css' %}">
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-header">
+      <h1>⚽ AI Football Arena</h1>
+      <p class="muted">برای دسترسی به محیط بازی وارد حساب کاربری خود شوید.</p>
+    </div>
+
+    {% if form.errors %}
+      <div class="auth-error">
+        نام کاربری یا گذرواژه وارد شده نادرست است.
+      </div>
+    {% endif %}
+
+    <form method="post" action="{% url 'login' %}" class="auth-form">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+
+      <div class="auth-field">
+        <label for="id_username">نام کاربری</label>
+        <input type="text" name="username" id="id_username" autocomplete="username" required autofocus placeholder="نام کاربری">
+      </div>
+
+      <div class="auth-field">
+        <label for="id_password">گذرواژه</label>
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required placeholder="گذرواژه">
+      </div>
+
+      <button type="submit" class="primary auth-submit">ورود به بازی</button>
+    </form>
+
+    <div style="margin-top: 20px; text-align: center;">
+      <p class="muted">حساب‌های کاربری توسط مدیر سامانه در پنل مدیریت ایجاد می‌شوند.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

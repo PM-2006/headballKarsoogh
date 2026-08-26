@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -33,14 +34,17 @@ def _resolve_strategy(payload, key):
         raise StrategyValidationError(f"{key} must contain either 'preset' or 'strategy'.")
     return validate_strategy(strategy)
 
+@login_required
 @ensure_csrf_cookie
 def index(request):
     return render(request, "game/index.html")
 
+@login_required
 @require_GET
 def api_vocabulary(request):
     return JsonResponse(vocabulary())
 
+@login_required
 @require_POST
 def api_validate_strategy(request):
     try:
@@ -50,6 +54,7 @@ def api_validate_strategy(request):
     except StrategyValidationError as exc:
         return JsonResponse({"valid": False, "error": str(exc)}, status=400)
 
+@login_required
 @require_POST
 def api_simulate(request):
     try:
@@ -61,6 +66,7 @@ def api_simulate(request):
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
+@login_required
 @require_POST
 def api_batch(request):
     try:
@@ -74,6 +80,7 @@ def api_batch(request):
         return JsonResponse({"error": str(exc)}, status=400)
 
 
+@login_required
 @require_POST
 def api_compile_strategy(request):
     try:
