@@ -147,14 +147,20 @@ function validateReplay(frames,fps){
     throw new Error(`فریم شماره ${invalidIndex} از سرور معتبر نیست.`);
   }
 }
+const PLAYBACK_MAX_STEP_MS=100; // ignore gaps bigger than this (tab switch / hitch)
 function playFrames(frames,fps){
   validateReplay(frames,fps);
   const frameMs=1000/fps;
-  const start=performance.now();
+  let elapsed=0,last=null;
   drawFrame(frames[0]);
   if(frames.length===1){playbackHandle=null;return}
   function tick(now){
-    const idx=Math.min(frames.length-1,Math.floor((now-start)/frameMs));
+    // Advance by real time, but clamp each step. When the tab is hidden rAF
+    // pauses; on return the first delta is huge, and without this clamp the
+    // replay would jump straight to the final frame (players/ball "vanish").
+    if(last!==null)elapsed+=Math.min(now-last,PLAYBACK_MAX_STEP_MS);
+    last=now;
+    const idx=Math.min(frames.length-1,Math.floor(elapsed/frameMs));
     drawFrame(frames[idx]);
     if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);else playbackHandle=null;
   }

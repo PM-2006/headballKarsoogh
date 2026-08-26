@@ -86,6 +86,20 @@ class GameConfig:
     contested_kick_recoil: float = 135.0
     contested_escape_x: float = 175.0
 
+    # Anti-stall watchdog. Some situations still leave the ball frozen:
+    # wedged on the inner roof of a goal recess where players cannot reach it,
+    # or asleep on the ground in a spot both bots ignore. If the ball stays
+    # slower than stall_speed_threshold continuously, we first give it one
+    # gentle arcade "throw-in" pop toward the center, and if it is still dead
+    # a bit later we force a fresh kickoff. This guarantees the match always
+    # keeps moving. All nudges are deterministic (toward pitch center), so
+    # batch/side-swapped comparisons stay fair.
+    stall_speed_threshold: float = 45.0   # px/s; below this the ball is "dead"
+    stall_pop_after: float = 2.5          # seconds dead before the gentle pop
+    stall_kickoff_after: float = 5.0      # seconds dead before a full kickoff
+    stall_pop_vx: float = 220.0           # horizontal nudge toward center
+    stall_pop_vy: float = 640.0           # upward pop strength
+
 
 CONFIG = GameConfig()
 
@@ -119,6 +133,8 @@ class World:
     freeze: float = 0.0
     debug: list[dict] = field(default_factory=lambda: [{}, {}])
     contest_escape_dir: int = 1
+    stall_time: float = 0.0
+    stall_popped: bool = False
 
 
 @dataclass(frozen=True)
@@ -822,6 +838,41 @@ def _detect_goal(world: World, previous_x: float, config: GameConfig):
     return None
 
 
+def _resolve_stall(
+    world: World,
+    dt: float,
+    rng: random.Random,
+    config: GameConfig,
+):
+    """Keep the match alive if the ball gets stuck (goal-roof wedge, asleep on
+    the ground, etc.). Escalates: gentle pop first, full kickoff if still dead.
+    """
+    ball = world.ball
+    speed = hypot(ball.vx, ball.vy)
+
+    # A frozen kickoff or a moving ball means nothing is stuck.
+    if world.freeze > 0 or speed > config.stall_speed_threshold:
+        world.stall_time = 0.0
+        world.stall_popped = False
+        return
+
+    world.stall_time += dt
+
+    if world.stall_time >= config.stall_kickoff_after:
+        # Still dead after the gentle pop had time to work: restart cleanly.
+        _kickoff(world, rng, config, initial=True)
+        world.stall_time = 0.0
+        world.stall_popped = False
+    elif world.stall_time >= config.stall_pop_after and not world.stall_popped:
+        # One arcade "throw-in": lift the ball and send it toward the center
+        # of the pitch (deterministic, so neither side is favored).
+        toward_center = 1.0 if ball.x < config.width / 2 else -1.0
+        ball.vx = toward_center * config.stall_pop_vx
+        ball.vy = -config.stall_pop_vy
+        _limit_ball_speed(ball, config)
+        world.stall_popped = True
+
+
 def _frame(world: World) -> dict:
     return {
         "time": round(world.remaining_time, 3),
@@ -926,6 +977,8 @@ def simulate_match(
                 scorer = _detect_goal(world, previous_ball_x, config)
                 if scorer is not None:
                     break
+
+            _resolve_stall(world, frame_dt, rng, config)
 
         if record_frames and step_index % record_every == 0:
             frames.append(_frame(world))
