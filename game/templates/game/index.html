@@ -17,19 +17,21 @@
       <p>زمین بازیِ رباتِ فوتبالیست — استراتژی‌ات را بساز و به میدان بفرست.</p>
     </div>
   </div>
-  <div class="nav">
-    <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
-    <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
-  </div>
-  <div class="user-bar">
-    <span class="user-name">👤 {{ request.user.username }}</span>
-    {% if request.user.is_staff %}
-      <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
-    {% endif %}
-    <form action="{% url 'logout' %}" method="post" style="display:inline;margin:0;">
-      {% csrf_token %}
-      <button type="submit" class="mini danger">خروج</button>
-    </form>
+  <div class="header-controls">
+    <div class="user-bar">
+      <span class="user-name">👤 {{ request.user.username }}</span>
+      {% if request.user.is_staff %}
+        <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
+      {% endif %}
+      <form action="{% url 'logout' %}" method="post" style="display:inline;margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="mini danger">خروج</button>
+      </form>
+    </div>
+    <div class="nav">
+      <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
+      <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+    </div>
   </div>
 </header>
 {% csrf_token %}
