@@ -8,3 +8,18 @@
 .llm-meta{font-size:11px;color:#8fa8c1;margin-top:8px;direction:rtl}
 .separator{display:flex;align-items:center;gap:8px;color:#7188a2;font-size:11px;margin:14px 0}
 .separator:before,.separator:after{content:"";height:1px;background:#263b59;flex:1}
+
+/* Multi-condition rule builder */
+.rule-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.rule-head .spacer{flex:1}
+.rule-body{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rule-action{display:flex;align-items:center;gap:8px;margin-top:9px}
+.kw{color:var(--muted);font-weight:800;white-space:nowrap}
+.conds{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cond-line{display:flex;align-items:center;gap:6px;background:#0d1b2c;border:1px solid #24405f;border-radius:9px;padding:4px 6px}
+.cond-line select{max-width:230px;border:0;background:transparent;padding:5px 4px}
+.cond-val{width:74px;background:#071321;border:1px solid #375170;border-radius:8px;padding:6px;text-align:center}
+.and-tag{color:#7fd4ff;font-weight:800;font-size:12px;padding:0 2px}
+button.mini{padding:6px 9px;font-size:12px;border-radius:8px}
+button.add-cond{background:#123047;border-color:#2f6d97;color:#bfe3ff}
+button.danger{background:#2a1420;border-color:#7b3742;color:#ffc5cb}

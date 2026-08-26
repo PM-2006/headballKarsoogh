@@ -4,6 +4,9 @@ let vocabulary = null;
 let myStrategy = null;
 let playbackHandle = null;
 
+// Fixed conditions carry a ready `conditions` array. Parametric conditions
+// carry a `param` whose number the student fills in ("…" in the label is
+// replaced by that value). Both kinds can be combined with AND inside one rule.
 const simpleConditions = {
   ball_own:{label:"توپ در نیمه‌ی خودمان است",conditions:[{left:"ball_in_own_half",operator:"==",rightType:"value",right:true}]},
   ball_enemy:{label:"توپ در نیمه‌ی حریف است",conditions:[{left:"ball_in_enemy_half",operator:"==",rightType:"value",right:true}]},
@@ -12,10 +15,28 @@ const simpleConditions = {
   can_kick:{label:"می‌توانم به توپ ضربه بزنم",conditions:[{left:"can_kick",operator:"==",rightType:"value",right:true}]},
   ball_above:{label:"توپ بالای سر من است",conditions:[{left:"ball_above_me",operator:"==",rightType:"value",right:true}]},
   incoming:{label:"توپ به سمت من می‌آید",conditions:[{left:"ball_moving_toward_me",operator:"==",rightType:"value",right:true}]},
+  on_ground:{label:"روی زمین هستم",conditions:[{left:"on_ground",operator:"==",rightType:"value",right:true}]},
   losing:{label:"از حریف عقب هستم",conditions:[{left:"score_difference",operator:"<",rightType:"value",right:0}]},
   winning:{label:"از حریف جلو هستم",conditions:[{left:"score_difference",operator:">",rightType:"value",right:0}]},
-  last20:{label:"کمتر از ۲۰ ثانیه مانده",conditions:[{left:"remaining_time",operator:"<",rightType:"value",right:20}]}
+  time_left_lt:{label:"کمتر از … ثانیه مانده",param:{left:"remaining_time",operator:"<",unit:"ثانیه",default:30}},
+  time_left_gt:{label:"بیشتر از … ثانیه مانده",param:{left:"remaining_time",operator:">",unit:"ثانیه",default:30}},
+  ball_near:{label:"فاصله‌ام تا توپ کمتر از …",param:{left:"distance_to_ball",operator:"<",unit:"پیکسل",default:150}},
+  lead_gt:{label:"اختلاف گلم بیشتر از …",param:{left:"score_difference",operator:">",unit:"گل",default:1}},
 };
+function newCond(key){const def=simpleConditions[key];return {key,value:def&&def.param?def.param.default:null}}
+function mkRule(condKeys,action){return {id:crypto.randomUUID(),conds:condKeys.map(newCond),action}}
+function ruleConditionsJSON(rule){
+  return rule.conds.flatMap(ci=>{
+    const def=simpleConditions[ci.key];
+    if(def&&def.param)return [{left:def.param.left,operator:def.param.operator,rightType:"value",right:Number(ci.value)}];
+    return def.conditions.map(c=>({...c}));
+  });
+}
+function condInstanceLabel(ci){
+  const def=simpleConditions[ci.key]||{};
+  if(def.param)return def.label.replace("…",ci.value);
+  return def.label||ci.key;
+}
 const simpleActions = {
   MOVE_TO_BALL:"به سمت توپ برو",MOVE_TO_GOAL:"برگرد سمت دروازه",MOVE_TO_CENTER:"به مرکز زمین برو",
   JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_CLEAR:"توپ را محکم دفع کن",IDLE:"صبر کن"
@@ -29,27 +50,74 @@ function switchView(which){
 }
 function conditionOptions(selected){return Object.entries(simpleConditions).map(([k,v])=>`<option value="${k}" ${k===selected?"selected":""}>${v.label}</option>`).join("")}
 function actionOptions(selected){return Object.entries(simpleActions).map(([k,v])=>`<option value="${k}" ${k===selected?"selected":""}>${v}</option>`).join("")}
+function condRowHTML(ruleId,ci,index,canRemove){
+  const def=simpleConditions[ci.key]||{};
+  const valInput=def.param?`<input class="cond-val" type="number" data-rule="${ruleId}" data-ci="${index}" data-field="value" value="${ci.value}">`:"";
+  const unit=def.param?`<span class="muted">${def.param.unit}</span>`:"";
+  const removeBtn=canRemove?`<button class="mini danger" data-rule="${ruleId}" data-ci="${index}" data-remove-cond="1" title="حذف این شرط">✕</button>`:"";
+  return `<div class="cond-line"><select data-rule="${ruleId}" data-ci="${index}" data-field="cond">${conditionOptions(ci.key)}</select>${valInput}${unit}${removeBtn}</div>`;
+}
 function renderSimpleRules(){
-  $("simpleRules").innerHTML=simpleRules.map((r,i)=>`<div class="simple-rule"><div class="simple-row"><b>تصمیم ${i+1}</b><span>اگر</span><select data-id="${r.id}" data-field="cond">${conditionOptions(r.cond)}</select><span>→</span><select data-id="${r.id}" data-field="action">${actionOptions(r.action)}</select><button data-up="${r.id}">↑</button><button data-down="${r.id}">↓</button><button data-remove="${r.id}">حذف</button></div></div>`).join("");
-  document.querySelectorAll("[data-field]").forEach(el=>el.onchange=()=>{const row=simpleRules.find(r=>r.id===el.dataset.id);row[el.dataset.field]=el.value});
-  document.querySelectorAll("[data-remove]").forEach(el=>el.onclick=()=>{simpleRules=simpleRules.filter(r=>r.id!==el.dataset.remove);renderSimpleRules()});
-  document.querySelectorAll("[data-up]").forEach(el=>el.onclick=()=>moveRule(el.dataset.up,-1));
-  document.querySelectorAll("[data-down]").forEach(el=>el.onclick=()=>moveRule(el.dataset.down,1));
+  $("simpleRules").innerHTML=simpleRules.map((r,i)=>{
+    const conds=r.conds.map((ci,ci_i)=>condRowHTML(r.id,ci,ci_i,r.conds.length>1)).join(`<div class="and-tag">و</div>`);
+    return `<div class="simple-rule">
+      <div class="rule-head"><b>تصمیم ${i+1}</b><span class="spacer"></span><button class="mini" data-up="${r.id}" title="بالا">↑</button><button class="mini" data-down="${r.id}" title="پایین">↓</button><button class="mini danger" data-remove="${r.id}">حذف</button></div>
+      <div class="rule-body"><span class="kw">اگر</span><div class="conds">${conds}</div><button class="mini add-cond" data-add-cond="${r.id}" title="افزودن شرط با «و»">＋ و</button></div>
+      <div class="rule-action"><span class="kw">آنگاه →</span><select data-rule="${r.id}" data-field="action">${actionOptions(r.action)}</select></div>
+    </div>`;
+  }).join("");
+  bindRuleEvents();
+}
+function bindRuleEvents(){
+  const Q=s=>document.querySelectorAll(s);
+  Q("[data-field='cond']").forEach(el=>el.onchange=()=>{
+    const r=simpleRules.find(x=>x.id===el.dataset.rule);const ci=r.conds[+el.dataset.ci];
+    ci.key=el.value;const def=simpleConditions[ci.key];ci.value=def&&def.param?def.param.default:null;renderSimpleRules();
+  });
+  Q("[data-field='value']").forEach(el=>el.oninput=()=>{simpleRules.find(x=>x.id===el.dataset.rule).conds[+el.dataset.ci].value=el.value});
+  Q("[data-field='action']").forEach(el=>el.onchange=()=>{simpleRules.find(x=>x.id===el.dataset.rule).action=el.value});
+  Q("[data-add-cond]").forEach(el=>el.onclick=()=>{simpleRules.find(x=>x.id===el.dataset.addCond).conds.push(newCond("ball_own"));renderSimpleRules()});
+  Q("[data-remove-cond]").forEach(el=>el.onclick=()=>{simpleRules.find(x=>x.id===el.dataset.rule).conds.splice(+el.dataset.ci,1);renderSimpleRules()});
+  Q("[data-remove]").forEach(el=>el.onclick=()=>{simpleRules=simpleRules.filter(r=>r.id!==el.dataset.remove);renderSimpleRules()});
+  Q("[data-up]").forEach(el=>el.onclick=()=>moveRule(el.dataset.up,-1));
+  Q("[data-down]").forEach(el=>el.onclick=()=>moveRule(el.dataset.down,1));
 }
 function moveRule(id,dir){const i=simpleRules.findIndex(r=>r.id===id),j=i+dir;if(j<0||j>=simpleRules.length)return;[simpleRules[i],simpleRules[j]]=[simpleRules[j],simpleRules[i]];renderSimpleRules()}
-function addSimple(cond="i_closer",action="MOVE_TO_BALL"){simpleRules.push({id:crypto.randomUUID(),cond,action});renderSimpleRules()}
+function addSimple(){simpleRules.push(mkRule(["i_closer"],"MOVE_TO_BALL"));renderSimpleRules()}
 function quickPreset(name){
-  const id=()=>crypto.randomUUID();
-  if(name==="attack")simpleRules=[{id:id(),cond:"can_kick",action:"KICK_LOW"},{id:id(),cond:"i_closer",action:"MOVE_TO_BALL"}];
-  if(name==="defend")simpleRules=[{id:id(),cond:"ball_own",action:"MOVE_TO_GOAL"},{id:id(),cond:"can_kick",action:"KICK_CLEAR"}];
-  if(name==="smart")simpleRules=[{id:id(),cond:"can_kick",action:"KICK_LOW"},{id:id(),cond:"opp_closer",action:"MOVE_TO_GOAL"},{id:id(),cond:"i_closer",action:"MOVE_TO_BALL"},{id:id(),cond:"ball_above",action:"JUMP"}];
-  if(name==="late")simpleRules=[{id:id(),cond:"last20",action:"MOVE_TO_BALL"},{id:id(),cond:"losing",action:"MOVE_TO_BALL"},{id:id(),cond:"winning",action:"MOVE_TO_GOAL"},{id:id(),cond:"can_kick",action:"KICK_LOW"}];
+  if(name==="attack")simpleRules=[mkRule(["can_kick"],"KICK_LOW"),mkRule(["i_closer"],"MOVE_TO_BALL")];
+  if(name==="defend")simpleRules=[mkRule(["ball_own"],"MOVE_TO_GOAL"),mkRule(["can_kick"],"KICK_CLEAR")];
+  if(name==="smart")simpleRules=[mkRule(["can_kick"],"KICK_LOW"),mkRule(["opp_closer"],"MOVE_TO_GOAL"),mkRule(["i_closer"],"MOVE_TO_BALL"),mkRule(["ball_above"],"JUMP")];
+  if(name==="late")simpleRules=[mkRule(["time_left_lt","losing"],"MOVE_TO_BALL"),mkRule(["time_left_lt","winning"],"MOVE_TO_GOAL"),mkRule(["can_kick"],"KICK_LOW")];
   renderSimpleRules();
 }
 async function postJSON(url,payload){
-  const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":csrf},body:JSON.stringify(payload)});
-  const data=await response.json();if(!response.ok)throw new Error(data.error||"Request failed");return data;
+  let response;
+  try{
+    response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":csrf},body:JSON.stringify(payload)});
+  }catch(e){throw new Error("ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و اینترنت وصل است، بعد دوباره تلاش کن.");}
+  let data;
+  try{data=await response.json();}
+  catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
+  if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
+  return data;
 }
+// Turn any raw error into a short, clear Persian message a student can act on.
+function humanizeError(err){
+  const raw=((err&&err.message)||String(err||"")).trim();
+  if(!raw)return "یک خطای ناشناخته رخ داد. دوباره تلاش کن.";
+  if(/[؀-ۿ]/.test(raw))return raw; // already Persian — show as-is
+  const map=[
+    [/failed to fetch|networkerror|load failed|ارتباط/i,"ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و دوباره تلاش کن."],
+    [/csrf/i,"نشست تو منقضی شده. صفحه را تازه کن (F5) و دوباره امتحان کن."],
+    [/preset.*strategy|strategy.*preset/i,"اول باید یک ربات بسازی یا یک نمونه انتخاب کنی."],
+    [/timeout|timed out/i,"سرور دیر جواب داد. یک بار دیگر امتحان کن."],
+    [/json/i,"پاسخ سرور قابل خواندن نبود. دوباره تلاش کن."],
+  ];
+  for(const [re,msg] of map)if(re.test(raw))return msg;
+  return "مشکلی پیش آمد: "+raw;
+}
+function setArenaMsg(text,kind=""){const el=$("arenaMsg");if(!el)return;if(!text){el.style.display="none";el.textContent="";return}el.style.display="block";el.textContent=text;el.className="feedback "+kind;}
 
 const sensorFa = {
   my_x:"موقعیت من", opponent_x:"موقعیت حریف", ball_x:"موقعیت افقی توپ", ball_y:"ارتفاع توپ",
@@ -104,7 +172,7 @@ async function compileWithAI(){
     const extra=(result.feedback || []).join(" ");
     setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد."+(extra ? " "+extra : ""),"ok");
   }catch(err){
-    setFeedback("❌ "+err.message,"err");
+    setFeedback("❌ "+humanizeError(err),"err");
   }finally{
     $("compileWithAI").disabled=false;
     $("compileWithAI").textContent="✨ تبدیل استراتژی";
@@ -113,22 +181,33 @@ async function compileWithAI(){
 
 async function buildBot(){
   if(!simpleRules.length){setFeedback("حداقل یک تصمیم بساز.","err");return}
-  const strategy={label:"My Bot",rules:simpleRules.map((r,i)=>({priority:i+1,conditions:simpleConditions[r.cond].conditions.map(c=>({...c})),action:r.action})),default_action:"IDLE"};
+  for(let i=0;i<simpleRules.length;i++){
+    const r=simpleRules[i];
+    if(!r.conds.length){setFeedback(`❌ تصمیم ${i+1} هیچ شرطی ندارد. حداقل یک «اگر» لازم است.`,"err");return}
+    for(const ci of r.conds){
+      const def=simpleConditions[ci.key];
+      if(def&&def.param&&!Number.isFinite(Number(ci.value))){
+        setFeedback(`❌ در تصمیم ${i+1} برای «${def.label.replace("…","___")}» یک عدد معتبر وارد کن.`,"err");return;
+      }
+    }
+  }
+  const strategy={label:"My Bot",rules:simpleRules.map((r,i)=>({priority:i+1,conditions:ruleConditionsJSON(r),action:r.action})),default_action:"IDLE"};
   try{
     await postJSON("api/validate/",{strategy});myStrategy=strategy;$("jsonView").textContent=JSON.stringify(strategy,null,2);$("humanBrain").classList.remove("empty");
-    $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${simpleConditions[r.cond].label}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
+    $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${r.conds.map(condInstanceLabel).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
     $("testBot").disabled=false;setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
-  }catch(err){setFeedback("❌ "+err.message,"err")}
+  }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
 }
 function setFeedback(text,kind=""){$("feedback").textContent=text;$("feedback").className="feedback "+kind}
 function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw new Error("اول My Bot را بساز.");return{strategy:myStrategy}}return{preset:selection}}
 async function runMatch(){
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
+  setArenaMsg("");
   try{
     $("playMatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;
     const result=await postJSON("api/simulate/",{blue:strategyPayload(blue),red:strategyPayload(red),seed:Number($("seedInput").value)||1});
     $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);playFrames(result.frames,result.record_fps);
-  }catch(err){alert(err.message)}finally{$("playMatch").disabled=false}
+  }catch(err){setArenaMsg("❌ "+humanizeError(err),"err")}finally{$("playMatch").disabled=false}
 }
 function isFiniteNumber(value){return typeof value==="number"&&Number.isFinite(value)}
 function isValidReplayFrame(frame){
@@ -322,7 +401,7 @@ function drawPlayer(ctx,p,color,w,h,G){
 }
 async function runBatch(){
   try{$("runBatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});$("batchResult").innerHTML=`<b>${labelFor(blue)}</b>: ${result.blue_wins} برد — ${result.blue_goals} گل<br><b>${labelFor(red)}</b>: ${result.red_wins} برد — ${result.red_goals} گل<br>مساوی: ${result.draws}<br>میانگین گل: ${result.blue_goals_per_match} / ${result.red_goals_per_match}`}
-  catch(err){$("batchResult").textContent=err.message}finally{$("runBatch").disabled=false}
+  catch(err){$("batchResult").textContent="❌ "+humanizeError(err)}finally{$("runBatch").disabled=false}
 }
 function labelFor(key){if(key==="mybot")return"My Bot";return vocabulary?.presets?.[key]||key}
 function refreshOpponentMenus(){

@@ -859,7 +859,9 @@ def _resolve_stall(
     world.stall_time += dt
 
     if world.stall_time >= config.stall_kickoff_after:
-        # Still dead after the gentle pop had time to work: restart cleanly.
+        # Still dead after the gentle pop: re-drop the ball from the top of the
+        # field, exactly like a post-goal restart. The SCORE IS PRESERVED --
+        # this only repositions the ball/players, it does not restart the match.
         _kickoff(world, rng, config, initial=True)
         world.stall_time = 0.0
         world.stall_popped = False
