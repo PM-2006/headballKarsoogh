@@ -7,10 +7,20 @@
 <link rel="stylesheet" href="{% static 'game/styles.css' %}">
 </head>
 <body>
+<div id="toastWrap" class="toast-wrap"></div>
 <div class="app">
 <header>
-  <div><h1>⚽ AI Football Arena</h1><p>نسخه Django/Python — فیزیک و Rule Engine روی سرور پایتون اجرا می‌شود.</p></div>
-  <div class="nav"><button id="builderTab" class="active">🧠 ساخت ربات</button><button id="arenaTab">⚽ مسابقه</button></div>
+  <div class="brand">
+    <div class="logo"><span>⚽</span></div>
+    <div class="brand-text">
+      <h1>AI Football Arena</h1>
+      <p>زمین بازیِ رباتِ فوتبالیست — استراتژی‌ات را بساز و به میدان بفرست.</p>
+    </div>
+  </div>
+  <div class="nav">
+    <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
+    <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+  </div>
 </header>
 {% csrf_token %}
 <section id="builderView" class="view active">
@@ -46,8 +56,10 @@
 </section>
 <section id="arenaView" class="view">
   <div class="arena-toolbar">
-    <label>آبی: <select id="blueSelect"></select></label><label>قرمز: <select id="redSelect"></select></label>
-    <label>Seed: <input id="seedInput" type="number" value="1"></label><button id="playMatch" class="primary">▶ اجرای مسابقه</button>
+    <label class="tb-field tb-blue"><span>🔵 تیم آبی</span><select id="blueSelect"></select></label>
+    <label class="tb-field tb-red"><span>🔴 تیم قرمز</span><select id="redSelect"></select></label>
+    <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
+    <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
   </div>
   <div id="arenaMsg" class="feedback" style="display:none"></div>
   <div class="scorebug">
@@ -58,7 +70,18 @@
     </div>
     <div class="sb-timer">⏱ <span id="time">60.0s</span></div>
   </div>
-  <canvas id="game" width="1280" height="720"></canvas>
+  <div class="stage">
+    <canvas id="game" width="1280" height="720"></canvas>
+    <div id="goalFx" class="goal-fx"><div class="goal-word">گل!</div></div>
+    <div id="winFx" class="win-fx">
+      <div class="win-card">
+        <div class="win-trophy">🏆</div>
+        <div class="win-title" id="winTitle">برنده</div>
+        <div class="win-score" id="winScore">0 : 0</div>
+        <button class="primary" id="winClose">باشه</button>
+      </div>
+    </div>
+  </div>
   <div class="grid two lower">
     <div class="card"><h2>⚡ وضعیت زنده</h2>
       <div class="live-grid">

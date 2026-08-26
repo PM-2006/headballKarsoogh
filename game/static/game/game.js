@@ -117,7 +117,27 @@ function humanizeError(err){
   for(const [re,msg] of map)if(re.test(raw))return msg;
   return "مشکلی پیش آمد: "+raw;
 }
-function setArenaMsg(text,kind=""){const el=$("arenaMsg");if(!el)return;if(!text){el.style.display="none";el.textContent="";return}el.style.display="block";el.textContent=text;el.className="feedback "+kind;}
+// Transient popup notification (auto-dismisses). Errors stay a bit longer.
+function showToast(text,kind="err"){
+  const wrap=$("toastWrap");if(!wrap)return;
+  const clean=String(text||"").replace(/^\s*[❌✅ℹ️⚠️]+\s*/,"").trim();
+  if(!clean)return;
+  const el=document.createElement("div");
+  el.className="toast "+(kind||"");
+  const ico=kind==="ok"?"✅":kind==="err"?"❌":"ℹ️";
+  el.innerHTML=`<span class="t-ico">${ico}</span><span class="t-text"></span><button class="t-close" aria-label="بستن">✕</button>`;
+  el.querySelector(".t-text").textContent=clean;
+  const remove=()=>{el.classList.add("hide");setTimeout(()=>el.remove(),260)};
+  el.querySelector(".t-close").onclick=remove;
+  wrap.appendChild(el);
+  setTimeout(remove,kind==="err"?4000:2500);
+}
+// Errors/success now surface as toast popups instead of staying inline.
+function setArenaMsg(text,kind=""){
+  if(text&&(kind==="err"||kind==="ok")){showToast(text,kind);return;}
+  const el=$("arenaMsg");if(!el)return;
+  el.style.display="none";el.textContent="";
+}
 
 const sensorFa = {
   my_x:"موقعیت من", opponent_x:"موقعیت حریف", ball_x:"موقعیت افقی توپ", ball_y:"ارتفاع توپ",
@@ -198,7 +218,10 @@ async function buildBot(){
     $("testBot").disabled=false;setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
   }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
 }
-function setFeedback(text,kind=""){$("feedback").textContent=text;$("feedback").className="feedback "+kind}
+function setFeedback(text,kind=""){
+  if(kind==="err"||kind==="ok"){showToast(text,kind);return;}
+  $("feedback").textContent=text;$("feedback").className="feedback "+kind;
+}
 function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw new Error("اول My Bot را بساز.");return{strategy:myStrategy}}return{preset:selection}}
 async function runMatch(){
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
@@ -229,10 +252,11 @@ function validateReplay(frames,fps){
 const PLAYBACK_MAX_STEP_MS=100; // ignore gaps bigger than this (tab switch / hitch)
 function playFrames(frames,fps){
   validateReplay(frames,fps);
+  resetFx();
   const frameMs=1000/fps;
-  let elapsed=0,last=null;
+  let elapsed=0,last=null,lastScore=[frames[0].score[0],frames[0].score[1]];
   drawFrame(frames[0]);
-  if(frames.length===1){playbackHandle=null;return}
+  if(frames.length===1){playbackHandle=null;showWinner(frames[0]);return}
   function tick(now){
     // Advance by real time, but clamp each step. When the tab is hidden rAF
     // pauses; on return the first delta is huge, and without this clamp the
@@ -240,10 +264,59 @@ function playFrames(frames,fps){
     if(last!==null)elapsed+=Math.min(now-last,PLAYBACK_MAX_STEP_MS);
     last=now;
     const idx=Math.min(frames.length-1,Math.floor(elapsed/frameMs));
+    const s=frames[idx].score;
+    if(s[0]>lastScore[0])celebrateGoal(0);
+    if(s[1]>lastScore[1])celebrateGoal(1);
+    lastScore=[s[0],s[1]];
     drawFrame(frames[idx]);
-    if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);else playbackHandle=null;
+    if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);
+    else{playbackHandle=null;showWinner(frames[idx]);}
   }
   playbackHandle=requestAnimationFrame(tick);
+}
+function resetFx(){
+  const g=$("goalFx"),w=$("winFx");
+  if(g)g.classList.remove("show","flash");
+  if(w)w.classList.remove("show");
+  document.querySelectorAll(".stage .confetti").forEach(c=>c.remove());
+}
+function spawnConfetti(container,colors,count){
+  if(!container)return;
+  for(let i=0;i<count;i++){
+    const c=document.createElement("div");c.className="confetti";
+    c.style.left=Math.random()*100+"%";
+    c.style.background=colors[i%colors.length];
+    c.style.animationDuration=(1.1+Math.random()*1.4)+"s";
+    c.style.animationDelay=(Math.random()*0.3)+"s";
+    c.style.width=(7+Math.random()*7)+"px";
+    container.appendChild(c);
+    setTimeout(()=>c.remove(),2900);
+  }
+}
+function celebrateGoal(team){
+  const fx=$("goalFx");if(!fx)return;
+  const word=fx.querySelector(".goal-word");
+  word.className="goal-word "+(team===0?"blue":"red");
+  word.textContent=team===0?"گل آبی!":"گل قرمز!";
+  fx.classList.remove("show","flash");void fx.offsetWidth; // restart the animation
+  fx.classList.add("show","flash");
+  spawnConfetti(document.querySelector(".stage"),
+    team===0?["#39a4ff","#8fd0ff","#ffffff","#2fe0a6"]:["#ff5a78","#ffb3c0","#ffffff","#ffcb4d"],28);
+  clearTimeout(celebrateGoal._t);
+  celebrateGoal._t=setTimeout(()=>fx.classList.remove("show","flash"),1550);
+}
+function showWinner(frame){
+  const win=$("winFx");if(!win)return;
+  const b=frame.score[0],r=frame.score[1],card=win.querySelector(".win-card");
+  let title,cls="";
+  if(b>r){title="🔵 برنده: تیم آبی";cls="blue";}
+  else if(r>b){title="🔴 برنده: تیم قرمز";cls="red";}
+  else{title="🤝 مساوی شد!";}
+  $("winTitle").textContent=title;
+  $("winScore").textContent=`${b} : ${r}`;
+  card.className="win-card"+(cls?" "+cls:"");
+  win.classList.add("show");
+  spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
 }
 const ACT_FA={
   MOVE_LEFT:{t:"حرکت به چپ",i:"⬅️"},MOVE_RIGHT:{t:"حرکت به راست",i:"➡️"},
@@ -272,36 +345,65 @@ function drawFrame(frame){
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
 }
 function drawStadium(ctx,W,H,G){
+  // Sky with a soft overhead light wash.
   const sky=ctx.createLinearGradient(0,0,0,G);
-  sky.addColorStop(0,"#bfe6ff");sky.addColorStop(.55,"#dff3ff");sky.addColorStop(1,"#eef9ff");
+  sky.addColorStop(0,"#7fbdf0");sky.addColorStop(.42,"#a8dcff");sky.addColorStop(1,"#e6f5ff");
   ctx.fillStyle=sky;ctx.fillRect(0,0,W,G);
-  // Far stands (upper tiers) with a deterministic crowd speckle.
-  ctx.fillStyle="#17325b";ctx.fillRect(0,0,W,88);
-  ctx.fillStyle="#1e4177";ctx.fillRect(0,58,W,30);
-  const cols=["#ffd24d","#6bd4ff","#ff8098","#8affc0","#ffffff"];
-  ctx.globalAlpha=.6;
-  for(let i=0;i<W;i+=12){const y=12+((i*7)%56);ctx.fillStyle=cols[(i*11)%cols.length];ctx.fillRect(i,y,3,3);}
+  const wash=ctx.createRadialGradient(W/2,-50,30,W/2,-50,W*0.72);
+  wash.addColorStop(0,"rgba(255,255,255,.42)");wash.addColorStop(1,"rgba(255,255,255,0)");
+  ctx.fillStyle=wash;ctx.fillRect(0,0,W,G);
+  // Drifting clouds.
+  ctx.fillStyle="rgba(255,255,255,.55)";
+  drawCloud(ctx,W*0.20,168,64);drawCloud(ctx,W*0.60,120,86);drawCloud(ctx,W*0.86,205,52);
+  // Multi-tier stands.
+  ctx.fillStyle="#132a4e";ctx.fillRect(0,0,W,46);
+  ctx.fillStyle="#1a3868";ctx.fillRect(0,46,W,26);
+  ctx.fillStyle="#22497f";ctx.fillRect(0,72,W,26);
+  ctx.fillStyle="#0d2145";ctx.fillRect(0,0,W,9);              // roof
+  ctx.fillStyle="rgba(9,20,40,.55)";                          // support columns
+  for(let x=70;x<W;x+=150)ctx.fillRect(x,9,6,89);
+  // Crowd speckles.
+  const cols=["#ffd24d","#6bd4ff","#ff8098","#8affc0","#ffffff","#c9a8ff"];
+  ctx.globalAlpha=.7;
+  for(let i=0;i<W;i+=9){const y=14+((i*7)%78);ctx.fillStyle=cols[(i*11)%cols.length];ctx.fillRect(i,y,3,3);}
   ctx.globalAlpha=1;
-  ctx.fillStyle="#0f2547";ctx.fillRect(0,0,W,10);
   drawFloodlight(ctx,W*0.22);drawFloodlight(ctx,W*0.78);
+  // Pitch-side advertising boards along the horizon.
+  const ad=["#0e2a4a","#123a63","#0e2a4a","#173f66"];
+  for(let x=0,k=0;x<W;x+=90,k++){ctx.fillStyle=ad[k%ad.length];ctx.fillRect(x,G-14,88,12);}
+  ctx.fillStyle="rgba(120,200,255,.25)";ctx.fillRect(0,G-14,W,2);
+}
+function drawCloud(ctx,x,y,r){
+  ctx.beginPath();
+  ctx.arc(x,y,r*0.5,0,Math.PI*2);ctx.arc(x+r*0.5,y+4,r*0.38,0,Math.PI*2);
+  ctx.arc(x-r*0.5,y+6,r*0.34,0,Math.PI*2);ctx.arc(x+r*0.14,y-r*0.2,r*0.4,0,Math.PI*2);
+  ctx.fill();
 }
 function drawFloodlight(ctx,x){
-  ctx.strokeStyle="#2a466f";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x,92);ctx.lineTo(x,30);ctx.stroke();
-  ctx.fillStyle="#20395e";ctx.beginPath();roundedRectPath(ctx,x-34,12,68,20,6);ctx.fill();
-  const g=ctx.createRadialGradient(x,22,2,x,22,70);g.addColorStop(0,"rgba(255,255,220,.5)");g.addColorStop(1,"rgba(255,255,220,0)");
-  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,22,70,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle="#fff8d8";for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(x-22+i*22,22,4.5,0,Math.PI*2);ctx.fill();}
+  ctx.strokeStyle="#2a466f";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x,98);ctx.lineTo(x,30);ctx.stroke();
+  ctx.fillStyle="#20395e";ctx.beginPath();roundedRectPath(ctx,x-36,10,72,22,6);ctx.fill();
+  const g=ctx.createRadialGradient(x,22,2,x,22,86);g.addColorStop(0,"rgba(255,255,215,.55)");g.addColorStop(1,"rgba(255,255,215,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,22,86,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fff8d8";for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(x-25+i*17,21,4.2,0,Math.PI*2);ctx.fill();}
 }
 function drawPitch(ctx,W,H,G){
   const stripeW=W/14;
-  for(let i=0;i<14;i++){ctx.fillStyle=i%2?"#37a95a":"#40b866";ctx.fillRect(i*stripeW,G,stripeW+1,H-G);}
-  ctx.fillStyle="rgba(0,0,0,.12)";ctx.fillRect(0,H-12,W,12);
-  ctx.strokeStyle="rgba(255,255,255,.85)";ctx.lineWidth=4;
-  ctx.beginPath();ctx.moveTo(0,G+3);ctx.lineTo(W,G+3);ctx.stroke();
+  for(let i=0;i<14;i++){ctx.fillStyle=i%2?"#34a657":"#41ba67";ctx.fillRect(i*stripeW,G,stripeW+1,H-G);}
+  // Soft light pooled on the pitch + darker apron at the base.
+  const pl=ctx.createRadialGradient(W/2,G+6,20,W/2,G+6,W*0.55);
+  pl.addColorStop(0,"rgba(255,255,255,.16)");pl.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=pl;ctx.fillRect(0,G,W,H-G);
+  ctx.fillStyle="rgba(0,0,0,.16)";ctx.fillRect(0,H-13,W,13);
+  // Markings.
+  ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(0,G+3);ctx.lineTo(W,G+3);ctx.stroke();               // touchline
   ctx.lineWidth=3;
-  ctx.beginPath();ctx.moveTo(W/2,G);ctx.lineTo(W/2,H);ctx.stroke();
-  ctx.fillStyle="rgba(255,255,255,.9)";ctx.beginPath();ctx.arc(W/2,G+(H-G)/2,4,0,Math.PI*2);ctx.fill();
-  [150,W-150].forEach(x=>{ctx.beginPath();ctx.moveTo(x,G+4);ctx.lineTo(x,H);ctx.stroke();});
+  ctx.beginPath();ctx.moveTo(W/2,G+3);ctx.lineTo(W/2,H);ctx.stroke();             // halfway line
+  ctx.fillStyle="rgba(255,255,255,.92)";ctx.beginPath();ctx.arc(W/2,G+(H-G)/2,4,0,Math.PI*2);ctx.fill();
+  [150,W-150].forEach(x=>{ctx.beginPath();ctx.moveTo(x,G+4);ctx.lineTo(x,H);ctx.stroke();}); // penalty lines
+  // Corner quarter-arcs at the goal lines.
+  ctx.beginPath();ctx.arc(4,G+3,16,-Math.PI/2,0);ctx.stroke();
+  ctx.beginPath();ctx.arc(W-4,G+3,16,Math.PI,Math.PI*1.5);ctx.stroke();
 }
 function drawGoal(ctx,right,W,G,GW,GH){
   const x0=right?W:0,dir=right?-1:1,inner=x0+dir*GW,topY=G-GH;
@@ -501,7 +603,7 @@ async function runBatch(){
       batchRow(labelFor(red),"red",result.red_wins,result.red_goals,total)+
       `<div class="bt-draws">🤝 ${result.draws} مساوی · میانگین گل ${result.blue_goals_per_match} به ${result.red_goals_per_match}</div>`;
   }
-  catch(err){$("batchResult").innerHTML=`<span class="batch-empty">❌ ${humanizeError(err)}</span>`}finally{$("runBatch").disabled=false}
+  catch(err){showToast(humanizeError(err),"err");$("batchResult").innerHTML=`<span class="batch-empty">هنوز آزمونی اجرا نشده.</span>`}finally{$("runBatch").disabled=false}
 }
 function labelFor(key){if(key==="mybot")return"My Bot";return vocabulary?.presets?.[key]||key}
 function refreshOpponentMenus(){
@@ -511,6 +613,6 @@ function refreshOpponentMenus(){
   if([...$("redSelect").options].some(o=>o.value===currentRed))$("redSelect").value=currentRed;else $("redSelect").value="adaptive";
 }
 async function init(){
-  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());refreshOpponentMenus();quickPreset("smart");$("builderTab").onclick=()=>switchView("builder");$("arenaTab").onclick=()=>switchView("arena");$("addRule").onclick=()=>addSimple();$("buildBot").onclick=buildBot;$("compileWithAI").onclick=compileWithAI;$("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};$("testBot").onclick=()=>{refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));$("playMatch").onclick=runMatch;$("runBatch").onclick=runBatch;drawFrame({time:60,score:[0,0],players:[{x:255,y:538,face:1},{x:967,y:538,face:-1}],ball:{x:640,y:235},debug:[{},{}]});
+  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());refreshOpponentMenus();quickPreset("smart");$("builderTab").onclick=()=>switchView("builder");$("arenaTab").onclick=()=>switchView("arena");$("addRule").onclick=()=>addSimple();$("buildBot").onclick=buildBot;$("compileWithAI").onclick=compileWithAI;$("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};$("testBot").onclick=()=>{refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));$("playMatch").onclick=runMatch;$("runBatch").onclick=runBatch;$("winClose").onclick=()=>$("winFx").classList.remove("show");drawFrame({time:60,score:[0,0],players:[{x:255,y:538,face:1},{x:967,y:538,face:-1}],ball:{x:640,y:235},debug:[{},{}]});
 }
 init();
