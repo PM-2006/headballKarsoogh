@@ -7,19 +7,31 @@
 <link rel="stylesheet" href="{% static 'game/styles.css' %}">
 </head>
 <body>
+<div id="toastWrap" class="toast-wrap"></div>
 <div class="app">
 <header>
-  <div><h1>⚽ AI Football Arena</h1><p>نسخه Django/Python — فیزیک و Rule Engine روی سرور پایتون اجرا می‌شود.</p></div>
-  <div class="nav"><button id="builderTab" class="active">🧠 ساخت ربات</button><button id="arenaTab">⚽ مسابقه</button></div>
-  <div class="user-bar">
-    <span class="user-name">👤 {{ request.user.username }}</span>
-    {% if request.user.is_staff %}
-      <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
-    {% endif %}
-    <form action="{% url 'logout' %}" method="post" style="display:inline;margin:0;">
-      {% csrf_token %}
-      <button type="submit" class="mini danger">خروج</button>
-    </form>
+  <div class="brand">
+    <div class="logo"><span>⚽</span></div>
+    <div class="brand-text">
+      <h1>AI Football Arena</h1>
+      <p>زمین بازیِ رباتِ فوتبالیست — استراتژی‌ات را بساز و به میدان بفرست.</p>
+    </div>
+  </div>
+  <div class="header-controls">
+    <div class="user-bar">
+      <span class="user-name">👤 {{ request.user.username }}</span>
+      {% if request.user.is_superuser %}
+        <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
+      {% endif %}
+      <form action="{% url 'logout' %}" method="post" style="display:inline;margin:0;">
+        {% csrf_token %}
+        <button type="submit" class="mini danger">خروج</button>
+      </form>
+    </div>
+    <div class="nav">
+      <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
+      <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+    </div>
   </div>
 </header>
 {% csrf_token %}
@@ -47,28 +59,65 @@
       <div class="actions"><button id="addRule">＋ تصمیم جدید</button><button id="buildBot" class="primary">✓ ساخت مغز ربات</button></div>
       <div id="feedback" class="feedback">یکی از نمونه‌ها را انتخاب کن یا تصمیم جدید بساز.</div>
     </div>
-    <div class="card">
-      <h2>ربات من</h2><div id="humanBrain" class="brain empty">هنوز Strategy ساخته نشده.</div>
-      <details><summary>جزئیات فنی Strategy JSON</summary><pre id="jsonView"></pre></details>
-      <button id="testBot" class="success" disabled>⚽ آزمایش ربات من</button>
+    <div class="card mybot-card">
+      <div class="mybot-head"><h2>🤖 ربات من</h2><span id="botBadge" class="bot-badge off">ساخته نشده</span></div>
+      <div id="humanBrain" class="brain empty">هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span></div>
+      <details class="json-details"><summary>🔧 جزئیات فنی (Strategy JSON)</summary><pre id="jsonView"></pre></details>
+      <div class="mybot-actions">
+        <button id="testBot" class="success">⚽ آزمایش ربات من</button>
+        <button id="deleteBot" class="btn-danger" disabled>🗑 حذف ربات</button>
+      </div>
     </div>
   </div>
 </section>
 <section id="arenaView" class="view">
   <div class="arena-toolbar">
-    <label>آبی: <select id="blueSelect"></select></label><label>قرمز: <select id="redSelect"></select></label>
-    <label>Seed: <input id="seedInput" type="number" value="1"></label><button id="playMatch" class="primary">▶ اجرای مسابقه</button>
+    <label class="tb-field tb-blue"><span>🔵 تیم آبی</span><select id="blueSelect"></select></label>
+    <label class="tb-field tb-red"><span>🔴 تیم قرمز</span><select id="redSelect"></select></label>
+    <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
+    <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
   </div>
-  <div id="arenaMsg" class="feedback" style="display:none"></div>
-  <div class="scoreline"><span id="blueName" class="blue">Blue</span><strong id="score">0 : 0</strong><span id="redName" class="red">Red</span><span id="time">60.0s</span></div>
-  <canvas id="game" width="{{ game_config.width|default:1280 }}" height="{{ game_config.height|default:720 }}"></canvas>
+  <div class="scorebug">
+    <div class="sb-row">
+      <div class="sb-team sb-blue"><span id="blueName" class="sb-name">Blue</span><span class="sb-badge">⚽</span></div>
+      <div class="sb-score" id="score">0 : 0</div>
+      <div class="sb-team sb-red"><span class="sb-badge">⚽</span><span id="redName" class="sb-name">Red</span></div>
+    </div>
+    <div class="sb-timer"><span class="clock">⏱</span> <span id="time">60.0s</span></div>
+  </div>
+  <div class="stage">
+    <canvas id="game" width="{{ game_config.width|default:1280 }}" height="{{ game_config.height|default:720 }}"></canvas>
+    <div id="goalFx" class="goal-fx"><div class="goal-word">گل!</div></div>
+    <div id="winFx" class="win-fx">
+      <div class="win-card">
+        <div class="win-trophy">🏆</div>
+        <div class="win-title" id="winTitle">برنده</div>
+        <div class="win-score" id="winScore">0 : 0</div>
+        <button class="primary" id="winClose">باشه</button>
+      </div>
+    </div>
+  </div>
   {{ game_config|json_script:"game-config-data" }}
   <div class="grid two lower">
-    <div class="card"><h2>وضعیت زنده</h2><div class="debug-grid">
-      <div><b class="blue">آبی</b><p>Rule: <span id="blueRule">-</span></p><p>Action: <span id="blueAction">IDLE</span></p></div>
-      <div><b class="red">قرمز</b><p>Rule: <span id="redRule">-</span></p><p>Action: <span id="redAction">IDLE</span></p></div>
-    </div></div>
-    <div class="card"><h2>Batch Test</h2><div class="actions"><select id="batchCount"><option value="20">20 بازی</option><option value="50">50 بازی</option><option value="100" selected>100 بازی</option><option value="250">250 بازی</option></select><button id="runBatch">🧪 اجرا</button></div><div id="batchResult" class="batch-result"></div></div>
+    <div class="card"><h2>⚡ وضعیت زنده</h2>
+      <div class="live-grid">
+        <div class="live-team live-blue">
+          <div class="live-head"><span class="dot"></span><b>تیم آبی</b></div>
+          <div><span id="blueAction" class="act-chip">منتظر</span></div>
+          <div class="live-rule">قانون فعال: <span id="blueRule">-</span></div>
+        </div>
+        <div class="live-team live-red">
+          <div class="live-head"><span class="dot"></span><b>تیم قرمز</b></div>
+          <div><span id="redAction" class="act-chip">منتظر</span></div>
+          <div class="live-rule">قانون فعال: <span id="redRule">-</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card"><h2>🧪 آزمون گروهی</h2>
+      <p class="muted">دو ربات را چند بار پشت‌سرهم مسابقه بده تا ببینی کدام واقعاً بهتر است.</p>
+      <div class="batch-head"><select id="batchCount"><option value="20">۲۰ بازی</option><option value="50">۵۰ بازی</option><option value="100" selected>۱۰۰ بازی</option><option value="250">۲۵۰ بازی</option></select><button id="runBatch" class="primary">🧪 اجرای آزمون</button></div>
+      <div id="batchResult" class="batch-result"><span class="batch-empty">هنوز آزمونی اجرا نشده.</span></div>
+    </div>
   </div>
 </section>
 </div>

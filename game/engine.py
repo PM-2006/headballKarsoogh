@@ -90,7 +90,15 @@ class GameConfig:
     kick_player_velocity_transfer: float = 0.52
     move_deadzone: float = 6.0
 
-    # Anti-Lock & Contested Dynamics
+    # Anti-lock / fast-arcade tuning. Players rebound instead of becoming
+    # a motionless wall, and truly contested ball touches pop upward.
+    player_bump_restitution: float = 0.32
+    player_bump_extra_separation: float = 1.5
+    # Player-vs-player collision uses a narrower box than the full sprite width
+    # so two players can stand shoulder-to-shoulder without an ugly visible gap.
+    # Effective bump width = player_width - 2*player_collision_inset.
+    player_collision_inset: float = 6.0
+    player_contact_velocity_transfer: float = 0.18
     running_touch_lift: float = 135.0
     contested_ball_pop_y: float = 640.0
     contested_ball_horizontal_keep: float = 0.65
@@ -102,8 +110,8 @@ class GameConfig:
 
     # Anti-Stall Watchdog
     stall_speed_threshold: float = 45.0
-    stall_pop_after: float = 2.5
-    stall_kickoff_after: float = 5.0
+    stall_pop_after: float = 6.0
+    stall_kickoff_after: float = 10.0
     stall_pop_vx: float = 220.0
     stall_pop_vy: float = 640.0
 
@@ -160,6 +168,7 @@ def get_game_config() -> GameConfig:
         body_top_offset=_env_float("GAME_PLAYER_BODY_TOP_OFFSET", 36.0),
         player_bump_restitution=_env_float("GAME_PLAYER_BUMP_RESTITUTION", 0.32),
         player_bump_extra_separation=_env_float("GAME_PLAYER_BUMP_SEPARATION", 1.5),
+        player_collision_inset=_env_float("GAME_PLAYER_COLLISION_INSET", 6.0),
         player_contact_velocity_transfer=_env_float("GAME_PLAYER_CONTACT_VELOCITY_TRANSFER", 0.18),
 
         # Kicks & Actions
@@ -189,8 +198,8 @@ def get_game_config() -> GameConfig:
 
         # Anti-Stall Watchdog
         stall_speed_threshold=_env_float("GAME_STALL_SPEED_THRESHOLD", 45.0),
-        stall_pop_after=_env_float("GAME_STALL_POP_AFTER", 2.5),
-        stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 5.0),
+        stall_pop_after=_env_float("GAME_STALL_POP_AFTER", 6.0),
+        stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 10.0),
         stall_pop_vx=_env_float("GAME_STALL_POP_VX", 220.0),
         stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
 
@@ -433,7 +442,16 @@ def _resolve_intent(action: str, state: dict, team: int, config: GameConfig) -> 
             move_dir=_direction_to_target(state["my_x"], target, config.move_deadzone),
         )
     if action == "JUMP":
-        return Intent(action, jump=True)
+        # Jump TOWARD the ball instead of straight up, so a bot can run under a
+        # high ball and actually head it. Previously JUMP carried move_dir=0,
+        # which stopped the bot dead -- you could never move and jump at once.
+        return Intent(
+            action,
+            jump=True,
+            move_dir=_direction_to_target(
+                state["my_x"], state["ball_x"], config.move_deadzone
+            ),
+        )
     if action.startswith("KICK_"):
         return Intent(action, kick=action)
     return Intent("IDLE")
@@ -597,10 +615,10 @@ def _integrate_player(
 
 def _resolve_players(world: World, config: GameConfig):
     a, b = world.players
-    overlap_x = min(
-        a.x + config.player_width,
-        b.x + config.player_width,
-    ) - max(a.x, b.x)
+    inset = config.player_collision_inset
+    a_left, a_right = a.x + inset, a.x + config.player_width - inset
+    b_left, b_right = b.x + inset, b.x + config.player_width - inset
+    overlap_x = min(a_right, b_right) - max(a_left, b_left)
     overlap_y = min(
         a.y + config.player_height,
         b.y + config.player_height,
