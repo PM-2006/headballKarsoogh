@@ -20,7 +20,7 @@
   <div class="header-controls">
     <div class="user-bar">
       <span class="user-name">👤 {{ request.user.username }}</span>
-      {% if request.user.is_staff %}
+      {% if request.user.is_superuser %}
         <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
       {% endif %}
       <form action="{% url 'logout' %}" method="post" style="display:inline;margin:0;">
@@ -84,7 +84,7 @@
       <div class="sb-score" id="score">0 : 0</div>
       <div class="sb-team sb-red"><span class="sb-badge">⚽</span><span id="redName" class="sb-name">Red</span></div>
     </div>
-    <div class="sb-timer">⏱ <span id="time">60.0s</span></div>
+    <div class="sb-timer"><span class="clock">⏱</span> <span id="time">60.0s</span></div>
   </div>
   <div class="stage">
     <canvas id="game" width="1280" height="720"></canvas>
