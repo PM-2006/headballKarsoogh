@@ -19,6 +19,7 @@
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+python manage.py collectstatic --noinput
 python manage.py test
 python manage.py runserver
 ```
@@ -29,6 +30,7 @@ python manage.py runserver
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python manage.py collectstatic --noinput
 python manage.py test
 python manage.py runserver
 ```
