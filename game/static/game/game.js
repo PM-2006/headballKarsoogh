@@ -245,15 +245,100 @@ function playFrames(frames,fps){
   }
   playbackHandle=requestAnimationFrame(tick);
 }
+const ACT_FA={
+  MOVE_LEFT:{t:"حرکت به چپ",i:"⬅️"},MOVE_RIGHT:{t:"حرکت به راست",i:"➡️"},
+  MOVE_TO_BALL:{t:"به سمت توپ",i:"🏃"},MOVE_TO_GOAL:{t:"دفاع از دروازه",i:"🛡️"},
+  MOVE_TO_CENTER:{t:"به مرکز زمین",i:"🎯"},JUMP:{t:"پرش",i:"⬆️"},
+  KICK_LOW:{t:"شوت زمینی",i:"⚡"},KICK_HIGH:{t:"شوت هوایی",i:"🚀"},
+  KICK_CLEAR:{t:"دفع توپ",i:"🥊"},IDLE:{t:"منتظر",i:"⏸️"}
+};
+function actLabel(code){const a=ACT_FA[code];return a?`${a.i} ${a.t}`:(code||"—")}
+function ruleLabel(rule){if(rule==null)return "—";if(rule==="default")return "پیش‌فرض";return "شماره "+rule}
+
 function drawFrame(frame){
   const canvas=$("game"),ctx=canvas.getContext("2d"),W=canvas.width,H=canvas.height,G=610,GW=105,GH=135;
-  const grad=ctx.createLinearGradient(0,0,0,H);grad.addColorStop(0,"#74c9ff");grad.addColorStop(1,"#e5f6ff");ctx.fillStyle=grad;ctx.fillRect(0,0,W,H);
-  ctx.fillStyle="#4dca69";ctx.fillRect(0,G,W,H-G);ctx.fillStyle="#38a957";ctx.fillRect(0,G+22,W,H-G-22);ctx.strokeStyle="rgba(255,255,255,.75)";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(W/2,G);ctx.lineTo(W/2,H);ctx.stroke();
-  drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);drawPlayer(ctx,frame.players[0],"#2f9bff",58,72,G);drawPlayer(ctx,frame.players[1],"#ff5262",58,72,G);
-  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,22,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#18263a";ctx.lineWidth=3;ctx.stroke();ctx.fillStyle="#18263a";ctx.beginPath();ctx.arc(frame.ball.x,frame.ball.y,7,0,Math.PI*2);ctx.fill();
-  $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};$("blueRule").textContent=d0.rule??"-";$("blueAction").textContent=d0.action??"IDLE";$("redRule").textContent=d1.rule??"-";$("redAction").textContent=d1.action??"IDLE";
+  drawStadium(ctx,W,H,G);
+  drawPitch(ctx,W,H,G);
+  drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);
+  drawPlayer(ctx,frame.players[0],"#2f9bff",58,72,G);drawPlayer(ctx,frame.players[1],"#ff5262",58,72,G);
+  // Ball ground shadow shrinks as the ball rises.
+  const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
+  ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
+  ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,22*(1-0.35*hi),6*(1-0.3*hi),0,0,Math.PI*2);ctx.fill();
+  drawBall(ctx,frame.ball.x,frame.ball.y,22);
+  $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
+  const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
+  $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
+  $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
 }
-function drawGoal(ctx,right,W,G,GW,GH){ctx.strokeStyle="#eff8ff";ctx.lineWidth=9;ctx.beginPath();if(!right){ctx.moveTo(0,G);ctx.lineTo(0,G-GH);ctx.lineTo(GW,G-GH)}else{ctx.moveTo(W,G);ctx.lineTo(W,G-GH);ctx.lineTo(W-GW,G-GH)}ctx.stroke()}
+function drawStadium(ctx,W,H,G){
+  const sky=ctx.createLinearGradient(0,0,0,G);
+  sky.addColorStop(0,"#bfe6ff");sky.addColorStop(.55,"#dff3ff");sky.addColorStop(1,"#eef9ff");
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,G);
+  // Far stands (upper tiers) with a deterministic crowd speckle.
+  ctx.fillStyle="#17325b";ctx.fillRect(0,0,W,88);
+  ctx.fillStyle="#1e4177";ctx.fillRect(0,58,W,30);
+  const cols=["#ffd24d","#6bd4ff","#ff8098","#8affc0","#ffffff"];
+  ctx.globalAlpha=.6;
+  for(let i=0;i<W;i+=12){const y=12+((i*7)%56);ctx.fillStyle=cols[(i*11)%cols.length];ctx.fillRect(i,y,3,3);}
+  ctx.globalAlpha=1;
+  ctx.fillStyle="#0f2547";ctx.fillRect(0,0,W,10);
+  drawFloodlight(ctx,W*0.22);drawFloodlight(ctx,W*0.78);
+}
+function drawFloodlight(ctx,x){
+  ctx.strokeStyle="#2a466f";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x,92);ctx.lineTo(x,30);ctx.stroke();
+  ctx.fillStyle="#20395e";ctx.beginPath();roundedRectPath(ctx,x-34,12,68,20,6);ctx.fill();
+  const g=ctx.createRadialGradient(x,22,2,x,22,70);g.addColorStop(0,"rgba(255,255,220,.5)");g.addColorStop(1,"rgba(255,255,220,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,22,70,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fff8d8";for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(x-22+i*22,22,4.5,0,Math.PI*2);ctx.fill();}
+}
+function drawPitch(ctx,W,H,G){
+  const stripeW=W/14;
+  for(let i=0;i<14;i++){ctx.fillStyle=i%2?"#37a95a":"#40b866";ctx.fillRect(i*stripeW,G,stripeW+1,H-G);}
+  ctx.fillStyle="rgba(0,0,0,.12)";ctx.fillRect(0,H-12,W,12);
+  ctx.strokeStyle="rgba(255,255,255,.85)";ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(0,G+3);ctx.lineTo(W,G+3);ctx.stroke();
+  ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(W/2,G);ctx.lineTo(W/2,H);ctx.stroke();
+  ctx.fillStyle="rgba(255,255,255,.9)";ctx.beginPath();ctx.arc(W/2,G+(H-G)/2,4,0,Math.PI*2);ctx.fill();
+  [150,W-150].forEach(x=>{ctx.beginPath();ctx.moveTo(x,G+4);ctx.lineTo(x,H);ctx.stroke();});
+}
+function drawGoal(ctx,right,W,G,GW,GH){
+  const x0=right?W:0,dir=right?-1:1,inner=x0+dir*GW,topY=G-GH;
+  const lo=Math.min(x0,inner),hi=Math.max(x0,inner);
+  // Net
+  ctx.save();ctx.beginPath();ctx.rect(lo,topY,GW,GH);ctx.clip();
+  ctx.fillStyle="rgba(230,245,255,.10)";ctx.fillRect(lo,topY,GW,GH);
+  ctx.strokeStyle="rgba(255,255,255,.30)";ctx.lineWidth=1;
+  for(let gx=lo;gx<=hi;gx+=11){ctx.beginPath();ctx.moveTo(gx,topY);ctx.lineTo(gx,G);ctx.stroke();}
+  for(let gy=topY;gy<=G;gy+=11){ctx.beginPath();ctx.moveTo(lo,gy);ctx.lineTo(hi,gy);ctx.stroke();}
+  ctx.restore();
+  // Back post (thin, at the field edge)
+  ctx.strokeStyle="#dfeefc";ctx.lineWidth=4;ctx.lineCap="round";
+  ctx.beginPath();ctx.moveTo(x0,topY);ctx.lineTo(x0,G);ctx.stroke();
+  // Front post + crossbar (thick, with soft shadow)
+  ctx.strokeStyle="#f6fbff";ctx.lineWidth=8;
+  ctx.shadowColor="rgba(0,0,0,.28)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
+  ctx.beginPath();ctx.moveTo(inner,G);ctx.lineTo(inner,topY);ctx.lineTo(x0,topY);ctx.stroke();
+  ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+}
+function drawBall(ctx,x,y,r){
+  ctx.save();ctx.translate(x,y);ctx.rotate((x/r)*0.15);
+  const g=ctx.createRadialGradient(-r*.32,-r*.32,r*.2,0,0,r);
+  g.addColorStop(0,"#ffffff");g.addColorStop(1,"#e0e8f0");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
+  // Classic panel: center pentagon + seams to the rim.
+  ctx.fillStyle="#1b2a3d";drawPentagon(ctx,0,0,r*0.42,-Math.PI/2);
+  ctx.strokeStyle="#1b2a3d";ctx.lineWidth=2;
+  for(let i=0;i<5;i++){const a=-Math.PI/2+i*(2*Math.PI/5);ctx.beginPath();ctx.moveTo(Math.cos(a)*r*0.42,Math.sin(a)*r*0.42);ctx.lineTo(Math.cos(a)*r*0.96,Math.sin(a)*r*0.96);ctx.stroke();}
+  ctx.strokeStyle="#16233a";ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+function drawPentagon(ctx,cx,cy,rad,rot){
+  ctx.beginPath();
+  for(let i=0;i<5;i++){const a=rot+i*(2*Math.PI/5),px=cx+Math.cos(a)*rad,py=cy+Math.sin(a)*rad;i?ctx.lineTo(px,py):ctx.moveTo(px,py)}
+  ctx.closePath();ctx.fill();
+}
 function roundedRectPath(ctx,x,y,w,h,r){
   const radius=Math.max(0,Math.min(r,w/2,h/2));
   if(typeof ctx.roundRect==="function"){ctx.roundRect(x,y,w,h,radius);return}
@@ -399,9 +484,24 @@ function drawPlayer(ctx,p,color,w,h,G){
   ctx.textBaseline="middle";
   ctx.fillText(isRed?"7":"10",cx+2,bodyTop+13);
 }
+function batchRow(name,cls,wins,goals,total){
+  const pct=total?Math.round(wins/total*100):0;
+  return `<div class="bt-row"><span class="bt-name">${name}</span>`+
+    `<span class="bt-bar"><span class="bt-fill ${cls}" style="width:${pct}%"></span></span>`+
+    `<span class="bt-val">${wins} برد · ${goals} گل</span></div>`;
+}
 async function runBatch(){
-  try{$("runBatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});$("batchResult").innerHTML=`<b>${labelFor(blue)}</b>: ${result.blue_wins} برد — ${result.blue_goals} گل<br><b>${labelFor(red)}</b>: ${result.red_wins} برد — ${result.red_goals} گل<br>مساوی: ${result.draws}<br>میانگین گل: ${result.blue_goals_per_match} / ${result.red_goals_per_match}`}
-  catch(err){$("batchResult").textContent="❌ "+humanizeError(err)}finally{$("runBatch").disabled=false}
+  try{
+    $("runBatch").disabled=true;
+    const blue=$("blueSelect").value,red=$("redSelect").value;
+    const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});
+    const total=result.matches;
+    $("batchResult").innerHTML=
+      batchRow(labelFor(blue),"blue",result.blue_wins,result.blue_goals,total)+
+      batchRow(labelFor(red),"red",result.red_wins,result.red_goals,total)+
+      `<div class="bt-draws">🤝 ${result.draws} مساوی · میانگین گل ${result.blue_goals_per_match} به ${result.red_goals_per_match}</div>`;
+  }
+  catch(err){$("batchResult").innerHTML=`<span class="batch-empty">❌ ${humanizeError(err)}</span>`}finally{$("runBatch").disabled=false}
 }
 function labelFor(key){if(key==="mybot")return"My Bot";return vocabulary?.presets?.[key]||key}
 function refreshOpponentMenus(){
