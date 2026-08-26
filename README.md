@@ -1,136 +1,206 @@
-# ⚽ AI Football Arena (میدان مسابقه فوتبال هوش مصنوعی)
+# ⚽ AI Football Arena
 
-پلتفرم شبیه‌سازی و آموزش مسابقات فوتبال ۱ به ۱ هوش مصنوعی بر پایه جنگو و پایتون (ویژه کارگاه‌های دانش‌آموزی و مسابقات هوش مصنوعی).
+A Django/Python platform for 1‑vs‑1 AI head‑ball matches, built for student workshops and AI competitions.
 
-در این بازی، شرکت‌کنندگان استراتژی مغز ربات فوتبالیست خود را یا با **رابط گرافیکی تصمیم‌گیری (Rule Builder)** یا با **تایپ متن فارسی به زبان طبیعی (هوش مصنوعی)** طراحی می‌کنند و سپس عملکرد ربات خود را در مسابقات ۲ بعدی شبیه‌سازی‌شده به صورت زنده یا در قالب صدها مسابقه دسته‌ای (Batch Test) به چالش می‌کشند.
+Each player designs the "brain" of a football‑playing bot — either visually with a **rule builder** or by **writing plain‑language strategy that an AI compiles into rules** — and then watches that bot compete in a live 2D simulation, or runs hundreds of matches at once to see which strategy actually wins.
 
----
-
-## 📚 فهرست کامل مستندات فنی (Documentation)
-
-مستندات کامل پروژه در پوشه [`doc/`](doc/) به صورت تفکیک‌شده و استاندارد آماده شده است:
-
-| بخش | سند راهنما | توضیحات و مباحث کلیدی |
-| :--- | :--- | :--- |
-| 🏗️ **معماری سیستم** | [**`doc/architecture.md`**](doc/architecture.md) | معماری سرور-محور (Server-Authoritative)، چرخه حیات درخواست‌ها و دیاگرام جریان داده |
-| ⚽ **موتور فیزیک بازی** | [**`doc/game-engine.md`**](doc/game-engine.md) | فیزیک ۲ بعدی Head Ball، محاسبات شتاب و سرعت، برخوردها، شوت‌ها و سیستم ضد قفل‌شدگی |
-| 🧠 **سیستم استراتژی** | [**`doc/strategy-system.md`**](doc/strategy-system.md) | ساختار JSON استراتژی، ۲۴ سنسور وضعیت بازی، ۱۰ اکشن حرکتی و استراتژی‌های پیش‌فرض |
-| ✨ **کامپایلر هوش مصنوعی** | [**`doc/ai-compiler.md`**](doc/ai-compiler.md) | تبدیل متن فارسی به قوانین با OrcaRouter (DeepSeek V4 Flash) و اصول امنیت پرامپت |
-| 🔌 **مرجع APIها** | [**`doc/api-reference.md`**](doc/api-reference.md) | مشخصات کامل اندپوینت‌های REST، نمونه بدنه درخواست‌ها و پاسخ‌های JSON |
-| 🔐 **احراز هویت و ادمین** | [**`doc/auth-and-admin.md`**](doc/auth-and-admin.md) | ورود کاربران، عدم ثبت‌نام عمومی، ساخت سوپریوزر و تعریف بازیکنان در پنل ادمین جنگو |
-| 🚀 **نصب و استقرار** | [**`doc/deployment-and-setup.md`**](doc/deployment-and-setup.md) | راهنمای راه‌اندازی محلی، تنظیم متغیرهای محیطی، استقرار با Docker و ادغام در پروژه‌ها |
+The important design choice: **the server is the game.** All physics, sensors, and rule evaluation run in Python on the server. The browser only draws the frames the server already computed. Editing the client‑side JavaScript can't change the outcome of a match, so tournaments stay fair and every result is reproducible from its seed.
 
 ---
 
-## ⚡ راهنمای راه‌اندازی سریع (Quick Start)
+## Features
 
-### ۱. راه‌اندازی در ویندوز (PowerShell / CMD)
+- **Server‑authoritative physics** — ball motion, collisions, jumps, kicks, and headers are simulated in Python at 60 Hz. The client is a pure replay/renderer.
+- **Two ways to build a bot** — a visual rule builder (with multi‑condition `AND` rules and adjustable numeric thresholds), or natural‑language strategy text that an LLM translates into the exact same rule format.
+- **Fast batch testing** — run up to 250 sixty‑second matches to compare two strategies; sides are swapped on alternating matches to cancel out any home‑side advantage.
+- **Anti‑stall engine** — a watchdog keeps the ball in play if it ever gets wedged or goes to sleep, so a match never freezes.
+- **Polished arena** — a floodlit stadium, a broadcast‑style scoreboard, a live "what is each bot doing right now" panel, goal celebrations, and an end‑of‑match winner screen.
+- **Authentication** — every page and API is gated behind login; accounts are created by an admin, there is no public sign‑up.
+
+---
+
+## Quick start
+
+Requires **Python 3.12+**. Written for Django 5.2–6.x.
+
+### Windows (PowerShell)
 
 ```powershell
-# ساخت و فعال‌سازی محیط مجازی
 python -m venv .venv
 .venv\Scripts\activate
-
-# نصب پکیج‌ها
 pip install -r requirements.txt
-
-# اعمال مایگریشن‌های پایگاه داده
 python manage.py migrate
-
-# ساخت حساب کاربری مدیر کل
 python manage.py createsuperuser
-
-# اجرای تست‌های صحت عملکرد
+python manage.py collectstatic --noinput
 python manage.py test
-
-# روشن کردن سرور
 python manage.py runserver
 ```
 
-### ۲. راه‌اندازی در لینوکس / مک‌او‌اس (Bash / Zsh)
+### macOS / Linux (bash / zsh)
 
 ```bash
-# ساخت و فعال‌سازی محیط مجازی
 python3 -m venv .venv
 source .venv/bin/activate
-
-# نصب پکیج‌ها
 pip install -r requirements.txt
-
-# اعمال مایگریشن‌ها
 python manage.py migrate
-
-# ساخت حساب ادمین
 python manage.py createsuperuser
-
-# اجرای تست‌ها
+python manage.py collectstatic --noinput
 python manage.py test
-
-# روشن کردن سرور
 python manage.py runserver
 ```
 
-سپس مرورگر را باز کرده و به آدرس زیر مراجعه نمایید:
+Then open:
+
 ```text
 http://127.0.0.1:8000/
 ```
 
+You'll be redirected to the login page. Sign in with the superuser you just created.
+
+> **Static files note:** the project serves static assets through WhiteNoise's manifest storage. After you edit anything under `game/static/`, re‑run `python manage.py collectstatic` **and restart the server** — the file manifest is loaded into memory at startup.
+
 ---
 
-## 🧩 ساختار فایل‌های پروژه
+## Accounts & login
+
+There is no public registration. Access is intentionally invite‑only:
+
+- All views use `@login_required`; visiting `/` while logged out redirects to `/login/`.
+- Create players from the Django admin at `http://127.0.0.1:8000/admin/` (or with `python manage.py createsuperuser` for the first admin).
+- Staff users see an extra "پنل مدیریت" (admin panel) link in the header.
+
+See [`doc/auth-and-admin.md`](doc/auth-and-admin.md) for details.
+
+---
+
+## How a match works
+
+1. A player builds a bot in the **Build Bot** tab — from a preset, the visual rule builder, or natural‑language text sent to the AI compiler.
+2. The strategy is validated on the server (`/api/validate/` or `/api/compile-strategy/`).
+3. In the **Arena** tab, the server simulates a 60‑second match (`/api/simulate/`) and returns the recorded frames.
+4. The browser replays those frames on a `<canvas>`, with a live status panel, goal celebrations, and a winner screen.
+
+**How a bot "thinks":** every frame the engine builds a snapshot of ~26 sensors (ball position and speed, distances, remaining time, score, `can_kick`, `ball_above_me`, …). It walks the bot's rules in priority order and fires the first rule whose conditions are all true; if none match, it uses the default action. Actions include `MOVE_TO_BALL`, `MOVE_TO_GOAL`, `JUMP`, `KICK_LOW`, `KICK_HIGH`, `KICK_CLEAR`, and more.
+
+Full details: [`doc/strategy-system.md`](doc/strategy-system.md) and [`doc/game-engine.md`](doc/game-engine.md).
+
+---
+
+## API reference
+
+All endpoints require an authenticated session and a CSRF token. `POST` bodies are JSON.
+
+| Method | Endpoint | Purpose |
+| :--- | :--- | :--- |
+| `GET` | `/api/vocabulary/` | Available sensors, operators, actions, and preset names. |
+| `POST` | `/api/validate/` | Validate a custom strategy before it runs. |
+| `POST` | `/api/compile-strategy/` | Compile Persian strategy text into a validated strategy (LLM). |
+| `POST` | `/api/simulate/` | Run one match and return the result plus recorded frames. |
+| `POST` | `/api/batch/` | Run many matches and return aggregate win/goal stats. |
+
+Example simulate request:
+
+```json
+{
+  "blue": { "preset": "aggressive" },
+  "red":  { "preset": "adaptive" },
+  "seed": 1
+}
+```
+
+A strategy side can be either `{"preset": "<name>"}` or `{"strategy": { ...strategy JSON... }}`. Full request/response shapes are in [`doc/api-reference.md`](doc/api-reference.md).
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and set values as needed.
+
+| Variable | Purpose |
+| :--- | :--- |
+| `ORCAROUTER_API_KEY` | API key for the AI strategy compiler. **Required only for the AI/natural‑language feature** — everything else works without it. Keep it server‑side only. |
+| `ORCAROUTER_MODEL` | Model id (default: `deepseek/deepseek-v4-flash-free`). |
+| `ORCAROUTER_BASE_URL` | OpenAI‑compatible base URL (default: OrcaRouter). |
+| `DJANGO_SECRET_KEY` | Django secret key. Set a real value in production. |
+| `DJANGO_DEBUG` | `True` for local development, `False` in production. |
+| `DJANGO_ALLOWED_HOSTS` | Comma‑separated hostnames. |
+
+If `ORCAROUTER_API_KEY` is not set, the visual rule builder and all match/batch features still work; only the "compile from Persian text" button reports that the AI is unavailable. See [`doc/ai-compiler.md`](doc/ai-compiler.md).
+
+---
+
+## Tuning the game
+
+Match feel is controlled by one dataclass, `GameConfig`, at the top of [`game/engine.py`](game/engine.py). A few useful knobs:
+
+| Setting | Effect |
+| :--- | :--- |
+| `player_speed`, `player_jump_speed` | How fast bots run and how high they jump. |
+| `player_collision_inset` | How close two players stand before they bump (smaller box = closer). |
+| `stall_pop_after`, `stall_kickoff_after` | How long a dead ball waits before it's nudged back into play / re‑kicked off. |
+| `match_time`, `record_fps` | Match length and replay frame rate. |
+
+The rendering (stadium, pitch, ball, goals) lives in the `draw*` functions in [`game/static/game/game.js`](game/static/game/game.js); the theme colors are CSS variables at the top of [`game/static/game/styles.css`](game/static/game/styles.css).
+
+---
+
+## Project structure
 
 ```text
 headballKarsoogh/
-├── doc/                            # مستندات کامل فارسی پروژه
-│   ├── architecture.md             # معماری سیستم و جریان داده‌ها
-│   ├── game-engine.md              # موتور فیزیک و مکانیک‌های بازی
-│   ├── strategy-system.md          # سیستم استراتژی، سنسورها و اکشن‌ها
-│   ├── ai-compiler.md              # کامپایلر هوش مصنوعی و پرامپت‌ها
-│   ├── api-reference.md            # راهنمای کامل اندپوینت‌های REST
-│   ├── auth-and-admin.md           # احراز هویت و مدیریت کاربران
-│   └── deployment-and-setup.md     # راهنمای نصب و استقرار
-├── config/                         # تنظیمات پروژه جنگو
-│   ├── settings.py                 # پیکربندی اپ‌ها، امنیت و پایگاه داده
-│   ├── urls.py                     # مسیریابی اصلی (/admin/، /login/، / و ...)
-│   ├── wsgi.py / asgi.py
-├── game/                           # اپلیکیشن اصلی بازی (کاملاً ماژولار و قابل انتقال)
-│   ├── engine.py                   # موتور فیزیک، شبیه‌سازی و حل برخوردها
-│   ├── strategy.py                 # واژگان بازی (سنسورها، عملگرها، استراتژی‌های آماده)
-│   ├── validators.py               # اعتبارسنجی قطعی داده‌های Strategy JSON
-│   ├── views.py                    # ویوهای امن و تحت کنترل جنگو
-│   ├── urls.py                     # مسیرهای API بازی
-│   ├── tests.py                    # مجموعه تست‌های خودکار فیزیک و احراز هویت
-│   ├── prompts/
-│   │   └── strategy_compiler.py    # پرامپت اختصاصی تبدیل استراتژی فارسی
-│   ├── services/
-│   │   └── llm.py                  # ارتباط با مدل‌های زبانی از طریق OrcaRouter
-│   ├── templates/
-│   │   ├── game/index.html         # محیط اصلی ساخت ربات و مسابقه
-│   │   ├── game/login.html         # صفحه ورود با طراحی تم تاریک
-│   │   └── registration/login.html
-│   └── static/game/
-│       ├── game.js                 # کنترل رابط کاربری و رندر فریم‌های انیمیشن با Canvas
-│       └── styles.css              # استایل‌های مدرن و راست‌چین
-├── Dockerfile                      # پیکربندی استقرار با کانتینر
-├── docker-compose.yml              # اجرای یکپارچه با Gunicorn
+├── doc/                          # Detailed guides (architecture, engine, API, auth, …)
+├── config/                       # Django project
+│   ├── settings.py               # apps, auth, static (WhiteNoise), database
+│   └── urls.py                   # /admin/, /login/, /logout/, /accounts/, /
+├── game/                         # The game app (self‑contained, portable)
+│   ├── engine.py                 # physics + match simulation
+│   ├── strategy.py               # vocabulary: sensors, operators, actions, presets
+│   ├── validators.py             # strict Strategy‑JSON validation
+│   ├── views.py                  # login‑gated views + JSON APIs
+│   ├── urls.py                   # game + API routes
+│   ├── tests.py                  # engine, API, and auth tests
+│   ├── prompts/strategy_compiler.py  # system prompt for the AI compiler
+│   ├── services/llm.py           # LLM client (OrcaRouter / OpenAI‑compatible)
+│   ├── templates/game/           # index.html, login.html
+│   └── static/game/              # game.js (UI + canvas replay), styles.css, fonts/
+├── Dockerfile / docker-compose.yml
 ├── manage.py
 ├── requirements.txt
 └── README.md
 ```
 
----
-
-## 🌟 ویژگی‌های برجسته فنی
-
-1. **فیزیک سرور-محور (Server-Side Physics):** تمام محاسبات حرکت توپ، برخورد با دیوار، پرش، شوت و ضربه سر بازیکنان با نرخ ۶۰ هرتز در پایتون انجام می‌شود و کلاینت تنها پخش‌کننده فریم‌ها است.
-2. **شبیه‌سازی فوق‌سریع دسته‌ای (Batch Simulation):** امکان اجرای بیش از ۱۰۰ مسابقه ۶۰ ثانیه‌ای در کمتر از ۲ ثانیه جهت بررسی توازن (Balance Testing) استراتژی‌ها.
-3. **تبدیل هوشمند زبان طبیعی (Natural Language to Logic):** اتصال به مدل‌های هوش مصنوعی (مانند DeepSeek V4 Flash) جهت تبدیل بدون دخل و تصرف متن فارسی به قوانین قابل اجرا.
-4. **امنیت و احراز هویت پایدار:** حفاظت از تمام اندپوینت‌ها با دکوراتور `@login_required`، توکن CSRF و مدیریت کاربران از طریق پنل ادمین جنگو.
+The `game/` app is intended to be portable — to drop it into an existing Django site, you don't need this project's `config/` folder or `manage.py`.
 
 ---
 
-## 🔗 لینک‌های مفید
+## Running with Docker
 
-- 📖 مطالعه مستندات معماری: [معماری سیستم (Architecture)](doc/architecture.md)
-- 🧪 اجرای تست‌های پروژه: `python manage.py test`
-- ⚙️ دسترسی به پنل مدیریت: `http://127.0.0.1:8000/admin/`
+```bash
+docker compose up --build
+```
+
+`docker-compose.yml` reads the same environment variables described above. Run migrations and create an admin user inside the container the first time.
+
+---
+
+## Tests
+
+```bash
+python manage.py test
+```
+
+The suite covers strategy validation, the engine (matches finish, batch counts add up), the JSON APIs, and authentication.
+
+---
+
+## Documentation
+
+| Topic | Guide |
+| :--- | :--- |
+| System architecture & data flow | [`doc/architecture.md`](doc/architecture.md) |
+| Physics engine & mechanics | [`doc/game-engine.md`](doc/game-engine.md) |
+| Strategy format, sensors & actions | [`doc/strategy-system.md`](doc/strategy-system.md) |
+| AI (Persian → rules) compiler | [`doc/ai-compiler.md`](doc/ai-compiler.md) |
+| REST API reference | [`doc/api-reference.md`](doc/api-reference.md) |
+| Authentication & admin | [`doc/auth-and-admin.md`](doc/auth-and-admin.md) |
+| Setup & deployment | [`doc/deployment-and-setup.md`](doc/deployment-and-setup.md) |
