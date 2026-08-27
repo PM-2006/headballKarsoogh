@@ -83,10 +83,10 @@ def api_validate_strategy(request):
 @require_http_methods(["GET", "POST"])
 def api_strategies(request):
     if request.method == "GET":
-        my_strategies = request.user.saved_strategies.all()
+        my_strategies = request.user.saved_strategies.select_related("user__kit").all()
         public_strategies = SavedStrategy.objects.filter(
             Q(is_public=True) | Q(user__is_staff=True) | Q(user__is_superuser=True)
-        ).exclude(user=request.user)
+        ).exclude(user=request.user).select_related("user__kit")
 
         return JsonResponse({
             "my_strategies": [
@@ -230,6 +230,31 @@ def api_batch(request):
         return JsonResponse(batch_matches(blue, red, matches=matches, seed=seed))
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def api_kit(request):
+    """Get the current user's team-kit colours + the palette, or save new ones."""
+    from .kits import PALETTE
+    from .models import PlayerKit
+
+    kit = PlayerKit.for_user(request.user)
+    if request.method == "POST":
+        from .kits import sanitize_kit
+        try:
+            payload = _json_body(request)
+        except StrategyValidationError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        colors = sanitize_kit(payload.get("colors"))
+        kit.home, kit.away, kit.alternative = colors
+        kit.save()
+        return JsonResponse({
+            "success": True,
+            "message": "رنگ‌های تیم ذخیره شد.",
+            "colors": kit.colors(),
+        })
+    return JsonResponse({"palette": PALETTE, "colors": kit.colors()})
 
 
 def _forbidden():

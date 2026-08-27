@@ -116,7 +116,9 @@ class GameConfig:
     stall_pop_vy: float = 640.0
 
     # Match Timing & Precision
-    match_time: float = 60.0
+    match_time: float = 40.0          # duration of ONE round (quarter)
+    match_rounds: int = 4             # basketball-style: this many rounds per match
+    rest_time: float = 25.0           # substitution window between rounds (seconds)
     kickoff_freeze: float = 0.90
     physics_fps: int = 60
     record_fps: int = 20
@@ -205,7 +207,9 @@ def get_base_config() -> GameConfig:
         stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
 
         # Match Timing & Precision
-        match_time=_env_float("GAME_MATCH_TIME", 60.0),
+        match_time=_env_float("GAME_MATCH_TIME", 40.0),
+        match_rounds=_env_int("GAME_MATCH_ROUNDS", 4),
+        rest_time=_env_float("GAME_REST_TIME", 25.0),
         kickoff_freeze=_env_float("GAME_KICKOFF_FREEZE", 0.90),
         physics_fps=_env_int("GAME_PHYSICS_FPS", 60),
         record_fps=_env_int("GAME_RECORD_FPS", 20),

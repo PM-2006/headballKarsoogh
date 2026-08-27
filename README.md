@@ -1,4 +1,4 @@
-# ⚽ AI Football Arena
+# ⚽ گیلبال (GilBall)
 
 A Django/Python platform for 1‑vs‑1 AI head‑ball matches, built for student workshops and AI competitions.
 

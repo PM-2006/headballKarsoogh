@@ -7,6 +7,38 @@ let savedStrategies = [];
 let publicStrategies = [];
 let editingStrategyId = null;
 
+// ---------- Team kit colours ----------
+const DEFAULT_KIT = ["#2196F3", "#E6194B", "#FFB300"];
+let myKit = DEFAULT_KIT.slice();      // current user's 3 kit colours
+let kitPalette = [];                  // the 28-colour palette (from the server)
+let teamColors = ["#2196F3", "#E6194B"]; // the two colours chosen for the current match
+function hexToRgb(h){h=(h||"").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return{r:parseInt(h.slice(0,2),16)||0,g:parseInt(h.slice(2,4),16)||0,b:parseInt(h.slice(4,6),16)||0};}
+function rgbHex(r,g,b){return "#"+[r,g,b].map(v=>Math.max(0,Math.min(255,v|0)).toString(16).padStart(2,"0")).join("");}
+function darken(hex,f){const c=hexToRgb(hex);return rgbHex(c.r*(1-f),c.g*(1-f),c.b*(1-f));}
+function luminance(hex){const c=hexToRgb(hex);return (0.2126*c.r+0.7152*c.g+0.0722*c.b)/255;}
+// Perceptual-ish "redmean" distance — bigger = easier for the eye to tell apart.
+function colorDist(a,b){const A=hexToRgb(a),B=hexToRgb(b);const rm=(A.r+B.r)/2,dr=A.r-B.r,dg=A.g-B.g,db=A.b-B.b;return Math.sqrt((2+rm/256)*dr*dr+4*dg*dg+(2+(255-rm)/256)*db*db);}
+function pickContrastPair(optsA,optsB){
+  let best=["#2196F3","#E6194B"],bd=-1;
+  (optsA&&optsA.length?optsA:DEFAULT_KIT).forEach(a=>(optsB&&optsB.length?optsB:DEFAULT_KIT).forEach(b=>{
+    const d=colorDist(a,b);if(d>bd){bd=d;best=[a,b];}
+  }));
+  return best;
+}
+function paletteFromColor(color){
+  return {head:color,headDark:darken(color,0.32),jersey:darken(color,0.12),boots:darken(color,0.2),skin:color};
+}
+function kitOptionsFor(sel){
+  if(!sel) return DEFAULT_KIT;
+  if(sel==="mybot") return myKit;
+  if(sel.startsWith("saved_")){const b=savedStrategies.find(s=>s.id===Number(sel.slice(6)));return (b&&b.kit)||myKit;}
+  if(sel.startsWith("pub_")){const b=publicStrategies.find(s=>s.id===Number(sel.slice(4)));return (b&&b.kit)||DEFAULT_KIT;}
+  return DEFAULT_KIT; // presets
+}
+function resolveTeamColors(blueSel,redSel){
+  teamColors=pickContrastPair(kitOptionsFor(blueSel),kitOptionsFor(redSel));
+}
+
 let gameConfig = {
   width: 1500,
   height: 860,
@@ -16,7 +48,9 @@ let gameConfig = {
   ball_radius: 23,
   player_width: 66,
   player_height: 84,
-  match_time: 60,
+  match_time: 40,
+  match_rounds: 4,
+  rest_time: 25,
 };
 
 function readInjectedConfig() {
@@ -290,14 +324,88 @@ function setFeedback(text,kind=""){
   $("feedback").textContent=text;$("feedback").className="feedback "+kind;
 }
 function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw new Error("اول My Bot را بساز.");return{strategy:myStrategy}}return{preset:selection}}
+// ---------- Basketball-style match: N rounds with substitution rests ----------
+let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
+let restTimerHandle=null;
+
+function paintTeamDots(){
+  const bd=$("blueDot"),rd=$("redDot");
+  if(bd)bd.style.background=teamColors[0];
+  if(rd)rd.style.background=teamColors[1];
+}
+function updateRoundInfo(){
+  const el=$("roundInfo");if(!el||!tournament)return;
+  el.textContent=`راند ${tournament.round} از ${tournament.rounds} · مجموع ${tournament.total[0]} : ${tournament.total[1]}`;
+}
 async function runMatch(){
+  if(tournament&&tournament.playing) return;      // a match is already in progress
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
+  hideRest();
   setArenaMsg("");
+  tournament={round:1, rounds:Math.max(1,Math.round(gameConfig.match_rounds||4)),
+              total:[0,0], baseSeed:Number($("seedInput").value)||1, playing:true};
+  await playRound();
+}
+async function playRound(){
+  const blue=$("blueSelect").value,red=$("redSelect").value;
+  resolveTeamColors(blue,red);
+  $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);
+  paintTeamDots();updateRoundInfo();
   try{
-    $("playMatch").disabled=true;const blue=$("blueSelect").value,red=$("redSelect").value;
-    const result=await postJSON("api/simulate/",{blue:strategyPayload(blue),red:strategyPayload(red),seed:Number($("seedInput").value)||1});
-    $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);playFrames(result.frames,result.record_fps);
-  }catch(err){setArenaMsg("❌ "+humanizeError(err),"err")}finally{$("playMatch").disabled=false}
+    $("playMatch").disabled=true;
+    const result=await postJSON("api/simulate/",{
+      blue:strategyPayload(blue),red:strategyPayload(red),
+      seed:tournament.baseSeed+tournament.round
+    });
+    playFrames(result.frames,result.record_fps,onRoundEnd);
+  }catch(err){
+    setArenaMsg("❌ "+humanizeError(err),"err");
+    tournament.playing=false;$("playMatch").disabled=false;
+  }
+}
+function onRoundEnd(lastFrame){
+  tournament.total[0]+=lastFrame.score[0];
+  tournament.total[1]+=lastFrame.score[1];
+  updateRoundInfo();
+  if(tournament.round<tournament.rounds){ showRest(); }
+  else{ tournament.playing=false;$("playMatch").disabled=false; showFinal(); }
+}
+function showRest(){
+  const rest=$("restFx");
+  if(!rest){advanceRound();return;}
+  const secs=Math.max(3,Math.round(gameConfig.rest_time||25));
+  if($("restRound"))$("restRound").textContent=`پایان راند ${tournament.round} از ${tournament.rounds}`;
+  if($("restTotal"))$("restTotal").textContent=`مجموع تا این‌جا: ${tournament.total[0]} — ${tournament.total[1]}`;
+  rest.classList.add("show");
+  let remain=secs;
+  if($("restCountdown"))$("restCountdown").textContent=remain;
+  clearInterval(restTimerHandle);
+  restTimerHandle=setInterval(()=>{
+    remain--;
+    if($("restCountdown"))$("restCountdown").textContent=Math.max(0,remain);
+    if(remain<=0){advanceRound();}
+  },1000);
+}
+function advanceRound(){
+  clearInterval(restTimerHandle);
+  hideRest();
+  if(!tournament){return;}
+  tournament.round++;
+  playRound();
+}
+function hideRest(){const r=$("restFx");if(r)r.classList.remove("show");clearInterval(restTimerHandle);}
+function showFinal(){
+  const win=$("winFx");if(!win){return;}
+  const b=tournament.total[0],r=tournament.total[1],card=win.querySelector(".win-card");
+  let title,cls="";
+  if(b>r){title="🏆 برندهٔ مسابقه: تیم آبی";cls="blue";}
+  else if(r>b){title="🏆 برندهٔ مسابقه: تیم قرمز";cls="red";}
+  else{title="🤝 مسابقه مساوی شد!";}
+  if($("winTitle"))$("winTitle").textContent=title;
+  if($("winScore"))$("winScore").textContent=`${b} : ${r}`;
+  card.className="win-card"+(cls?" "+cls:"");
+  win.classList.add("show");
+  spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
 }
 function isFiniteNumber(value){return typeof value==="number"&&Number.isFinite(value)}
 function isValidReplayFrame(frame){
@@ -317,13 +425,14 @@ function validateReplay(frames,fps){
   }
 }
 const PLAYBACK_MAX_STEP_MS=100; // ignore gaps bigger than this (tab switch / hitch)
-function playFrames(frames,fps){
+function playFrames(frames,fps,onEnd){
+  const done=onEnd||showWinner;
   validateReplay(frames,fps);
   resetFx();
   const frameMs=1000/fps;
   let elapsed=0,last=null,lastScore=[frames[0].score[0],frames[0].score[1]];
   drawFrame(frames[0]);
-  if(frames.length===1){playbackHandle=null;showWinner(frames[0]);return}
+  if(frames.length===1){playbackHandle=null;done(frames[0]);return}
   function tick(now){
     // Advance by real time, but clamp each step. When the tab is hidden rAF
     // pauses; on return the first delta is huge, and without this clamp the
@@ -337,7 +446,7 @@ function playFrames(frames,fps){
     lastScore=[s[0],s[1]];
     drawFrame(frames[idx]);
     if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);
-    else{playbackHandle=null;showWinner(frames[idx]);}
+    else{playbackHandle=null;done(frames[idx]);}
   }
   playbackHandle=requestAnimationFrame(tick);
 }
@@ -409,7 +518,7 @@ function drawFrame(frame){
   drawStadium(ctx,W,H,G);
   drawPitch(ctx,W,H,G);
   drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);
-  drawPlayer(ctx,frame.players[0],"#2f9bff",PW,PH,G);drawPlayer(ctx,frame.players[1],"#ff5262",PW,PH,G);
+  drawPlayer(ctx,frame.players[0],teamColors[0],PW,PH,G,"10");drawPlayer(ctx,frame.players[1],teamColors[1],PW,PH,G,"7");
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
@@ -614,11 +723,8 @@ function drawLimb(ctx,x1,y1,x2,y2,thickness,color){
   ctx.lineTo(x2,y2);
   ctx.stroke();
 }
-function drawPlayer(ctx,p,color,w,h,G){
-  const isRed=color.toLowerCase()==="#ff5262";
-  const palette=isRed
-    ?{head:"#ff5353",headDark:"#df2f35",jersey:"#d91f2a",boots:"#d52b34",skin:"#ff5353"}
-    :{head:"#55a8ff",headDark:"#2d82df",jersey:"#126bd8",boots:"#2475d6",skin:"#55a8ff"};
+function drawPlayer(ctx,p,color,w,h,G,number){
+  const palette=paletteFromColor(color);
 
   const cx=p.x+w/2;
   const facing=p.face>=0?1:-1;
@@ -711,11 +817,11 @@ function drawPlayer(ctx,p,color,w,h,G){
   ctx.restore();
 
   // Draw the shirt number after restoring so text never appears mirrored.
-  ctx.fillStyle="#fff";
+  ctx.fillStyle=luminance(color)>0.62?"#20232a":"#ffffff";
   ctx.font=`bold ${Math.max(8, Math.round(10*Math.min(sx, sy)))}px Arial`;
   ctx.textAlign="center";
   ctx.textBaseline="middle";
-  ctx.fillText(isRed?"7":"10",cx+2*sx,p.y+(39+11)*sy);
+  ctx.fillText(number||"",cx+2*sx,p.y+(39+11)*sy);
 }
 function batchRow(name,cls,wins,goals,total){
   const pct=total?Math.round(wins/total*100):0;
@@ -1077,6 +1183,40 @@ async function panelTest(){
   }catch(err){showToast("❌ "+humanizeError(err),"err");setPanelStatus("خطا در آزمایش.");}
 }
 
+// ---------- Team-colour picker (my kit) ----------
+let activeKitSlot=0;
+async function fetchKit(){
+  try{
+    const data=await fetch("api/kit/").then(r=>r.json());
+    if(Array.isArray(data.palette))kitPalette=data.palette;
+    if(Array.isArray(data.colors)&&data.colors.length===3)myKit=data.colors.slice();
+    renderKitPicker();
+  }catch(e){}
+}
+function renderKitPicker(){
+  const host=$("kitPicker");if(!host)return;
+  const names=["اصلی (خانه)","دوم (میهمان)","جایگزین"];
+  const slots=myKit.map((c,i)=>
+    `<button type="button" class="kit-slot${i===activeKitSlot?' active':''}" data-slot="${i}">
+       <span class="kit-chip" style="background:${c}"></span>
+       <span class="kit-slot-label">${names[i]}</span></button>`).join("");
+  const swatches=kitPalette.map(c=>
+    `<button type="button" class="kit-sw${myKit[activeKitSlot]===c?' sel':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
+  host.innerHTML=`<div class="kit-slots">${slots}</div>
+    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن.</div>
+    <div class="kit-swatches">${swatches}</div>`;
+  host.querySelectorAll(".kit-slot").forEach(b=>b.onclick=()=>{activeKitSlot=Number(b.dataset.slot);renderKitPicker();});
+  host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
+}
+async function saveKit(){
+  try{
+    const res=await postJSON("api/kit/",{colors:myKit});
+    if(Array.isArray(res.colors))myKit=res.colors.slice();
+    renderKitPicker();
+    showToast("✅ رنگ‌های تیم ذخیره شد.","ok");
+  }catch(err){showToast("❌ "+humanizeError(err),"err");}
+}
+
 async function init(){
   readInjectedConfig();
   vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
@@ -1092,6 +1232,9 @@ async function init(){
   if($("panelSave")) $("panelSave").onclick=panelSave;
   if($("panelReset")) $("panelReset").onclick=panelReset;
   if($("panelTest")) $("panelTest").onclick=panelTest;
+  if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
+  if($("restNext")) $("restNext").onclick=advanceRound;
+  fetchKit();
   $("addRule").onclick=()=>addSimple();
   $("buildBot").onclick=buildBot;
   $("compileWithAI").onclick=compileWithAI;
