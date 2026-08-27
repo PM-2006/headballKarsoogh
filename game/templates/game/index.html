@@ -62,11 +62,41 @@
     <div class="card mybot-card">
       <div class="mybot-head"><h2>🤖 ربات من</h2><span id="botBadge" class="bot-badge off">ساخته نشده</span></div>
       <div id="humanBrain" class="brain empty">هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span></div>
+      <div class="save-box">
+        <div class="save-row">
+          <input id="botNameInput" type="text" placeholder="نام ربات (مثلاً: عقاب زاگرس)" maxlength="100">
+          <button id="saveBotBtn" class="primary" disabled>💾 ذخیره ربات</button>
+        </div>
+        <div id="editingInfo" class="editing-info" style="display:none;">
+          <span>در حال ویرایش: <b id="editingBotName"></b></span>
+          <button id="cancelEditBtn" class="mini danger">انصراف از ویرایش</button>
+        </div>
+      </div>
       <details class="json-details"><summary>🔧 جزئیات فنی (Strategy JSON)</summary><pre id="jsonView"></pre></details>
       <div class="mybot-actions">
         <button id="testBot" class="success">⚽ آزمایش ربات من</button>
-        <button id="deleteBot" class="btn-danger" disabled>🗑 حذف ربات</button>
+        <button id="deleteBot" class="btn-danger" disabled>🗑 پاکسازی صفحه</button>
       </div>
+    </div>
+  </div>
+
+  <div class="grid two bot-galleries">
+    <div class="card gallery-card">
+      <div class="gallery-head">
+        <h2>📚 ربات‌های ذخیره‌شده من</h2>
+        <button id="refreshMyBotsBtn" class="mini">🔄 تازه‌سازی</button>
+      </div>
+      <p class="muted">ربات‌هایی که ساخته‌ای را ذخیره، ویرایش، حذف یا برای مسابقه انتخاب کن.</p>
+      <div id="myBotsList" class="bot-list"><div class="empty-list">هنوز رباتی ذخیره نکرده‌ای.</div></div>
+    </div>
+
+    <div class="card gallery-card">
+      <div class="gallery-head">
+        <h2>🏆 ربات‌های رسمی و مدیران</h2>
+        <span class="badge-public">عمومی برای همه</span>
+      </div>
+      <p class="muted">استراتژی‌های طراحی‌شده توسط مدیران سرور؛ می‌توانی رباتت را در برابر این ربات‌ها بسنجی!</p>
+      <div id="publicBotsList" class="bot-list"><div class="empty-list">هنوز ربات رسمی‌ای منتشر نشده است.</div></div>
     </div>
   </div>
 </section>

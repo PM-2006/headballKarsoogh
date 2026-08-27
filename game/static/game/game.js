@@ -3,6 +3,9 @@ const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
 let vocabulary = null;
 let myStrategy = null;
 let playbackHandle = null;
+let savedStrategies = [];
+let publicStrategies = [];
+let editingStrategyId = null;
 
 let gameConfig = {
   width: 1280,
@@ -125,10 +128,12 @@ function quickPreset(name){
   if(name==="late")simpleRules=[mkRule(["time_left_lt","losing"],"MOVE_TO_BALL"),mkRule(["time_left_lt","winning"],"MOVE_TO_GOAL"),mkRule(["can_kick"],"KICK_LOW")];
   renderSimpleRules();
 }
-async function postJSON(url,payload){
+async function postJSON(url,payload,method="POST"){
   let response;
   try{
-    response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":csrf},body:JSON.stringify(payload)});
+    const opts={method,headers:{"Content-Type":"application/json","X-CSRFToken":csrf}};
+    if(method!=="GET"&&method!=="HEAD") opts.body=JSON.stringify(payload||{});
+    response=await fetch(url,opts);
   }catch(e){throw new Error("ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و اینترنت وصل است، بعد دوباره تلاش کن.");}
   let data;
   try{data=await response.json();}
@@ -209,6 +214,7 @@ function renderCompiledStrategy(strategy){
 }
 function markBotReady(){
   $("deleteBot").disabled=false;
+  if($("saveBotBtn")) $("saveBotBtn").disabled=false;
   const badge=$("botBadge");if(badge){badge.className="bot-badge on";badge.textContent="آماده ✓";}
 }
 function deleteBot(){
@@ -218,9 +224,12 @@ function deleteBot(){
   const hb=$("humanBrain");hb.className="brain empty";
   hb.innerHTML='هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span>';
   $("deleteBot").disabled=true;
+  if($("saveBotBtn")) $("saveBotBtn").disabled=true;
+  if($("botNameInput")) $("botNameInput").value="";
+  cancelEdit();
   const badge=$("botBadge");if(badge){badge.className="bot-badge off";badge.textContent="ساخته نشده";}
   refreshOpponentMenus();
-  showToast("ربات حذف شد.","ok");
+  showToast("صفحه ربات پاکسازی شد.","ok");
 }
 async function compileWithAI(){
   const text=$("strategyText").value.trim();
@@ -659,13 +668,250 @@ async function runBatch(){
   }
   catch(err){showToast(humanizeError(err),"err");$("batchResult").innerHTML=`<span class="batch-empty">هنوز آزمونی اجرا نشده.</span>`}finally{$("runBatch").disabled=false}
 }
-function labelFor(key){if(key==="mybot")return"My Bot";return vocabulary?.presets?.[key]||key}
-function refreshOpponentMenus(){
-  const currentBlue=$("blueSelect").value||"predictive",currentRed=$("redSelect").value||"adaptive",options=[];
-  if(myStrategy)options.push(`<option value="mybot">My Bot</option>`);Object.entries(vocabulary.presets).forEach(([k,label])=>options.push(`<option value="${k}">${label}</option>`));$("blueSelect").innerHTML=options.join("");$("redSelect").innerHTML=options.join("");
-  if([...$("blueSelect").options].some(o=>o.value===currentBlue))$("blueSelect").value=currentBlue;else $("blueSelect").value="predictive";
-  if([...$("redSelect").options].some(o=>o.value===currentRed))$("redSelect").value=currentRed;else $("redSelect").value="adaptive";
+function escapeHtml(str){
+  if(!str) return "";
+  return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
 }
+
+function labelFor(key){
+  if(key==="mybot") return myStrategy?.label || "My Bot";
+  if(key.startsWith("saved_")){
+    const id=Number(key.replace("saved_",""));
+    const b=savedStrategies.find(s=>s.id===id);
+    return b ? b.name : "My Bot";
+  }
+  if(key.startsWith("pub_")){
+    const id=Number(key.replace("pub_",""));
+    const b=publicStrategies.find(s=>s.id===id);
+    return b ? `🏆 ${b.name}` : key;
+  }
+  return vocabulary?.presets?.[key]||key;
+}
+
+function strategyPayload(selection){
+  if(selection==="mybot"){
+    if(!myStrategy) throw new Error("اول My Bot را بساز.");
+    return {strategy:myStrategy};
+  }
+  if(selection.startsWith("saved_")){
+    return {strategy_id:Number(selection.replace("saved_",""))};
+  }
+  if(selection.startsWith("pub_")){
+    return {strategy_id:Number(selection.replace("pub_",""))};
+  }
+  return {preset:selection};
+}
+
+function refreshOpponentMenus(){
+  const currentBlue=$("blueSelect").value||"predictive",currentRed=$("redSelect").value||"adaptive";
+
+  let blueOpts="", redOpts="";
+
+  // 1. My Bots group
+  let myGroup="";
+  if(myStrategy){
+    myGroup+=`<option value="mybot">🤖 My Bot (پیش‌نویس جاری)</option>`;
+  }
+  savedStrategies.forEach(s=>{
+    myGroup+=`<option value="saved_${s.id}">👤 ${escapeHtml(s.name)}</option>`;
+  });
+  if(myGroup){
+    blueOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
+    redOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
+  }
+
+  // 2. Admin & Public bots group
+  if(publicStrategies.length){
+    let pubGroup="";
+    publicStrategies.forEach(s=>{
+      pubGroup+=`<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"ادمین")})</option>`;
+    });
+    blueOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
+    redOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
+  }
+
+  // 3. Presets group
+  if(vocabulary?.presets){
+    let preGroup="";
+    Object.entries(vocabulary.presets).forEach(([k,label])=>{
+      preGroup+=`<option value="${k}">⚡ ${label}</option>`;
+    });
+    blueOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
+    redOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
+  }
+
+  $("blueSelect").innerHTML=blueOpts;
+  $("redSelect").innerHTML=redOpts;
+
+  if([...$("blueSelect").options].some(o=>o.value===currentBlue)) $("blueSelect").value=currentBlue;
+  else $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "predictive"));
+
+  if([...$("redSelect").options].some(o=>o.value===currentRed)) $("redSelect").value=currentRed;
+  else $("redSelect").value=(publicStrategies[0] ? "pub_"+publicStrategies[0].id : "adaptive");
+}
+
+async function loadStrategiesFromServer(){
+  try{
+    const res=await fetch("api/strategies/").then(r=>r.json());
+    savedStrategies=res.my_strategies || [];
+    publicStrategies=res.public_strategies || [];
+    renderBotGalleries();
+    refreshOpponentMenus();
+  }catch(e){
+    console.error("Failed loading saved strategies",e);
+  }
+}
+
+function renderBotGalleries(){
+  const myWrap=$("myBotsList");
+  if(myWrap){
+    if(!savedStrategies.length){
+      myWrap.innerHTML='<div class="empty-list">هنوز رباتی ذخیره نکرده‌ای. از بالای صفحه یک ربات بساز و ذخیره‌اش کن!</div>';
+    }else{
+      myWrap.innerHTML=savedStrategies.map(b=>`
+        <div class="bot-card-item">
+          <div class="bot-card-head">
+            <div class="bot-card-name">🤖 ${escapeHtml(b.name)}</div>
+            <span class="bot-badge on">${(b.strategy?.rules||[]).length} تصمیم</span>
+          </div>
+          <div class="bot-card-meta">
+            <span>📅 آخرین ویرایش: ${b.updated_at}</span>
+          </div>
+          <div class="bot-card-actions">
+            <button class="primary" onclick="loadBotIntoBuilder(${b.id})">📂 ویرایش و بارگذاری</button>
+            <button class="success" onclick="challengeBotInArena(${b.id},true)">⚽ مسابقه در آرنا</button>
+            <button class="btn-danger" onclick="deleteSavedBot(${b.id},'${escapeHtml(b.name)}')">🗑 حذف</button>
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+
+  const pubWrap=$("publicBotsList");
+  if(pubWrap){
+    if(!publicStrategies.length){
+      pubWrap.innerHTML='<div class="empty-list">هنوز ربات رسمی‌ای توسط مدیران منتشر نشده است.</div>';
+    }else{
+      pubWrap.innerHTML=publicStrategies.map(b=>`
+        <div class="bot-card-item">
+          <div class="bot-card-head">
+            <div class="bot-card-name">🏆 ${escapeHtml(b.name)}</div>
+            <span class="badge-public">${b.author ? `👤 مدیر: ${escapeHtml(b.author)}` : "عمومی"}</span>
+          </div>
+          <div class="bot-card-meta">
+            <span>⚡ تعداد تصمیم‌ها: ${(b.strategy?.rules||[]).length}</span>
+            <span>📅 تاریخ انتشار: ${b.created_at}</span>
+          </div>
+          <div class="bot-card-actions">
+            <button onclick="loadBotIntoBuilder(${b.id})">👁 مشاهده مغز ربات</button>
+            <button class="primary" onclick="challengeBotInArena(${b.id},false)">⚔️ مسابقه با این ربات</button>
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+}
+
+async function saveCurrentBot(){
+  if(!myStrategy){
+    showToast("ابتدا یک استراتژی بسازید تا بتوانید آن را ذخیره کنید.","err");
+    return;
+  }
+  const name=($("botNameInput").value || "").trim() || myStrategy.label || "My Bot";
+  const ai_prompt=($("strategyText").value || "").trim();
+  const btn=$("saveBotBtn");
+  try{
+    btn.disabled=true;
+    btn.textContent="در حال ذخیره...";
+    if(editingStrategyId){
+      await postJSON(`api/strategies/${editingStrategyId}/`,{
+        name,
+        strategy:myStrategy,
+        ai_prompt
+      },"POST");
+      showToast(`ربات «${name}» با موفقیت به‌روزرسانی شد.`,"ok");
+    }else{
+      const res=await postJSON("api/strategies/",{
+        name,
+        strategy:myStrategy,
+        ai_prompt
+      },"POST");
+      if(res.strategy&&res.strategy.id){
+        editingStrategyId=res.strategy.id;
+        $("editingInfo").style.display="flex";
+        $("editingBotName").textContent=name;
+      }
+      showToast(`ربات «${name}» با موفقیت در سرور ذخیره شد.`,"ok");
+    }
+    await loadStrategiesFromServer();
+  }catch(err){
+    showToast("❌ "+humanizeError(err),"err");
+  }finally{
+    btn.disabled=false;
+    btn.textContent=editingStrategyId ? "💾 ذخیره تغییرات" : "💾 ذخیره ربات";
+  }
+}
+
+function cancelEdit(){
+  editingStrategyId=null;
+  if($("editingInfo")) $("editingInfo").style.display="none";
+  if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره ربات";
+}
+
+function loadBotIntoBuilder(id){
+  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
+  if(!bot){
+    showToast("ربات مورد نظر یافت نشد.","err");
+    return;
+  }
+  if(bot.is_owner){
+    editingStrategyId=bot.id;
+    if($("editingInfo")){
+      $("editingInfo").style.display="flex";
+      $("editingBotName").textContent=bot.name;
+    }
+    if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره تغییرات";
+  }else{
+    cancelEdit();
+  }
+  if($("botNameInput")) $("botNameInput").value=bot.name;
+  if(bot.ai_prompt && $("strategyText")){
+    $("strategyText").value=bot.ai_prompt;
+  }
+  renderCompiledStrategy(bot.strategy);
+  switchView("builder");
+  showToast(`ربات «${bot.name}» در ویرایشگر بارگذاری شد.`,"ok");
+}
+
+async function deleteSavedBot(id,name){
+  if(!confirm(`آیا از حذف ربات «${name}» اطمینان دارید؟`)) return;
+  try{
+    await postJSON(`api/strategies/${id}/`,{},"DELETE");
+    if(editingStrategyId===id){
+      cancelEdit();
+    }
+    showToast(`ربات «${name}» با موفقیت حذف شد.`,"ok");
+    await loadStrategiesFromServer();
+  }catch(err){
+    showToast("❌ "+humanizeError(err),"err");
+  }
+}
+
+function challengeBotInArena(id,asBlue=true){
+  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
+  if(!bot) return;
+  refreshOpponentMenus();
+  if(asBlue){
+    $("blueSelect").value="saved_"+bot.id;
+    $("redSelect").value="adaptive";
+  }else{
+    $("redSelect").value="pub_"+bot.id;
+    $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "smart"));
+  }
+  switchView("arena");
+  runMatch();
+}
+
 async function init(){
   readInjectedConfig();
   vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
@@ -673,7 +919,7 @@ async function init(){
     Object.assign(gameConfig,vocabulary.config);
     updateCanvasDimensions();
   }
-  refreshOpponentMenus();
+  await loadStrategiesFromServer();
   quickPreset("smart");
   $("builderTab").onclick=()=>switchView("builder");
   $("arenaTab").onclick=()=>switchView("arena");
@@ -683,6 +929,9 @@ async function init(){
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
   $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
   $("deleteBot").onclick=deleteBot;
+  if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
+  if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;
+  if($("refreshMyBotsBtn")) $("refreshMyBotsBtn").onclick=loadStrategiesFromServer;
   document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
   $("playMatch").onclick=runMatch;
   $("runBatch").onclick=runBatch;

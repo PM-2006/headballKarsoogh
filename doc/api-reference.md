@@ -225,6 +225,74 @@ POST  /api/compile-strategy/      # ترجمه متن فارسی به استرا
 
 ---
 
+---
+
+### ۶) مدیریت و ذخیره‌سازی استراتژی‌ها — `GET /api/strategies/` و `POST /api/strategies/`
+
+#### ۱. دریافت لیست استراتژی‌های کاربر و ربات‌های رسمی — `GET /api/strategies/`:
+لیست ربات‌های ذخیره‌شده توسط کاربر جاری (`my_strategies`) و ربات‌های رسمی/ادمین که عمومی هستند (`public_strategies`) را برمی‌گرداند.
+
+##### نمونه پاسخ (`200 OK`):
+```json
+{
+  "my_strategies": [
+    {
+      "id": 1,
+      "name": "عقاب زاگرس",
+      "description": "ربات تهاجمی سریع",
+      "ai_prompt": "اگر بتونم شوت کنم شوت زمینی بزن...",
+      "strategy": { ... },
+      "is_public": false,
+      "is_owner": true,
+      "author": "student1",
+      "created_at": "2026-08-27 03:00",
+      "updated_at": "2026-08-27 03:15"
+    }
+  ],
+  "public_strategies": [
+    {
+      "id": 2,
+      "name": "غول مرحله آخر",
+      "description": "طراحی شده توسط سرپرست مسابقات",
+      "ai_prompt": "",
+      "strategy": { ... },
+      "is_public": true,
+      "is_owner": false,
+      "author": "admin",
+      "created_at": "2026-08-27 02:30",
+      "updated_at": "2026-08-27 02:30"
+    }
+  ]
+}
+```
+
+#### ۲. ذخیره یک استراتژی جدید — `POST /api/strategies/`:
+یک استراتژی جدید برای کاربر احراز هویت شده ذخیره می‌کند.
+
+##### بدنه درخواست (Request Body):
+```json
+{
+  "name": "عقاب زاگرس",
+  "description": "توضیحات اختیاری",
+  "ai_prompt": "اگر بتونم شوت کنم شوت بزن...",
+  "strategy": {
+    "label": "عقاب زاگرس",
+    "rules": [ ... ],
+    "default_action": "IDLE"
+  }
+}
+```
+
+---
+
+### ۷) عملیات روی یک استراتژی خاص — `/api/strategies/<id>/`
+
+- **`GET /api/strategies/<id>/`**: دریافت جزییات یک استراتژی ذخیره‌شده (در صورت دسترسی داشتن).
+- **`POST` یا `PUT /api/strategies/<id>/`**: ویرایش نام، توضیحات، پرامپت یا ساختار قوانین استراتژی توسط مالک آن.
+- **`DELETE /api/strategies/<id>/`**: حذف استراتژی توسط مالک یا کاربر مدیر.
+
+---
+
 ## ناوبری مستندات
 
 - ⬅️ **قبلی: [کامپایلر استراتژی با هوش مصنوعی (ai-compiler.md)](./ai-compiler.md)**

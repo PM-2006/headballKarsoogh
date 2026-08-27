@@ -1,3 +1,4 @@
+import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -184,6 +185,104 @@ class AICompilerSchemaTests(TestCase):
         from .services.llm import compile_persian_strategy
         with self.assertRaises(StrategyValidationError):
             compile_persian_strategy("   ")
+
+
+class SavedStrategyTests(TestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(username="student1", password="pass123456user")
+        self.user2 = User.objects.create_user(username="student2", password="pass123456user")
+        self.admin = User.objects.create_superuser(username="superadmin", password="admin123456pass")
+        self.sample_strategy = {
+            "label": "Eagle Bot",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [{"left": "can_kick", "operator": "==", "rightType": "value", "right": True}],
+                    "action": "KICK_LOW",
+                }
+            ],
+            "default_action": "MOVE_TO_BALL",
+        }
+
+    def test_create_and_list_strategy(self):
+        self.client.login(username="student1", password="pass123456user")
+        response = self.client.post(
+            reverse("game:api_strategies"),
+            data=json.dumps({"name": "عقاب زاگرس", "strategy": self.sample_strategy, "ai_prompt": "تست پرامپت"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 201)
+        data = response.json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["strategy"]["name"], "عقاب زاگرس")
+
+        # List strategies
+        list_res = self.client.get(reverse("game:api_strategies"))
+        self.assertEqual(list_res.status_code, 200)
+        list_data = list_res.json()
+        self.assertEqual(len(list_data["my_strategies"]), 1)
+        self.assertEqual(list_data["my_strategies"][0]["name"], "عقاب زاگرس")
+
+    def test_admin_strategy_visible_to_all(self):
+        from .models import SavedStrategy
+        # Admin creates public strategy
+        SavedStrategy.objects.create(
+            user=self.admin,
+            name="Official Boss Bot",
+            strategy_data=self.sample_strategy,
+            is_public=True,
+        )
+
+        # Student 1 lists strategies
+        self.client.login(username="student1", password="pass123456user")
+        res = self.client.get(reverse("game:api_strategies"))
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(len(data["public_strategies"]), 1)
+        self.assertEqual(data["public_strategies"][0]["name"], "Official Boss Bot")
+
+    def test_permissions_user_cannot_edit_or_delete_others_strategy(self):
+        from .models import SavedStrategy
+        strat = SavedStrategy.objects.create(
+            user=self.user1,
+            name="Private Bot",
+            strategy_data=self.sample_strategy,
+        )
+
+        # User 2 tries to update User 1's strategy
+        self.client.login(username="student2", password="pass123456user")
+        res_update = self.client.post(
+            reverse("game:api_strategy_detail", kwargs={"pk": strat.pk}),
+            data=json.dumps({"name": "Hacked"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res_update.status_code, 403)
+
+        # User 2 tries to delete User 1's strategy
+        res_delete = self.client.delete(reverse("game:api_strategy_detail", kwargs={"pk": strat.pk}))
+        self.assertEqual(res_delete.status_code, 403)
+
+    def test_simulation_with_saved_strategy_id(self):
+        from .models import SavedStrategy
+        strat = SavedStrategy.objects.create(
+            user=self.user1,
+            name="User1 Bot",
+            strategy_data=self.sample_strategy,
+        )
+
+        self.client.login(username="student1", password="pass123456user")
+        sim_res = self.client.post(
+            reverse("game:api_simulate"),
+            data=json.dumps({
+                "blue": {"strategy_id": strat.id},
+                "red": {"preset": "adaptive"},
+                "seed": 1,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(sim_res.status_code, 200)
+        self.assertIn("frames", sim_res.json())
+
 
 
 

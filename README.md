@@ -93,6 +93,9 @@ All endpoints require an authenticated session and a CSRF token. `POST` bodies a
 | Method | Endpoint | Purpose |
 | :--- | :--- | :--- |
 | `GET` | `/api/vocabulary/` | Available sensors, operators, actions, and preset names. |
+| `GET` | `/api/strategies/` | List user's saved strategies and public admin strategies. |
+| `POST` | `/api/strategies/` | Save a new strategy for the authenticated user. |
+| `GET/PUT/DELETE` | `/api/strategies/<id>/` | Read, update, or delete a specific saved strategy. |
 | `POST` | `/api/validate/` | Validate a custom strategy before it runs. |
 | `POST` | `/api/compile-strategy/` | Compile Persian strategy text into a validated strategy (LLM). |
 | `POST` | `/api/simulate/` | Run one match and return the result plus recorded frames. |
