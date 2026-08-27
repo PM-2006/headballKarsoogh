@@ -9,9 +9,11 @@ let editingStrategyId = null;
 
 // ---------- Team kit colours ----------
 const DEFAULT_KIT = ["#2196F3", "#E6194B", "#FFB300"];
+const MIN_KIT_DIST = 130;             // two kit colours must be at least this far apart
 let myKit = DEFAULT_KIT.slice();      // current user's 3 kit colours
 let kitPalette = [];                  // the 28-colour palette (from the server)
 let teamColors = ["#2196F3", "#E6194B"]; // the two colours chosen for the current match
+let teamNames = ["تیم ۱", "تیم ۲"];      // the two teams' names (bot/user names)
 function hexToRgb(h){h=(h||"").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return{r:parseInt(h.slice(0,2),16)||0,g:parseInt(h.slice(2,4),16)||0,b:parseInt(h.slice(4,6),16)||0};}
 function rgbHex(r,g,b){return "#"+[r,g,b].map(v=>Math.max(0,Math.min(255,v|0)).toString(16).padStart(2,"0")).join("");}
 function darken(hex,f){const c=hexToRgb(hex);return rgbHex(c.r*(1-f),c.g*(1-f),c.b*(1-f));}
@@ -40,7 +42,7 @@ function resolveTeamColors(blueSel,redSel){
 }
 
 let gameConfig = {
-  width: 1500,
+  width: 2000,
   height: 860,
   ground_y: 730,
   goal_depth: 122,
@@ -328,14 +330,23 @@ function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
 
-function paintTeamDots(){
-  const bd=$("blueDot"),rd=$("redDot");
-  if(bd)bd.style.background=teamColors[0];
-  if(rd)rd.style.background=teamColors[1];
+function paintTeamColors(){
+  ["blueDot","tbDot0","liveBlueDot"].forEach(id=>{const e=$(id);if(e)e.style.background=teamColors[0];});
+  ["redDot","tbDot1","liveRedDot"].forEach(id=>{const e=$(id);if(e)e.style.background=teamColors[1];});
+}
+function setTxt(id,t){const e=$(id);if(e)e.textContent=t;}
+// Resolve the two teams' colours + names from the current selections and paint
+// them everywhere (toolbar, scorebug, live panel). Team = the bot/user name.
+function applyTeamIdentity(blueSel,redSel){
+  resolveTeamColors(blueSel,redSel);
+  teamNames=[labelFor(blueSel),labelFor(redSel)];
+  setTxt("blueName",teamNames[0]);setTxt("redName",teamNames[1]);
+  setTxt("liveBlueName",teamNames[0]);setTxt("liveRedName",teamNames[1]);
+  paintTeamColors();
 }
 function updateRoundInfo(){
   const el=$("roundInfo");if(!el||!tournament)return;
-  el.textContent=`راند ${tournament.round} از ${tournament.rounds} · مجموع ${tournament.total[0]} : ${tournament.total[1]}`;
+  el.textContent=`راند ${tournament.round} از ${tournament.rounds}`;
 }
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
@@ -348,9 +359,8 @@ async function runMatch(){
 }
 async function playRound(){
   const blue=$("blueSelect").value,red=$("redSelect").value;
-  resolveTeamColors(blue,red);
-  $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);
-  paintTeamDots();updateRoundInfo();
+  applyTeamIdentity(blue,red);
+  updateRoundInfo();
   try{
     $("playMatch").disabled=true;
     const result=await postJSON("api/simulate/",{
@@ -398,8 +408,8 @@ function showFinal(){
   const win=$("winFx");if(!win){return;}
   const b=tournament.total[0],r=tournament.total[1],card=win.querySelector(".win-card");
   let title,cls="";
-  if(b>r){title="🏆 برندهٔ مسابقه: تیم آبی";cls="blue";}
-  else if(r>b){title="🏆 برندهٔ مسابقه: تیم قرمز";cls="red";}
+  if(b>r){title=`🏆 برندهٔ مسابقه: ${teamNames[0]}`;cls="blue";}
+  else if(r>b){title=`🏆 برندهٔ مسابقه: ${teamNames[1]}`;cls="red";}
   else{title="🤝 مسابقه مساوی شد!";}
   if($("winTitle"))$("winTitle").textContent=title;
   if($("winScore"))$("winScore").textContent=`${b} : ${r}`;
@@ -473,7 +483,8 @@ function celebrateGoal(team){
   const fx=$("goalFx");if(!fx)return;
   const word=fx.querySelector(".goal-word");
   word.className="goal-word "+(team===0?"blue":"red");
-  word.textContent=team===0?"گل آبی!":"گل قرمز!";
+  word.style.color=teamColors[team];
+  word.textContent=`گل ${teamNames[team]}!`;
   fx.classList.remove("show","flash");void fx.offsetWidth; // restart the animation
   fx.classList.add("show","flash");
   spawnConfetti(document.querySelector(".stage"),
@@ -485,8 +496,8 @@ function showWinner(frame){
   const win=$("winFx");if(!win)return;
   const b=frame.score[0],r=frame.score[1],card=win.querySelector(".win-card");
   let title,cls="";
-  if(b>r){title="🔵 برنده: تیم آبی";cls="blue";}
-  else if(r>b){title="🔴 برنده: تیم قرمز";cls="red";}
+  if(b>r){title=`🏆 برنده: ${teamNames[0]}`;cls="blue";}
+  else if(r>b){title=`🏆 برنده: ${teamNames[1]}`;cls="red";}
   else{title="🤝 مساوی شد!";}
   $("winTitle").textContent=title;
   $("winScore").textContent=`${b} : ${r}`;
@@ -524,7 +535,12 @@ function drawFrame(frame){
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
   ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
   drawBall(ctx,frame.ball.x,frame.ball.y,BR);
-  $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
+  // During a match, the big score shows the running MATCH TOTAL (completed rounds
+  // + this round's live score); otherwise just this frame's score.
+  const disp=(tournament&&tournament.playing)
+    ? [tournament.total[0]+frame.score[0], tournament.total[1]+frame.score[1]]
+    : frame.score;
+  $("score").textContent=`${disp[0]} : ${disp[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -922,6 +938,9 @@ function refreshOpponentMenus(){
 
   if([...$("redSelect").options].some(o=>o.value===currentRed)) $("redSelect").value=currentRed;
   else $("redSelect").value=(publicStrategies[0] ? "pub_"+publicStrategies[0].id : "adaptive");
+
+  // Refresh the toolbar/scorebug dots + names to match the current picks.
+  if(!(tournament&&tournament.playing)) applyTeamIdentity($("blueSelect").value,$("redSelect").value);
 }
 
 async function loadStrategiesFromServer(){
@@ -1175,8 +1194,7 @@ async function panelTest(){
     setPanelStatus("در حال شبیه‌سازی آزمایشی…");
     const seed=Number(($("seedInput")||{}).value)||1;
     const result=await postJSON("api/simulate/",{blue:{preset:blue},red:{preset:red},seed,overrides});
-    if($("blueName"))$("blueName").textContent=(presets[blue]||blue)+" (آبی)";
-    if($("redName"))$("redName").textContent=(presets[red]||red)+" (قرمز)";
+    applyTeamIdentity(blue,red);
     switchView("arena");
     playFrames(result.frames,result.record_fps);
     setPanelStatus("آزمایش اجرا شد. اگر خوب بود، به تب «تنظیمات» برگرد و «ذخیره» کن.");
@@ -1200,13 +1218,18 @@ function renderKitPicker(){
     `<button type="button" class="kit-slot${i===activeKitSlot?' active':''}" data-slot="${i}">
        <span class="kit-chip" style="background:${c}"></span>
        <span class="kit-slot-label">${names[i]}</span></button>`).join("");
-  const swatches=kitPalette.map(c=>
-    `<button type="button" class="kit-sw${myKit[activeKitSlot]===c?' sel':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
+  const swatches=kitPalette.map(c=>{
+    // block colours that are the same as / too close to the OTHER two slots
+    const conflict=myKit.some((sc,i)=>i!==activeKitSlot && colorDist(c,sc)<MIN_KIT_DIST);
+    const cls="kit-sw"+(myKit[activeKitSlot]===c?" sel":"")+(conflict?" dis":"");
+    const tip=conflict?"خیلی نزدیک به یک رنگ دیگرِ تیم":c;
+    return `<button type="button" class="${cls}" data-color="${c}" ${conflict?"disabled":""} style="background:${c}" title="${tip}"></button>`;
+  }).join("");
   host.innerHTML=`<div class="kit-slots">${slots}</div>
-    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن.</div>
+    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن. رنگ‌های خیلی نزدیک به دو رنگ دیگر غیرفعال می‌شوند تا هر سه رنگ کاملاً متفاوت بمانند.</div>
     <div class="kit-swatches">${swatches}</div>`;
   host.querySelectorAll(".kit-slot").forEach(b=>b.onclick=()=>{activeKitSlot=Number(b.dataset.slot);renderKitPicker();});
-  host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
+  host.querySelectorAll(".kit-sw:not(.dis)").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
 }
 async function saveKit(){
   try{
@@ -1233,6 +1256,8 @@ async function init(){
   if($("panelReset")) $("panelReset").onclick=panelReset;
   if($("panelTest")) $("panelTest").onclick=panelTest;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
+  if($("blueSelect")) $("blueSelect").onchange=()=>{if(!(tournament&&tournament.playing))applyTeamIdentity($("blueSelect").value,$("redSelect").value);};
+  if($("redSelect")) $("redSelect").onchange=()=>{if(!(tournament&&tournament.playing))applyTeamIdentity($("blueSelect").value,$("redSelect").value);};
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();
   $("addRule").onclick=()=>addSimple();

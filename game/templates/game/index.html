@@ -114,20 +114,18 @@
 </section>
 <section id="arenaView" class="view">
   <div class="arena-toolbar">
-    <label class="tb-field tb-blue"><span>🔵 تیم آبی</span><select id="blueSelect"></select></label>
-    <label class="tb-field tb-red"><span>🔴 تیم قرمز</span><select id="redSelect"></select></label>
+    <label class="tb-field tb-blue"><span class="tb-teaminfo"><span id="tbDot0" class="tb-dot"></span> تیم ۱</span><select id="blueSelect"></select></label>
+    <label class="tb-field tb-red"><span class="tb-teaminfo"><span id="tbDot1" class="tb-dot"></span> تیم ۲</span><select id="redSelect"></select></label>
     <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
     <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
   </div>
   <div class="scorebug">
     <div class="sb-row">
-      <div class="sb-team sb-blue"><span id="blueName" class="sb-name">Blue</span><span id="blueDot" class="sb-dot"></span></div>
-      <div class="sb-center">
-        <div class="sb-score" id="score">0 : 0</div>
-        <div class="sb-round" id="roundInfo">راند ۱ از ۴</div>
-      </div>
-      <div class="sb-team sb-red"><span id="redDot" class="sb-dot"></span><span id="redName" class="sb-name">Red</span></div>
+      <div class="sb-team sb-blue"><span id="blueDot" class="sb-dot"></span><span id="blueName" class="sb-name">تیم ۱</span></div>
+      <div class="sb-score" id="score">0 : 0</div>
+      <div class="sb-team sb-red"><span id="redName" class="sb-name">تیم ۲</span><span id="redDot" class="sb-dot"></span></div>
     </div>
+    <div class="sb-round" id="roundInfo">راند ۱ از ۴</div>
     <div class="sb-timer"><span class="clock">⏱</span> <span id="time">40.0s</span></div>
   </div>
   <div class="stage">
@@ -146,7 +144,7 @@
         <div class="rest-round" id="restRound">استراحت</div>
         <div class="rest-total" id="restTotal">مجموع: ۰ — ۰</div>
         <div class="rest-count"><span id="restCountdown">۲۵</span><span class="rest-count-unit">ثانیه تا راند بعد</span></div>
-        <p class="rest-hint">می‌توانی از منوی بالای زمین، بات آبی یا قرمز را عوض کنی و با بات دیگری وارد راند بعد شوی.</p>
+        <p class="rest-hint">می‌توانی از منوی بالای زمین، بات هر تیم را عوض کنی و با بات دیگری وارد راند بعد شوی.</p>
         <button id="restNext" class="primary">شروع راند بعد ▶</button>
       </div>
     </div>
@@ -156,12 +154,12 @@
     <div class="card"><h2>⚡ وضعیت زنده</h2>
       <div class="live-grid">
         <div class="live-team live-blue">
-          <div class="live-head"><span class="dot"></span><b>تیم آبی</b></div>
+          <div class="live-head"><span class="dot" id="liveBlueDot"></span><b id="liveBlueName">تیم ۱</b></div>
           <div><span id="blueAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="blueRule">-</span></div>
         </div>
         <div class="live-team live-red">
-          <div class="live-head"><span class="dot"></span><b>تیم قرمز</b></div>
+          <div class="live-head"><span class="dot" id="liveRedDot"></span><b id="liveRedName">تیم ۲</b></div>
           <div><span id="redAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="redRule">-</span></div>
         </div>

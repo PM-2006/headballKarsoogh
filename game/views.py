@@ -241,12 +241,17 @@ def api_kit(request):
 
     kit = PlayerKit.for_user(request.user)
     if request.method == "POST":
-        from .kits import sanitize_kit
+        from .kits import kit_conflict, sanitize_kit
         try:
             payload = _json_body(request)
         except StrategyValidationError as exc:
             return JsonResponse({"error": str(exc)}, status=400)
         colors = sanitize_kit(payload.get("colors"))
+        if kit_conflict(colors) is not None:
+            return JsonResponse(
+                {"error": "سه رنگ تیم باید کاملاً از هم متفاوت باشند؛ دو رنگ خیلی به هم نزدیک هستند."},
+                status=400,
+            )
         kit.home, kit.away, kit.alternative = colors
         kit.save()
         return JsonResponse({

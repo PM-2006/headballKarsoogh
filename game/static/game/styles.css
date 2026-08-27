@@ -334,3 +334,13 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .kit-sw{aspect-ratio:1;border-radius:9px;border:2px solid rgba(255,255,255,.12);cursor:pointer;padding:0;transition:.12s}
 .kit-sw:hover{transform:scale(1.08)}
 .kit-sw.sel{border-color:#fff;box-shadow:0 0 0 3px rgba(77,155,255,.55);transform:scale(1.06)}
+.kit-sw.dis{opacity:.2;cursor:not-allowed;filter:grayscale(.5)}
+.kit-sw.dis:hover{transform:none}
+
+/* ---------- Dynamic team identity (no fixed blue/red) ---------- */
+.tb-blue span,.tb-red span{color:var(--muted)}
+.tb-teaminfo{display:inline-flex;align-items:center;gap:5px}
+.tb-dot{display:inline-block;width:11px;height:11px;border-radius:50%;background:#2196F3;border:1.5px solid rgba(255,255,255,.45);vertical-align:middle}
+/* neutral score boxes — the coloured dot + name carry the team identity */
+.sb-blue,.sb-red{background:linear-gradient(180deg,#182c4e,#0f1d38);color:#fff}
+.sb-round{display:block;text-align:center;margin:8px auto 0;font-size:12px;font-weight:700;color:var(--muted);direction:rtl;white-space:normal}

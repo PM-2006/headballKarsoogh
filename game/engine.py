@@ -34,7 +34,7 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class GameConfig:
     # Playground & Geometry
-    width: float = 1500.0
+    width: float = 2000.0
     height: float = 860.0
     ground_y: float = 730.0
     goal_depth: float = 122.0
@@ -115,6 +115,14 @@ class GameConfig:
     stall_pop_vx: float = 220.0
     stall_pop_vy: float = 640.0
 
+    # Anti-Goal-Camping: a player parked in front of its own goal (while the ball
+    # is not a threat) is booted hard toward midfield after this many seconds.
+    camp_penalty_after: float = 5.0
+    camp_zone: float = 220.0          # how close to own goal counts as "camping"
+    camp_kick_vx: float = 950.0       # horizontal boot speed toward the centre
+    camp_kick_vy: float = 360.0       # upward pop when booted
+    camp_stun_time: float = 0.8       # no-control window so the boot carries to midfield
+
     # Match Timing & Precision
     match_time: float = 40.0          # duration of ONE round (quarter)
     match_rounds: int = 4             # basketball-style: this many rounds per match
@@ -132,7 +140,7 @@ def get_base_config() -> GameConfig:
     """Config from code defaults + environment variables (no DB overrides)."""
     return GameConfig(
         # Playground Geometry
-        width=_env_float("GAME_PLAYGROUND_WIDTH", 1500.0),
+        width=_env_float("GAME_PLAYGROUND_WIDTH", 2000.0),
         height=_env_float("GAME_PLAYGROUND_HEIGHT", 860.0),
         ground_y=_env_float("GAME_GROUND_Y", 730.0),
         goal_depth=_env_float("GAME_GOAL_DEPTH", 122.0),
@@ -205,6 +213,11 @@ def get_base_config() -> GameConfig:
         stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 10.0),
         stall_pop_vx=_env_float("GAME_STALL_POP_VX", 220.0),
         stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
+        camp_penalty_after=_env_float("GAME_CAMP_PENALTY_AFTER", 5.0),
+        camp_zone=_env_float("GAME_CAMP_ZONE", 220.0),
+        camp_kick_vx=_env_float("GAME_CAMP_KICK_VX", 950.0),
+        camp_kick_vy=_env_float("GAME_CAMP_KICK_VY", 360.0),
+        camp_stun_time=_env_float("GAME_CAMP_STUN_TIME", 0.8),
 
         # Match Timing & Precision
         match_time=_env_float("GAME_MATCH_TIME", 40.0),
@@ -244,6 +257,8 @@ class Player:
     on_ground: bool = True
     kick_cd: float = 0.0
     jump_cd: float = 0.0
+    camp_time: float = 0.0   # seconds parked in front of own goal (anti-camping)
+    stun_time: float = 0.0   # brief no-control window (e.g. while booted for camping)
 
 
 @dataclass
@@ -1019,6 +1034,34 @@ def _resolve_stall(
         world.stall_popped = True
 
 
+def _resolve_camping(world: World, dt: float, config: GameConfig) -> None:
+    """Boot a player that parks in front of its own goal toward midfield.
+
+    Camp time only accrues while the ball is NOT a threat (in the opponent's
+    half), so genuine defending under pressure is never punished — only a bot
+    that permanently squats on its own goal line.
+    """
+    if config.camp_penalty_after <= 0:
+        return
+    center = config.width / 2.0
+    for team, player in enumerate(world.players):
+        cx = player.x + config.player_width / 2.0
+        own_goal_x = config.goal_depth if team == 0 else config.width - config.goal_depth
+        near_own_goal = abs(cx - own_goal_x) <= config.camp_zone
+        ball_in_own_half = world.ball.x < center if team == 0 else world.ball.x > center
+        if near_own_goal and not ball_in_own_half:
+            player.camp_time += dt
+            if player.camp_time >= config.camp_penalty_after:
+                direction = 1.0 if cx < center else -1.0
+                player.vx = direction * config.camp_kick_vx
+                player.vy = -abs(config.camp_kick_vy)
+                player.on_ground = False
+                player.stun_time = config.camp_stun_time
+                player.camp_time = 0.0
+        else:
+            player.camp_time = max(0.0, player.camp_time - dt * 2.0)
+
+
 def _frame(world: World) -> dict:
     return {
         "time": round(world.remaining_time, 3),
@@ -1067,6 +1110,7 @@ def simulate_match(
         for player in world.players:
             player.kick_cd = max(0.0, player.kick_cd - frame_dt)
             player.jump_cd = max(0.0, player.jump_cd - frame_dt)
+            player.stun_time = max(0.0, player.stun_time - frame_dt)
 
         if world.freeze > 0:
             world.freeze = max(0.0, world.freeze - frame_dt)
@@ -1104,9 +1148,12 @@ def simulate_match(
 
             for _ in range(substeps):
                 for team, player in enumerate(world.players):
+                    # A booted (stunned) camper keeps no control, so the kick
+                    # carries it toward midfield instead of being walked back.
+                    move = 0 if player.stun_time > 0.0 else intents[team].move_dir
                     _integrate_player(
                         player,
-                        intents[team].move_dir,
+                        move,
                         sub_dt,
                         config,
                     )
@@ -1127,6 +1174,7 @@ def simulate_match(
                     break
 
             _resolve_stall(world, frame_dt, rng, config)
+            _resolve_camping(world, frame_dt, config)
 
         if record_frames and step_index % record_every == 0:
             frames.append(_frame(world))

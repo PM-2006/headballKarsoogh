@@ -67,6 +67,9 @@ LABELS: dict[str, str] = {
     "contested_ball_horizontal_keep": "حفظ افقی درگیری", "contested_player_recoil": "پس‌زنی درگیری",
     "contested_kick_pop_y": "پرتاب عمودی شوت همزمان", "contested_kick_horizontal_keep": "حفظ افقی شوت همزمان",
     "contested_kick_recoil": "پس‌زنی شوت همزمان", "contested_escape_x": "فرار افقی توپ",
+    "camp_penalty_after": "زمان تا جریمهٔ کمپ در دروازه", "camp_zone": "محدودهٔ کمپ جلوی دروازه",
+    "camp_kick_vx": "سرعت پرتاب جریمهٔ کمپ", "camp_kick_vy": "پرتاب عمودی جریمهٔ کمپ",
+    "camp_stun_time": "زمان بی‌کنترلی پس از پرتاب",
     "stall_speed_threshold": "آستانه توقف توپ", "stall_pop_after": "زمان تا پرتاب ضد توقف",
     "stall_kickoff_after": "زمان تا شروع مجدد", "stall_pop_vx": "سرعت افقی ضد توقف",
     "stall_pop_vy": "سرعت عمودی ضد توقف",
@@ -102,7 +105,8 @@ def _group_of(key: str) -> str:
         return "ball"
     if key.startswith("kick_") or key == "move_deadzone":
         return "kick"
-    if key.startswith("contested_") or key.startswith("stall_") or key == "running_touch_lift":
+    if (key.startswith("contested_") or key.startswith("stall_")
+            or key.startswith("camp_") or key == "running_touch_lift"):
         return "contested"
     if key.startswith("player_") or key in {"jump_cooldown", "head_radius", "head_center_y",
                                             "body_inset_x", "body_top_offset"}:
