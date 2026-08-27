@@ -4,6 +4,7 @@ import json
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.functions import Lower
 from django.utils.translation import gettext_lazy as _
 
 from .validators import validate_strategy, StrategyValidationError
@@ -24,7 +25,7 @@ class SavedStrategy(models.Model):
     name = models.CharField(
         max_length=120,
         verbose_name=_("نام استراتژی"),
-        help_text=_("نام نمایشی ربات (حداکثر ۱۲۰ کاراکتر)"),
+        help_text=_("نام نمایشی ربات (حداکثر ۱۲۰ کاراکتر) — باید در کل سامانه یکتا باشد."),
     )
     description = models.TextField(
         blank=True,
@@ -60,6 +61,18 @@ class SavedStrategy(models.Model):
         verbose_name = _("استراتژی ذخیره‌شده")
         verbose_name_plural = _("استراتژی‌های ذخیره‌شده")
         ordering = ["-updated_at"]
+        constraints = [
+            # Bot names identify a bot in the arena menus and the scoreboard,
+            # so two bots may never share one -- not even across users, and not
+            # by differing only in case or in surrounding spaces.
+            models.UniqueConstraint(
+                Lower("name"),
+                name="uniq_saved_strategy_name_ci",
+                violation_error_message=_(
+                    "رباتی با این نام از قبل وجود دارد. یک نام دیگر انتخاب کن."
+                ),
+            ),
+        ]
 
     def __str__(self) -> str:
         author = self.user.username if self.user else "ناشناس"
@@ -77,6 +90,13 @@ class SavedStrategy(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        self.name = (self.name or "").strip()
+        if not self.name:
+            raise ValidationError({"name": _("نام ربات نمی‌تواند خالی باشد.")})
+        if self.name_is_taken():
+            raise ValidationError(
+                {"name": _("رباتی با نام «%(name)s» از قبل وجود دارد. یک نام دیگر انتخاب کن.") % {"name": self.name}}
+            )
         if not self.strategy_data:
             raise ValidationError({"strategy_data": _("داده‌های استراتژی نمی‌تواند خالی باشد.")})
 
@@ -85,6 +105,24 @@ class SavedStrategy(models.Model):
             validate_strategy(self.strategy_data)
         except StrategyValidationError as exc:
             raise ValidationError({"strategy_data": f"ساختار استراتژی معتبر نیست: {exc}"}) from exc
+
+    def name_is_taken(self) -> bool:
+        """True if another saved bot (any user) already uses this name."""
+        taken = SavedStrategy.objects.filter(name__iexact=(self.name or "").strip())
+        if self.pk:
+            taken = taken.exclude(pk=self.pk)
+        return taken.exists()
+
+    @classmethod
+    def suggest_free_name(cls, name: str) -> str:
+        """`name`, or the first free `name (2)`, `name (3)`, ... variant."""
+        base = (name or "").strip() or "ربات"
+        candidate, index = base, 1
+        while cls.objects.filter(name__iexact=candidate).exists():
+            index += 1
+            suffix = f" ({index})"
+            candidate = base[: 120 - len(suffix)] + suffix
+        return candidate
 
     def save(self, *args, **kwargs) -> None:
         # If user is admin/superuser, mark public by default if not set

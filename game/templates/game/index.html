@@ -70,6 +70,7 @@
           <input id="botNameInput" type="text" placeholder="نام ربات (مثلاً: عقاب زاگرس)" maxlength="100">
           <button id="saveBotBtn" class="primary" disabled>💾 ذخیره ربات</button>
         </div>
+        <p class="muted" style="margin:6px 2px 0;font-size:12.5px;">نام هر ربات در کل سامانه یکتاست؛ اگر نامی قبلاً استفاده شده باشد باید نام دیگری انتخاب کنی.</p>
         <div id="editingInfo" class="editing-info" style="display:none;">
           <span>در حال ویرایش: <b id="editingBotName"></b></span>
           <button id="cancelEditBtn" class="mini danger">انصراف از ویرایش</button>
@@ -212,6 +213,30 @@
   </div>
 </section>
 {% endif %}
+</div>
+<div id="brainModal" class="modal-backdrop">
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="brainModalName">
+    <div class="modal-head">
+      <div>
+        <h2 id="brainModalName">مغز ربات</h2>
+        <p class="muted" id="brainModalMeta"></p>
+      </div>
+      <button id="brainModalClose" class="mini danger" aria-label="بستن">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="brainModalPrompt" class="brain-prompt" style="display:none;">
+        <div class="brain-prompt-title">📝 متن استراتژی سازنده</div>
+        <p id="brainModalPromptText"></p>
+      </div>
+      <div id="brainModalBody" class="brain"></div>
+      <details class="json-details"><summary>🔧 جزئیات فنی (Strategy JSON)</summary><pre id="brainModalJson"></pre></details>
+    </div>
+    <div class="modal-foot">
+      <button id="brainModalEdit" class="primary" style="display:none;">📂 بارگذاری در ویرایشگر</button>
+      <button id="brainModalPlay" class="success">⚔️ مسابقه با این ربات</button>
+      <button id="brainModalDismiss">بستن</button>
+    </div>
+  </div>
 </div>
 <script src="{% static 'game/game.js' %}"></script>
 </body></html>

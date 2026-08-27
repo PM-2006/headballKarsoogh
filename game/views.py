@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import render
@@ -23,6 +24,15 @@ from .services.llm import (
     LLMServiceError,
     compile_persian_strategy,
 )
+
+NAME_TAKEN_ERROR = "رباتی با این نام از قبل وجود دارد. یک نام دیگر انتخاب کن."
+
+
+def _validation_message(exc: ValidationError) -> str:
+    """Flatten a model ValidationError into one readable Persian sentence."""
+    messages = getattr(exc, "messages", None) or [str(exc)]
+    return " ".join(str(message) for message in messages)
+
 
 def _json_body(request):
     try:
@@ -105,6 +115,12 @@ def api_strategies(request):
             return JsonResponse({"error": "نام استراتژی الزامی است."}, status=400)
         if len(name) > 120:
             return JsonResponse({"error": "نام استراتژی حداکثر می‌تواند ۱۲۰ کاراکتر باشد."}, status=400)
+        if SavedStrategy.objects.filter(name__iexact=name).exists():
+            return JsonResponse({
+                "error": f"رباتی با نام «{name}» از قبل وجود دارد. یک نام دیگر انتخاب کن.",
+                "name_taken": True,
+                "suggestion": SavedStrategy.suggest_free_name(name),
+            }, status=409)
 
         raw_strategy = payload.get("strategy")
         if not raw_strategy:
@@ -131,7 +147,9 @@ def api_strategies(request):
     except StrategyValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     except ValidationError as exc:
-        return JsonResponse({"error": str(exc.messages if hasattr(exc, "messages") else exc)}, status=400)
+        return JsonResponse({"error": _validation_message(exc)}, status=400)
+    except IntegrityError:
+        return JsonResponse({"error": NAME_TAKEN_ERROR}, status=400)
     except Exception as exc:
         return JsonResponse({"error": f"خطا در ذخیره‌سازی: {exc}"}, status=500)
 
@@ -170,6 +188,14 @@ def api_strategy_detail(request, pk: int):
             name = (payload.get("name") or "").strip()
             if not name:
                 return JsonResponse({"error": "نام استراتژی نمی‌تواند خالی باشد."}, status=400)
+            if len(name) > 120:
+                return JsonResponse({"error": "نام استراتژی حداکثر می‌تواند ۱۲۰ کاراکتر باشد."}, status=400)
+            if SavedStrategy.objects.filter(name__iexact=name).exclude(pk=saved.pk).exists():
+                return JsonResponse({
+                    "error": f"رباتی با نام «{name}» از قبل وجود دارد. یک نام دیگر انتخاب کن.",
+                    "name_taken": True,
+                    "suggestion": SavedStrategy.suggest_free_name(name),
+                }, status=409)
             saved.name = name
 
         if "description" in payload:
@@ -194,7 +220,9 @@ def api_strategy_detail(request, pk: int):
     except StrategyValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
     except ValidationError as exc:
-        return JsonResponse({"error": str(exc.messages if hasattr(exc, "messages") else exc)}, status=400)
+        return JsonResponse({"error": _validation_message(exc)}, status=400)
+    except IntegrityError:
+        return JsonResponse({"error": NAME_TAKEN_ERROR}, status=400)
     except Exception as exc:
         return JsonResponse({"error": f"خطا در ویرایش استراتژی: {exc}"}, status=500)
 

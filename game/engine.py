@@ -130,6 +130,17 @@ class GameConfig:
     # Outside that, squatting on the goal line is camping, not defending.
     camp_danger_zone: float = 480.0
 
+    # Own-Goal Guard: a bot only ever knows "my goal is that way". Without this
+    # guard a bot that runs home (MOVE_TO_GOAL) or chases a ball sitting behind
+    # it simply bulldozes the ball into its OWN net, which reads to a student
+    # as "my bot attacks the wrong goal". Inside this zone in front of its own
+    # goal, a player's touch can never drive the ball goalwards: the push is
+    # turned into an up-field clearance instead.
+    # (capped at the team's own half, so it can never reach past midfield)
+    own_goal_guard_zone: float = 900.0   # how deep the protected area is
+    own_goal_guard_lift: float = 210.0   # upward pop added to a blocked push
+    own_goal_guard_push: float = 260.0   # up-field push given instead
+
     # Match Timing & Precision
     match_time: float = 40.0          # duration of ONE round (quarter)
     match_rounds: int = 4             # basketball-style: this many rounds per match
@@ -227,6 +238,9 @@ def get_base_config() -> GameConfig:
         camp_stun_time=_env_float("GAME_CAMP_STUN_TIME", 0.8),
         camp_lockout=_env_float("GAME_CAMP_LOCKOUT", 4.0),
         camp_danger_zone=_env_float("GAME_CAMP_DANGER_ZONE", 480.0),
+        own_goal_guard_zone=_env_float("GAME_OWN_GOAL_GUARD_ZONE", 900.0),
+        own_goal_guard_lift=_env_float("GAME_OWN_GOAL_GUARD_LIFT", 210.0),
+        own_goal_guard_push=_env_float("GAME_OWN_GOAL_GUARD_PUSH", 260.0),
 
         # Match Timing & Precision
         match_time=_env_float("GAME_MATCH_TIME", 40.0),
@@ -475,6 +489,16 @@ def _resolve_intent(action: str, state: dict, team: int, config: GameConfig) -> 
             if team == 0
             else config.width - config.goal_depth - 42.0
         )
+        # Never run *through* the ball on the way home: that is exactly how a
+        # bot used to dribble the ball into its own net. If the ball lies
+        # between the player and its own goal, stop on the field side of it and
+        # defend from there instead.
+        attack = _attack_direction(team)
+        if (state["ball_x"] - state["my_x"]) * attack < 0:
+            ball_stop = state["ball_x"] + attack * (
+                config.ball_radius + config.player_width / 2.0 + 6.0
+            )
+            target = max(target, ball_stop) if attack > 0 else min(target, ball_stop)
         return Intent(
             action,
             move_dir=_direction_to_target(state["my_x"], target, config.move_deadzone),
@@ -777,6 +801,47 @@ def _best_player_ball_contact(player: Player, ball: Ball, config: GameConfig):
     return max(candidates, key=lambda item: item[2])
 
 
+def _attack_direction(team: int) -> float:
+    """+1 means this team attacks towards larger x (the right-hand goal)."""
+    return 1.0 if team == 0 else -1.0
+
+
+def _own_goal_line(team: int, config: GameConfig) -> float:
+    """x of the goal line this team is defending."""
+    return config.goal_depth if team == 0 else config.width - config.goal_depth
+
+
+def _own_goal_guard(
+    team: int,
+    ball_x: float,
+    dvx: float,
+    dvy: float,
+    config: GameConfig,
+):
+    """Never let a player's own touch drive the ball into its own net.
+
+    A bot has no concept of "wrong goal": running home, or chasing a ball that
+    sits between it and its own goal line, used to end in it dribbling the ball
+    over its own line. Inside the guard zone the goalwards part of a touch is
+    replaced by an up-field push plus a small lift, i.e. a reflex clearance.
+    """
+    if config.own_goal_guard_zone <= 0:
+        return dvx, dvy
+
+    attack = _attack_direction(team)
+    # Never reaches past the halfway line: in the opponent's half a backwards
+    # touch is a normal pass/rebound, not a threat to your own net.
+    zone = min(config.own_goal_guard_zone, config.width / 2.0 - config.goal_depth)
+    if abs(ball_x - _own_goal_line(team, config)) > zone:
+        return dvx, dvy
+
+    # dvx * attack < 0 means the touch pushes the ball towards its own goal.
+    if dvx * attack < 0:
+        dvx = attack * min(abs(dvx), config.own_goal_guard_push)
+        dvy -= config.own_goal_guard_lift
+    return dvx, dvy
+
+
 def _resolve_player_ball_contacts(world: World, config: GameConfig):
     ball = world.ball
 
@@ -804,11 +869,17 @@ def _resolve_player_ball_contacts(world: World, config: GameConfig):
                 )
             )
 
-            relative_vx = base_vx - player.vx
-            relative_vy = base_vy - player.vy
+            # A player that is being booted for camping has no control over
+            # itself, so it must not carry the ball along with it -- otherwise
+            # the punishment itself can shovel the ball the wrong way.
+            player_vx = 0.0 if player.stun_time > 0.0 else player.vx
+            player_vy = 0.0 if player.stun_time > 0.0 else player.vy
+
+            relative_vx = base_vx - player_vx
+            relative_vy = base_vy - player_vy
             normal_speed = relative_vx * nx + relative_vy * ny
 
-            dvx = player.vx * config.player_contact_velocity_transfer
+            dvx = player_vx * config.player_contact_velocity_transfer
             dvy = 0.0
 
             # A fast side-on run nudges the ball upward instead of bulldozing
@@ -816,12 +887,12 @@ def _resolve_player_ball_contacts(world: World, config: GameConfig):
             # make Head Ball-style play readable and prevents ground pinning.
             if (
                 abs(nx) > 0.60
-                and abs(player.vx) > 120.0
+                and abs(player_vx) > 120.0
                 and base_y > player.y + config.head_center_y
             ):
                 dvy -= min(
                     config.running_touch_lift,
-                    abs(player.vx) * 0.38,
+                    abs(player_vx) * 0.38,
                 )
 
             if normal_speed < 0:
@@ -831,6 +902,8 @@ def _resolve_player_ball_contacts(world: World, config: GameConfig):
                 )
                 dvx += impulse * nx
                 dvy += impulse * ny
+
+            dvx, dvy = _own_goal_guard(index, base_x, dvx, dvy, config)
 
             velocity_changes.append((dvx, dvy))
 
@@ -1062,10 +1135,15 @@ def _resolve_camping(world: World, dt: float, config: GameConfig) -> None:
         # wall it got stranded at on a wide pitch), not just its own goal.
         near_wall = (abs(cx - own_goal_x) <= config.camp_zone
                      or abs(cx - enemy_goal_x) <= config.camp_zone)
-        # It is only doing something useful if the BALL is near it. A defender
-        # tracks the ball; a stuck/camping bot sits while the ball is elsewhere.
+        # It is only doing something useful if the BALL is near it, or if the
+        # ball is in its own half at all -- a defender tracks the ball, while a
+        # stuck/camping bot sits still with the play at the other end.
         ball_near_me = abs(world.ball.x - cx) <= config.camp_danger_zone
-        if ball_near_me:
+        ball_in_own_half = (
+            world.ball.x < center if team == 0 else world.ball.x > center
+        )
+        if ball_near_me or ball_in_own_half:
+            # Real defensive duty: cancel any lockout so the bot may go home.
             player.camp_lock = 0.0
             player.camp_time = max(0.0, player.camp_time - dt * 2.0)
             continue

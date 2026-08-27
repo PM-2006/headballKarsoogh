@@ -188,7 +188,11 @@ async function postJSON(url,payload,method="POST"){
   let data;
   try{data=await response.json();}
   catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
-  if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
+  if(!response.ok){
+    const err=new Error(data.error||`خطای سرور (کد ${response.status}).`);
+    err.status=response.status;err.data=data;      // e.g. {name_taken, suggestion}
+    throw err;
+  }
   return data;
 }
 // Turn any raw error into a short, clear Persian message a student can act on.
@@ -251,14 +255,20 @@ function describeCondition(cond){
   const opFa={"<":"کمتر از","<=":"کمتر یا مساوی",">":"بیشتر از",">=":"بیشتر یا مساوی","==":"برابر","!=":"نابرابر"};
   return `${sensorFa[cond.left] || cond.left} ${opFa[cond.operator] || cond.operator} ${describeRight(cond)}`;
 }
+// The bot's rules in plain Persian — shared by the builder panel and by the
+// read-only "brain viewer" modal.
+function brainRulesHTML(strategy){
+  if(!strategy||!Array.isArray(strategy.rules))return '<div class="brain-rule">این ربات هیچ تصمیمی ندارد.</div>';
+  return [...strategy.rules]
+    .sort((a,b)=>a.priority-b.priority)
+    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${(r.conditions||[]).map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
+    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
+}
 function renderCompiledStrategy(strategy){
   myStrategy=strategy;
   $("jsonView").textContent=JSON.stringify(strategy,null,2);
   $("humanBrain").classList.remove("empty");
-  $("humanBrain").innerHTML=[...strategy.rules]
-    .sort((a,b)=>a.priority-b.priority)
-    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${r.conditions.map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
-    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
+  $("humanBrain").innerHTML=brainRulesHTML(strategy);
   markBotReady();
   refreshOpponentMenus();
 }
@@ -989,6 +999,7 @@ function renderBotGalleries(){
             <span>📅 آخرین ویرایش: ${b.updated_at}</span>
           </div>
           <div class="bot-card-actions">
+            <button onclick="viewBotBrain(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="loadBotIntoBuilder(${b.id})">📂 ویرایش و بارگذاری</button>
             <button class="success" onclick="challengeBotInArena(${b.id},true)">⚽ مسابقه در آرنا</button>
             <button class="btn-danger" onclick="deleteSavedBot(${b.id},'${escapeHtml(b.name)}')">🗑 حذف</button>
@@ -1014,7 +1025,7 @@ function renderBotGalleries(){
             <span>📅 تاریخ انتشار: ${b.created_at}</span>
           </div>
           <div class="bot-card-actions">
-            <button onclick="loadBotIntoBuilder(${b.id})">👁 مشاهده مغز ربات</button>
+            <button onclick="viewBotBrain(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="challengeBotInArena(${b.id},false)">⚔️ مسابقه با این ربات</button>
           </div>
         </div>
@@ -1028,7 +1039,22 @@ async function saveCurrentBot(){
     showToast("ابتدا یک استراتژی بسازید تا بتوانید آن را ذخیره کنید.","err");
     return;
   }
-  const name=($("botNameInput").value || "").trim() || myStrategy.label || "My Bot";
+  const name=($("botNameInput").value || "").trim();
+  if(!name){
+    showToast("برای ربات یک نام بگذار. نام هر ربات باید یکتا باشد.","err");
+    $("botNameInput").focus();
+    return;
+  }
+  // Catch the obvious clash before the round-trip: names are unique for
+  // everyone, so a name already on screen is definitely taken.
+  const clash=[...savedStrategies,...publicStrategies].find(
+    b=>b.id!==editingStrategyId && (b.name||"").trim().toLowerCase()===name.toLowerCase());
+  if(clash){
+    showToast(`رباتی با نام «${name}» از قبل وجود دارد. یک نام دیگر انتخاب کن.`,"err");
+    $("botNameInput").focus();
+    $("botNameInput").select();
+    return;
+  }
   const ai_prompt=($("strategyText").value || "").trim();
   const btn=$("saveBotBtn");
   try{
@@ -1056,7 +1082,19 @@ async function saveCurrentBot(){
     }
     await loadStrategiesFromServer();
   }catch(err){
-    showToast("❌ "+humanizeError(err),"err");
+    const info=err&&err.data;
+    if(info&&info.name_taken){
+      // Offer the first free variant so the student can just hit save again.
+      if(info.suggestion&&$("botNameInput")){
+        $("botNameInput").value=info.suggestion;
+        showToast(`${info.error} نام «${info.suggestion}» برایت پیشنهاد شد.`,"err");
+      }else{
+        showToast(info.error,"err");
+      }
+      if($("botNameInput")){$("botNameInput").focus();$("botNameInput").select();}
+    }else{
+      showToast("❌ "+humanizeError(err),"err");
+    }
   }finally{
     btn.disabled=false;
     btn.textContent=editingStrategyId ? "💾 ذخیره تغییرات" : "💾 ذخیره ربات";
@@ -1069,8 +1107,40 @@ function cancelEdit(){
   if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره ربات";
 }
 
+// ---------- Read-only brain viewer ----------
+// Everyone (students and admins) may LOOK at any bot they can see, without
+// that overwriting the draft currently in the builder.
+function findBot(id){
+  return savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id) || null;
+}
+function viewBotBrain(id){
+  const bot=findBot(id);
+  const modal=$("brainModal");
+  if(!bot||!modal){showToast("ربات مورد نظر یافت نشد.","err");return;}
+  const rules=(bot.strategy&&bot.strategy.rules)||[];
+  setTxt("brainModalName",bot.name);
+  const who=bot.is_owner ? "ربات خودت" : (bot.author ? `سازنده: ${bot.author}` : "ربات عمومی");
+  setTxt("brainModalMeta",`${who} • ${rules.length} تصمیم • آخرین ویرایش: ${bot.updated_at||"-"}`);
+  $("brainModalBody").innerHTML=brainRulesHTML(bot.strategy);
+  $("brainModalJson").textContent=JSON.stringify(bot.strategy,null,2);
+  const prompt=$("brainModalPrompt");
+  if(prompt){
+    prompt.style.display=bot.ai_prompt?"block":"none";
+    const t=$("brainModalPromptText");if(t)t.textContent=bot.ai_prompt||"";
+  }
+  const edit=$("brainModalEdit");
+  if(edit){
+    edit.style.display=bot.is_owner?"inline-flex":"none";
+    edit.onclick=()=>{closeBrainModal();loadBotIntoBuilder(bot.id);};
+  }
+  const play=$("brainModalPlay");
+  if(play) play.onclick=()=>{closeBrainModal();challengeBotInArena(bot.id,!!bot.is_owner);};
+  modal.classList.add("show");
+}
+function closeBrainModal(){const m=$("brainModal");if(m)m.classList.remove("show");}
+
 function loadBotIntoBuilder(id){
-  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
+  const bot=findBot(id);
   if(!bot){
     showToast("ربات مورد نظر یافت نشد.","err");
     return;
@@ -1091,6 +1161,10 @@ function loadBotIntoBuilder(id){
   }
   renderCompiledStrategy(bot.strategy);
   switchView("builder");
+  // The brain panel sits at the top of a long page: without this the click
+  // looked like it did nothing at all.
+  const card=document.querySelector(".mybot-card");
+  if(card)card.scrollIntoView({behavior:"smooth",block:"start"});
   showToast(`ربات «${bot.name}» در ویرایشگر بارگذاری شد.`,"ok");
 }
 
@@ -1111,7 +1185,7 @@ async function deleteSavedBot(id,name){
 // mine=true  -> play one of MY saved bots (goes on the RIGHT = my team)
 // mine=false -> challenge an official/public bot (goes on the LEFT = opponent)
 function challengeBotInArena(id,mine=true){
-  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
+  const bot=findBot(id);
   if(!bot) return;
   refreshOpponentMenus();
   const bs=$("blueSelect"),rs=$("redSelect");
@@ -1295,6 +1369,10 @@ async function init(){
   $("playMatch").onclick=runMatch;
   $("runBatch").onclick=runBatch;
   $("winClose").onclick=()=>$("winFx").classList.remove("show");
+  if($("brainModalClose")) $("brainModalClose").onclick=closeBrainModal;
+  if($("brainModalDismiss")) $("brainModalDismiss").onclick=closeBrainModal;
+  if($("brainModal")) $("brainModal").onclick=(e)=>{if(e.target===$("brainModal"))closeBrainModal();};
+  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeBrainModal();});
 
   drawIdleFrame();
 }

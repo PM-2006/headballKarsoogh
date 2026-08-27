@@ -383,3 +383,24 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .rest-bar{margin-top:8px;height:7px;border-radius:999px;background:#16233c;overflow:hidden}
 .rest-bar-fill{display:block;height:100%;width:100%;border-radius:999px;background:linear-gradient(90deg,#4d9bff,#2fe0a6);transition:width 1s linear}
 .rest-hint{margin:10px auto 16px;max-width:380px}
+
+/* ===== Read-only brain viewer (modal) ===== */
+.modal-backdrop{position:fixed;inset:0;z-index:60;display:none;align-items:center;justify-content:center;
+  padding:22px;background:rgba(5,10,22,.72);backdrop-filter:blur(3px)}
+.modal-backdrop.show{display:flex;animation:modal-in .18s ease-out}
+@keyframes modal-in{from{opacity:0}to{opacity:1}}
+.modal-card{width:min(760px,100%);max-height:88vh;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,var(--panel-2),var(--panel));border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:0 26px 60px -18px rgba(0,0,0,.85)}
+.modal-head{display:flex;align-items:flex-start;gap:12px;justify-content:space-between;
+  padding:16px 18px;border-bottom:1px solid var(--line-soft)}
+.modal-head h2{margin:0 0 4px;font-size:18px}
+.modal-head p{margin:0;font-size:12.5px}
+.modal-body{padding:16px 18px;overflow:auto}
+.modal-body .brain{max-height:none}
+.modal-foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;
+  padding:13px 18px;border-top:1px solid var(--line-soft)}
+.brain-prompt{margin-bottom:14px;padding:12px 14px;border-radius:var(--radius-sm);
+  background:#0d1a30;border:1px dashed var(--line)}
+.brain-prompt-title{font-weight:700;font-size:13px;color:var(--gold);margin-bottom:6px}
+.brain-prompt p{margin:0;line-height:2;font-size:13.5px;color:var(--muted);white-space:pre-wrap}

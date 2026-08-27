@@ -2,7 +2,7 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
-from .engine import batch_matches, simulate_match
+from .engine import batch_matches, get_game_config, simulate_match
 from .strategy import get_preset
 from .validators import StrategyValidationError, validate_strategy
 
@@ -21,7 +21,7 @@ class StrategyTests(TestCase):
 class EngineTests(TestCase):
     def test_match_finishes(self):
         result = simulate_match(get_preset("aggressive"), get_preset("defensive"), seed=42, record_frames=False)
-        self.assertEqual(result["duration"], 60.0)
+        self.assertEqual(result["duration"], get_game_config().match_time)
         self.assertEqual(len(result["score"]), 2)
         self.assertTrue(all(goal >= 0 for goal in result["score"]))
 
@@ -100,8 +100,9 @@ class ConfigTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("config", data)
-        self.assertEqual(data["config"]["width"], 1280.0)
-        self.assertEqual(data["config"]["ball_radius"], 22.0)
+        config = get_game_config()
+        self.assertEqual(data["config"]["width"], config.width)
+        self.assertEqual(data["config"]["ball_radius"], config.ball_radius)
 
     def test_env_variable_overrides(self):
         import os
@@ -284,5 +285,230 @@ class SavedStrategyTests(TestCase):
         self.assertIn("frames", sim_res.json())
 
 
+class UniqueBotNameTests(TestCase):
+    """Bot names identify a bot everywhere in the UI, so they must be unique."""
+
+    def setUp(self):
+        self.user1 = User.objects.create_user(username="namer1", password="pass123456user")
+        self.user2 = User.objects.create_user(username="namer2", password="pass123456user")
+        self.strategy = {
+            "label": "Bot",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [{"left": "can_kick", "operator": "==", "rightType": "value", "right": True}],
+                    "action": "KICK_LOW",
+                }
+            ],
+            "default_action": "IDLE",
+        }
+
+    def _create(self, name):
+        return self.client.post(
+            reverse("game:api_strategies"),
+            data=json.dumps({"name": name, "strategy": self.strategy}),
+            content_type="application/json",
+        )
+
+    def test_same_user_cannot_save_one_name_twice(self):
+        self.client.login(username="namer1", password="pass123456user")
+        self.assertEqual(self._create("شاهین").status_code, 201)
+        response = self._create("شاهین")
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertTrue(body["name_taken"])
+        self.assertEqual(body["suggestion"], "شاهین (2)")
+
+    def test_other_user_cannot_reuse_a_taken_name(self):
+        self.client.login(username="namer1", password="pass123456user")
+        self.assertEqual(self._create("Falcon").status_code, 201)
+        self.client.login(username="namer2", password="pass123456user")
+        # Case and padding must not open a loophole.
+        self.assertEqual(self._create("  falcon  ").status_code, 409)
+
+    def test_rename_to_a_taken_name_is_rejected_but_self_rename_is_fine(self):
+        from .models import SavedStrategy
+
+        self.client.login(username="namer1", password="pass123456user")
+        self._create("اول")
+        second = self._create("دوم").json()["strategy"]
+        clash = self.client.post(
+            reverse("game:api_strategy_detail", args=[second["id"]]),
+            data=json.dumps({"name": "اول"}),
+            content_type="application/json",
+        )
+        self.assertEqual(clash.status_code, 409)
+
+        same = self.client.post(
+            reverse("game:api_strategy_detail", args=[second["id"]]),
+            data=json.dumps({"name": "دوم"}),
+            content_type="application/json",
+        )
+        self.assertEqual(same.status_code, 200)
+        self.assertEqual(SavedStrategy.objects.get(pk=second["id"]).name, "دوم")
+
+    def test_model_level_uniqueness(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from .models import SavedStrategy
+
+        SavedStrategy.objects.create(user=self.user1, name="Unique", strategy_data=self.strategy)
+        with self.assertRaises(DjangoValidationError):
+            SavedStrategy.objects.create(user=self.user2, name="unique", strategy_data=self.strategy)
 
 
+class BrainVisibilityTests(TestCase):
+    """Anyone may read the rules of a bot that is listed for them."""
+
+    def setUp(self):
+        self.student = User.objects.create_user(username="viewer", password="pass123456user")
+        self.admin = User.objects.create_superuser(username="viewadmin", password="admin123456pass")
+        self.strategy = {
+            "label": "Boss",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [{"left": "can_kick", "operator": "==", "rightType": "value", "right": True}],
+                    "action": "KICK_HIGH",
+                }
+            ],
+            "default_action": "IDLE",
+        }
+
+    def test_student_can_read_an_official_bot_brain(self):
+        from .models import SavedStrategy
+
+        bot = SavedStrategy.objects.create(user=self.admin, name="Official Brain", strategy_data=self.strategy)
+        self.client.login(username="viewer", password="pass123456user")
+
+        listed = self.client.get(reverse("game:api_strategies")).json()
+        public = listed["public_strategies"][0]
+        self.assertEqual(public["strategy"]["rules"][0]["action"], "KICK_HIGH")
+        self.assertFalse(public["is_owner"])
+
+        detail = self.client.get(reverse("game:api_strategy_detail", args=[bot.id]))
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["strategy"]["strategy"]["rules"][0]["action"], "KICK_HIGH")
+
+
+class OwnGoalTests(TestCase):
+    """A bot must never drive the ball into the goal it is defending."""
+
+    def test_touch_in_own_box_is_turned_into_a_clearance(self):
+        from .engine import _own_goal_guard, get_game_config
+
+        config = get_game_config()
+        ball_x = config.goal_depth + 60.0          # deep inside team 0's own box
+
+        # Team 0 defends the left goal: a leftwards push must be turned around.
+        dvx, dvy = _own_goal_guard(0, ball_x, -400.0, 0.0, config)
+        self.assertGreater(dvx, 0.0)
+        self.assertLess(dvy, 0.0)                  # and lifted away from the line
+
+        # A push up-field is left untouched.
+        self.assertEqual(_own_goal_guard(0, ball_x, 400.0, 0.0, config), (400.0, 0.0))
+
+        # Team 1 defends the right goal, so the mirror case must hold there.
+        far_x = config.width - config.goal_depth - 60.0
+        dvx, _unused = _own_goal_guard(1, far_x, 400.0, 0.0, config)
+        self.assertLess(dvx, 0.0)
+
+        # In the opponent's half nothing is changed for either team: a backwards
+        # touch there is a normal pass, not a threat to your own net.
+        self.assertEqual(
+            _own_goal_guard(0, config.width - 300.0, -400.0, 0.0, config), (-400.0, 0.0)
+        )
+        self.assertEqual(_own_goal_guard(1, 300.0, 400.0, 0.0, config), (400.0, 0.0))
+
+    def test_defender_does_not_walk_through_the_ball_towards_its_own_goal(self):
+        from .engine import _resolve_intent, get_game_config
+
+        config = get_game_config()
+        ball_x = config.goal_depth + 250.0
+        # Team 0 defends the left goal. Standing right on top of a ball that is
+        # between it and that goal, it must back off (+1) instead of shoving the
+        # ball over its own line (-1).
+        state = {"my_x": ball_x + 10.0, "ball_x": ball_x}
+        self.assertEqual(_resolve_intent("MOVE_TO_GOAL", state, 0, config).move_dir, 1)
+
+        # Coming from up-field it still runs home, but only as far as the ball.
+        stop_x = ball_x + config.ball_radius + config.player_width / 2.0 + 6.0
+        self.assertEqual(
+            _resolve_intent("MOVE_TO_GOAL", {"my_x": stop_x, "ball_x": ball_x}, 0, config).move_dir,
+            0,
+        )
+        self.assertEqual(
+            _resolve_intent("MOVE_TO_GOAL", {"my_x": stop_x + 300.0, "ball_x": ball_x}, 0, config).move_dir,
+            -1,
+        )
+
+        # With the ball at the other end it runs home normally.
+        state = {"my_x": config.width / 2, "ball_x": config.width - 300.0}
+        self.assertEqual(_resolve_intent("MOVE_TO_GOAL", state, 0, config).move_dir, -1)
+
+    def test_preset_matches_do_not_flood_with_own_goals(self):
+        """A bot must almost never turn the ball towards its own goal and score.
+
+        Counted strictly: the ball was not already flying at that goal, the
+        conceding team's own touch turned it around, and the goal followed.
+        """
+        from . import engine
+        from .engine import Ball, _attack_direction, _best_player_ball_contact
+
+        own_goals = total = 0
+        turned_by = {"team": None}
+
+        def touch_tracker(world, config, run):
+            before = world.ball.vx
+            touching = [
+                index
+                for index, player in enumerate(world.players)
+                if _best_player_ball_contact(
+                    player, Ball(world.ball.x, world.ball.y, world.ball.vx, world.ball.vy), config
+                )
+                is not None
+            ]
+            result = run()
+            after = world.ball.vx
+            for index in touching:
+                attack = _attack_direction(index)
+                if before * attack > -60.0 and after * attack < -60.0:
+                    turned_by["team"] = index
+                elif after * attack > 60.0 and turned_by["team"] == index:
+                    turned_by["team"] = None
+            return result
+
+        original_contacts = engine._resolve_player_ball_contacts
+        original_kicks = engine._apply_kicks
+        original_detect = engine._detect_goal
+
+        def contacts(world, config):
+            return touch_tracker(world, config, lambda: original_contacts(world, config))
+
+        def kicks(world, intents, config):
+            return touch_tracker(world, config, lambda: original_kicks(world, intents, config))
+
+        def detect(world, previous_x, config):
+            nonlocal own_goals, total
+            scorer = original_detect(world, previous_x, config)
+            if scorer is not None:
+                total += 1
+                if turned_by["team"] is not None and turned_by["team"] != scorer:
+                    own_goals += 1
+                turned_by["team"] = None
+            return scorer
+
+        engine._resolve_player_ball_contacts = contacts
+        engine._apply_kicks = kicks
+        engine._detect_goal = detect
+        try:
+            for blue, red in (("goalie", "adaptive"), ("defensive", "aggressive"), ("goalie", "counter")):
+                for seed in (1, 2, 3):
+                    turned_by["team"] = None
+                    simulate_match(get_preset(blue), get_preset(red), seed=seed, record_frames=False)
+        finally:
+            engine._resolve_player_ball_contacts = original_contacts
+            engine._apply_kicks = original_kicks
+            engine._detect_goal = original_detect
+
+        self.assertGreater(total, 0)
+        self.assertLess(own_goals / total, 0.10)
