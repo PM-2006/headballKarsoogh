@@ -317,6 +317,23 @@ function validateReplay(frames,fps){
   }
 }
 const PLAYBACK_MAX_STEP_MS=100; // ignore gaps bigger than this (tab switch / hitch)
+function lerp(a,b,t){return a+(b-a)*t}
+function interpolateReplayFrame(a,b,t){
+  const blendEntity=(from,to)=>{
+    const out={...from};
+    for(const key of ["x","y","vx","vy"]){
+      if(isFiniteNumber(from[key])&&isFiniteNumber(to[key])) out[key]=lerp(from[key],to[key],t);
+    }
+    out.face=t<0.5?from.face:to.face;
+    return out;
+  };
+  return {
+    ...a,
+    time:lerp(a.time,b.time,t),
+    players:[blendEntity(a.players[0],b.players[0]),blendEntity(a.players[1],b.players[1])],
+    ball:blendEntity(a.ball,b.ball),
+  };
+}
 function playFrames(frames,fps){
   validateReplay(frames,fps);
   resetFx();
@@ -331,11 +348,13 @@ function playFrames(frames,fps){
     if(last!==null)elapsed+=Math.min(now-last,PLAYBACK_MAX_STEP_MS);
     last=now;
     const idx=Math.min(frames.length-1,Math.floor(elapsed/frameMs));
+    const nextIdx=Math.min(frames.length-1,idx+1);
+    const mix=nextIdx===idx?0:(elapsed%frameMs)/frameMs;
     const s=frames[idx].score;
     if(s[0]>lastScore[0])celebrateGoal(0);
     if(s[1]>lastScore[1])celebrateGoal(1);
     lastScore=[s[0],s[1]];
-    drawFrame(frames[idx]);
+    drawFrame(interpolateReplayFrame(frames[idx],frames[nextIdx],mix));
     if(idx<frames.length-1)playbackHandle=requestAnimationFrame(tick);
     else{playbackHandle=null;showWinner(frames[idx]);}
   }
@@ -395,6 +414,134 @@ const ACT_FA={
 function actLabel(code){const a=ACT_FA[code];return a?`${a.i} ${a.t}`:(code||"—")}
 function ruleLabel(rule){if(rule==null)return "—";if(rule==="default")return "پیش‌فرض";return "شماره "+rule}
 
+const PLAYER_SPRITES = {
+  blue: loadSpriteSheet("/static/game/sprites/headball-blue.png"),
+  red: loadSpriteSheet("/static/game/sprites/headball-red.png", true),
+};
+const ARENA_IMAGES = {
+  background: loadArenaImage("/static/game/arena/stadium-v3.png"),
+  grass: loadArenaImage("/static/game/arena/grass-field-v3.png"),
+  goal: loadArenaImage("/static/game/arena/goal-left.png"),
+};
+const PLAYER_SPRITE = {
+  cols: 6,
+  rows: 4,
+  idleRow: 0,
+  runRow: 1,
+  jumpRow: 2,
+  kickRow: 3,
+};
+function loadSpriteSheet(src, reverseFrames=false){
+  const img = new Image();
+  img.src = src;
+  img.loaded = false;
+  img.onload = () => {
+    img.frames = detectSpriteFrames(img, reverseFrames);
+    img.loaded = true;
+    drawIdleFrame();
+  };
+  img.onerror = () => { img.failed = true; };
+  return img;
+}
+function loadArenaImage(src){
+  const img = new Image();
+  img.src = src;
+  img.loaded = false;
+  img.onload = () => { img.loaded = true; drawIdleFrame(); };
+  img.onerror = () => { img.failed = true; };
+  return img;
+}
+function detectSpriteFrames(img, reverseFrames){
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const scan = canvas.getContext("2d", {willReadFrequently:true});
+  scan.drawImage(img, 0, 0);
+  const pixels = scan.getImageData(0, 0, canvas.width, canvas.height).data;
+  const rowH = canvas.height / PLAYER_SPRITE.rows;
+  const rows = [];
+
+  for(let row=0; row<PLAYER_SPRITE.rows; row++){
+    const y0 = Math.floor(row * rowH);
+    const y1 = Math.floor((row + 1) * rowH);
+    const activeX = new Uint8Array(canvas.width);
+    for(let y=y0; y<y1; y++){
+      for(let x=0; x<canvas.width; x++){
+        if(pixels[(y * canvas.width + x) * 4 + 3] > 20) activeX[x] = 1;
+      }
+    }
+
+    const runs = [];
+    for(let x=0; x<canvas.width; x++){
+      if(!activeX[x]) continue;
+      const start = x;
+      while(x + 1 < canvas.width && activeX[x + 1]) x++;
+      if(x - start > 30) runs.push([start, x]);
+    }
+
+    const frames = runs.slice(0, PLAYER_SPRITE.cols).map(([left,right])=>{
+      let top = y1, bottom = y0;
+      for(let y=y0; y<y1; y++){
+        for(let x=left; x<=right; x++){
+          if(pixels[(y * canvas.width + x) * 4 + 3] > 20){
+            top = Math.min(top, y);
+            bottom = Math.max(bottom, y);
+          }
+        }
+      }
+      const pad = 2;
+      const sx = Math.max(0, left - pad);
+      const sy = Math.max(y0, top - pad);
+      const ex = Math.min(canvas.width - 1, right + pad);
+      const ey = Math.min(y1 - 1, bottom + pad);
+      return {sx, sy, sw:ex-sx+1, sh:ey-sy+1};
+    });
+    rows.push(reverseFrames ? frames.reverse() : frames);
+  }
+  return rows;
+}
+function playerAnimFor(p, action, G, h){
+  const air = Math.abs((p.y + h) - G) > 4 || Math.abs(p.vy || 0) > 45;
+  const moving = Math.abs(p.vx || 0) > 35 || /^MOVE_/.test(action || "");
+  if((action || "").startsWith("KICK")) return {row:PLAYER_SPRITE.kickRow,fps:8};
+  if(action === "JUMP" || air) return {row:PLAYER_SPRITE.jumpRow,fps:6};
+  if(moving) return {row:PLAYER_SPRITE.runRow,fps:7};
+  return {row:PLAYER_SPRITE.idleRow,fps:3};
+}
+function drawSpritePlayer(ctx,p,team,w,h,G,action,time){
+  const sheet = PLAYER_SPRITES[team];
+  if(!sheet || !sheet.loaded || !sheet.frames) return false;
+
+  const cellW = sheet.naturalWidth / PLAYER_SPRITE.cols;
+  const cellH = sheet.naturalHeight / PLAYER_SPRITE.rows;
+  const anim = playerAnimFor(p, action, G, h);
+  const frames = sheet.frames[anim.row];
+  if(!frames || !frames.length) return false;
+  const frame = frames[Math.floor((time || 0) * anim.fps) % frames.length];
+
+  const cx = p.x + w / 2;
+  const scale = Math.max(w / 66, h / 84);
+  const dw = (frame.sw / cellW) * 150 * scale;
+  const dh = (frame.sh / cellH) * 150 * scale;
+  const feetY = Math.min(G, p.y + h);
+  const dy = feetY - dh + 10 * scale;
+  const nativeFace = team === "red" ? -1 : 1;
+  const playerFace = Math.sign(p.face || nativeFace);
+  const mirror = playerFace !== nativeFace;
+
+  ctx.fillStyle = "rgba(0,0,0,.18)";
+  ctx.beginPath();
+  ctx.ellipse(cx, G + 6, Math.max(8, 34 * scale), Math.max(3, 8 * scale), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.imageSmoothingEnabled = true;
+  ctx.save();
+  ctx.translate(cx, 0);
+  ctx.scale(mirror ? -1 : 1, 1);
+  ctx.drawImage(sheet, frame.sx, frame.sy, frame.sw, frame.sh, -dw / 2, dy, dw, dh);
+  ctx.restore();
+  return true;
+}
+
 function drawFrame(frame){
   const canvas=$("game"),ctx=canvas.getContext("2d");
   const W=gameConfig.width||canvas.width;
@@ -406,21 +553,37 @@ function drawFrame(frame){
   const PH=gameConfig.player_height||72;
   const BR=gameConfig.ball_radius||22;
 
-  drawStadium(ctx,W,H,G);
-  drawPitch(ctx,W,H,G);
+  if(drawArenaBackground(ctx,W,H)) drawPitchMarkings(ctx,W,H,G);
+  else{drawStadium(ctx,W,H,G);drawPitch(ctx,W,H,G);}
   drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);
-  drawPlayer(ctx,frame.players[0],"#2f9bff",PW,PH,G);drawPlayer(ctx,frame.players[1],"#ff5262",PW,PH,G);
+  const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
+  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,d0.action,frame.time);
+  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,d1.action,frame.time);
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
   ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
   drawBall(ctx,frame.ball.x,frame.ball.y,BR);
   $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
-  const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
 }
-function pitchHorizon(H){ return Math.round(H*0.36); }   // top edge of the pitch bowl
+function pitchHorizon(H){ return Math.round(H*0.68); }   // short grass strip around the active ground area
+function drawArenaBackground(ctx,W,H){
+  const stadium=ARENA_IMAGES.background,grass=ARENA_IMAGES.grass;
+  if(!stadium || !stadium.loaded || !grass || !grass.loaded)return false;
+  const hz=pitchHorizon(H);
+  // Keep the stadium in the backdrop and the orthographic grass texture only
+  // on the playable lower plane. Physics and field coordinates stay unchanged.
+  ctx.drawImage(stadium,0,0,stadium.naturalWidth,stadium.naturalHeight,0,0,W,hz);
+  const grassTop=Math.round(grass.naturalHeight*0.30);
+  ctx.drawImage(grass,0,grassTop,grass.naturalWidth,grass.naturalHeight-grassTop,0,hz,W,H-hz);
+  const shade=ctx.createLinearGradient(0,hz,0,H);
+  shade.addColorStop(0,"rgba(255,255,255,.025)");
+  shade.addColorStop(1,"rgba(0,40,18,.07)");
+  ctx.fillStyle=shade;ctx.fillRect(0,hz,W,H-hz);
+  return true;
+}
 function drawStadium(ctx,W,H,G){
   const hz=pitchHorizon(H), dome=26;
   // Bright daytime sky above the bowl.
@@ -497,6 +660,10 @@ function drawPitch(ctx,W,H,G){
   ctx.fillStyle=pool;ctx.fillRect(0,hz-6,W,H-hz+6);
   ctx.fillStyle="rgba(0,0,0,.12)";ctx.fillRect(0,H-16,W,16);   // foreground apron
   ctx.restore();
+  drawPitchMarkings(ctx,W,H,G);
+}
+function drawPitchMarkings(ctx,W,H,G){
+  const hz=pitchHorizon(H), dome=34;
   // Markings anchored to the ground play-plane.
   ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineCap="round";
   ctx.lineWidth=4;
@@ -533,6 +700,14 @@ function goalTube(ctx,x1,y1,x2,y2,w,vertical){
 }
 function drawGoal(ctx,right,W,G,GW,GH){
   const x0=right?W:0,dir=right?-1:1,inner=x0+dir*GW,topY=G-GH;
+  const goal=ARENA_IMAGES.goal;
+  if(goal && goal.loaded){
+    ctx.save();
+    if(right){ctx.translate(W,0);ctx.scale(-1,1);}
+    ctx.drawImage(goal,0,topY,GW,GH);
+    ctx.restore();
+    return;
+  }
   const lo=Math.min(x0,inner);
   const pw=Math.max(9,GW*0.09);
   // Ground shadow at the mouth.
@@ -614,7 +789,12 @@ function drawLimb(ctx,x1,y1,x2,y2,thickness,color){
   ctx.lineTo(x2,y2);
   ctx.stroke();
 }
-function drawPlayer(ctx,p,color,w,h,G){
+function drawPlayer(ctx,p,team,w,h,G,action,time){
+  const color = team === "red" ? "#ff5262" : "#2f9bff";
+  if(drawSpritePlayer(ctx,p,team,w,h,G,action,time)) return;
+  drawFallbackPlayer(ctx,p,color,w,h,G);
+}
+function drawFallbackPlayer(ctx,p,color,w,h,G){
   const isRed=color.toLowerCase()==="#ff5262";
   const palette=isRed
     ?{head:"#ff5353",headDark:"#df2f35",jersey:"#d91f2a",boots:"#d52b34",skin:"#ff5353"}
