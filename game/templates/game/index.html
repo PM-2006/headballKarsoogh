@@ -31,6 +31,9 @@
     <div class="nav">
       <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
       <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+      {% if request.user.is_superuser %}
+      <button id="panelTab"><span class="nav-ico">⚙️</span> تنظیمات بازی</button>
+      {% endif %}
     </div>
   </div>
 </header>
@@ -150,6 +153,25 @@
     </div>
   </div>
 </section>
+{% if request.user.is_superuser %}
+<section id="panelView" class="view">
+  <div class="card panel-card">
+    <div class="panel-head">
+      <div>
+        <h2>⚙️ تنظیمات زندهٔ بازی</h2>
+        <p class="muted">مقادیر فیزیک، ابعاد و رفتار بازی را تغییر بده، سریع «آزمایش» کن، و با «ذخیره» برای همهٔ کاربران اعمال کن. این بخش فقط برای مدیر ارشد است.</p>
+      </div>
+      <div class="panel-actions">
+        <button id="panelTest" class="success">🎬 آزمایش با این مقادیر</button>
+        <button id="panelSave" class="primary">💾 ذخیره برای همه</button>
+        <button id="panelReset" class="btn-danger">↩ بازگردانی پیش‌فرض</button>
+      </div>
+    </div>
+    <div id="panelStatus" class="panel-status muted">در حال بارگذاری…</div>
+    <div id="panelGroups" class="panel-groups"></div>
+  </div>
+</section>
+{% endif %}
 </div>
 <script src="{% static 'game/game.js' %}"></script>
 </body></html>

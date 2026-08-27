@@ -11,11 +11,11 @@ let gameConfig = {
   width: 1280,
   height: 720,
   ground_y: 610,
-  goal_depth: 105,
-  goal_height: 135,
-  ball_radius: 22,
-  player_width: 58,
-  player_height: 72,
+  goal_depth: 122,
+  goal_height: 205,
+  ball_radius: 23,
+  player_width: 66,
+  player_height: 84,
   match_time: 60,
 };
 
@@ -80,10 +80,14 @@ const simpleActions = {
 };
 let simpleRules = [];
 
+const VIEW_NAMES=["builder","arena","panel"];
 function switchView(which){
-  const builder=which==="builder";
-  $("builderView").classList.toggle("active",builder);$("arenaView").classList.toggle("active",!builder);
-  $("builderTab").classList.toggle("active",builder);$("arenaTab").classList.toggle("active",!builder);
+  VIEW_NAMES.forEach(v=>{
+    const view=$(v+"View"),tab=$(v+"Tab");
+    if(view)view.classList.toggle("active",v===which);
+    if(tab)tab.classList.toggle("active",v===which);
+  });
+  if(which==="panel")ensurePanelLoaded();
 }
 function conditionOptions(selected){return Object.entries(simpleConditions).map(([k,v])=>`<option value="${k}" ${k===selected?"selected":""}>${v.label}</option>`).join("")}
 function actionOptions(selected){return Object.entries(simpleActions).map(([k,v])=>`<option value="${k}" ${k===selected?"selected":""}>${v}</option>`).join("")}
@@ -411,34 +415,47 @@ function drawFrame(frame){
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
 }
+function pitchHorizon(H){ return Math.round(H*0.36); }   // top edge of the pitch bowl
 function drawStadium(ctx,W,H,G){
-  // Sky with a soft overhead light wash.
-  const sky=ctx.createLinearGradient(0,0,0,G);
-  sky.addColorStop(0,"#7fbdf0");sky.addColorStop(.42,"#a8dcff");sky.addColorStop(1,"#e6f5ff");
-  ctx.fillStyle=sky;ctx.fillRect(0,0,W,G);
-  const wash=ctx.createRadialGradient(W/2,-50,30,W/2,-50,W*0.72);
-  wash.addColorStop(0,"rgba(255,255,255,.42)");wash.addColorStop(1,"rgba(255,255,255,0)");
-  ctx.fillStyle=wash;ctx.fillRect(0,0,W,G);
-  // Drifting clouds.
-  ctx.fillStyle="rgba(255,255,255,.55)";
-  drawCloud(ctx,W*0.20,168,64);drawCloud(ctx,W*0.60,120,86);drawCloud(ctx,W*0.86,205,52);
-  // Multi-tier stands.
-  ctx.fillStyle="#132a4e";ctx.fillRect(0,0,W,46);
-  ctx.fillStyle="#1a3868";ctx.fillRect(0,46,W,26);
-  ctx.fillStyle="#22497f";ctx.fillRect(0,72,W,26);
-  ctx.fillStyle="#0d2145";ctx.fillRect(0,0,W,9);              // roof
-  ctx.fillStyle="rgba(9,20,40,.55)";                          // support columns
-  for(let x=70;x<W;x+=150)ctx.fillRect(x,9,6,89);
-  // Crowd speckles.
-  const cols=["#ffd24d","#6bd4ff","#ff8098","#8affc0","#ffffff","#c9a8ff"];
-  ctx.globalAlpha=.7;
-  for(let i=0;i<W;i+=9){const y=14+((i*7)%78);ctx.fillStyle=cols[(i*11)%cols.length];ctx.fillRect(i,y,3,3);}
+  const hz=pitchHorizon(H), dome=26;
+  // Bright daytime sky above the bowl.
+  const sky=ctx.createLinearGradient(0,0,0,hz);
+  sky.addColorStop(0,"#3fb0ff");sky.addColorStop(1,"#c4ecff");
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,hz);
+  ctx.fillStyle="rgba(255,255,255,.8)";
+  drawCloud(ctx,W*0.17,52,50);drawCloud(ctx,W*0.83,38,60);
+  // Curved stadium tiers (shallow dome gives the bowl depth).
+  const bands=[[0,0.44,"#28324c"],[0.44,0.72,"#313f5e"],[0.72,1,"#3a4d72"]];
+  for(const b of bands){
+    const ya=hz*b[0], yb=hz*b[1];
+    ctx.fillStyle=b[2];
+    ctx.beginPath();
+    ctx.moveTo(0,ya);ctx.quadraticCurveTo(W/2,ya+dome,W,ya);
+    ctx.lineTo(W,yb);ctx.quadraticCurveTo(W/2,yb+dome,0,yb);
+    ctx.closePath();ctx.fill();
+  }
+  // Roof lip.
+  ctx.fillStyle="#1c2438";ctx.beginPath();
+  ctx.moveTo(0,0);ctx.quadraticCurveTo(W/2,dome,W,0);
+  ctx.lineTo(W,10);ctx.quadraticCurveTo(W/2,10+dome,0,10);ctx.closePath();ctx.fill();
+  // Crowd speckles bowing with the dome.
+  const cols=["#ffd24d","#7fe0ff","#ff90a4","#9dffc4","#ffffff","#c9a8ff","#ffb066","#8fb4ff"];
+  ctx.globalAlpha=.9;
+  for(let x=6;x<W;x+=9){
+    const bow=dome*Math.sin(Math.PI*x/W);
+    for(let y=16;y<hz-24;y+=9){ctx.fillStyle=cols[((x*5+y*3)>>1)%cols.length];ctx.fillRect(x,y+bow,3.4,3.4);}
+  }
   ctx.globalAlpha=1;
-  drawFloodlight(ctx,W*0.22);drawFloodlight(ctx,W*0.78);
-  // Pitch-side advertising boards along the horizon.
-  const ad=["#0e2a4a","#123a63","#0e2a4a","#173f66"];
-  for(let x=0,k=0;x<W;x+=90,k++){ctx.fillStyle=ad[k%ad.length];ctx.fillRect(x,G-14,88,12);}
-  ctx.fillStyle="rgba(120,200,255,.25)";ctx.fillRect(0,G-14,W,2);
+  drawFloodlight(ctx,W*0.20,hz);drawFloodlight(ctx,W*0.80,hz);
+  // Barrier + colourful advert boards at the pitch edge (follow the dome).
+  ctx.fillStyle="#10203a";ctx.beginPath();
+  ctx.moveTo(0,hz-20);ctx.quadraticCurveTo(W/2,hz-20+34,W,hz-20);
+  ctx.lineTo(W,hz);ctx.quadraticCurveTo(W/2,hz+34,0,hz);ctx.closePath();ctx.fill();
+  const ad=["#12e0c0","#ffd23d","#ff5c8a","#4db4ff","#a06bff"];
+  for(let i=0,x=0;x<W;x+=96,i++){
+    const bow=34*Math.sin(Math.PI*(x+48)/W);
+    ctx.fillStyle=ad[i%ad.length];ctx.fillRect(x,hz-16+bow,92,11);
+  }
 }
 function drawCloud(ctx,x,y,r){
   ctx.beginPath();
@@ -446,50 +463,74 @@ function drawCloud(ctx,x,y,r){
   ctx.arc(x-r*0.5,y+6,r*0.34,0,Math.PI*2);ctx.arc(x+r*0.14,y-r*0.2,r*0.4,0,Math.PI*2);
   ctx.fill();
 }
-function drawFloodlight(ctx,x){
-  ctx.strokeStyle="#2a466f";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(x,98);ctx.lineTo(x,30);ctx.stroke();
-  ctx.fillStyle="#20395e";ctx.beginPath();roundedRectPath(ctx,x-36,10,72,22,6);ctx.fill();
-  const g=ctx.createRadialGradient(x,22,2,x,22,86);g.addColorStop(0,"rgba(255,255,215,.55)");g.addColorStop(1,"rgba(255,255,215,0)");
-  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,22,86,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle="#fff8d8";for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(x-25+i*17,21,4.2,0,Math.PI*2);ctx.fill();}
+function drawFloodlight(ctx,x,hz){
+  ctx.strokeStyle="#4a5a78";ctx.lineWidth=5;ctx.lineCap="round";
+  ctx.beginPath();ctx.moveTo(x,hz*0.52);ctx.lineTo(x,26);ctx.stroke();
+  ctx.fillStyle="#39496a";ctx.beginPath();roundedRectPath(ctx,x-34,10,68,20,6);ctx.fill();
+  const g=ctx.createRadialGradient(x,20,2,x,20,70);
+  g.addColorStop(0,"rgba(255,252,220,.5)");g.addColorStop(1,"rgba(255,252,220,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,20,70,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fffbe0";for(let i=0;i<4;i++){ctx.beginPath();ctx.arc(x-23+i*15,19,4,0,Math.PI*2);ctx.fill();}
 }
 function drawPitch(ctx,W,H,G){
-  const stripeW=W/14;
-  for(let i=0;i<14;i++){ctx.fillStyle=i%2?"#34a657":"#41ba67";ctx.fillRect(i*stripeW,G,stripeW+1,H-G);}
-  // Soft light pooled on the pitch + darker apron at the base.
-  const pl=ctx.createRadialGradient(W/2,G+6,20,W/2,G+6,W*0.55);
-  pl.addColorStop(0,"rgba(255,255,255,.16)");pl.addColorStop(1,"rgba(0,0,0,0)");
-  ctx.fillStyle=pl;ctx.fillRect(0,G,W,H-G);
-  ctx.fillStyle="rgba(0,0,0,.16)";ctx.fillRect(0,H-13,W,13);
-  // Markings.
-  ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineWidth=4;
-  ctx.beginPath();ctx.moveTo(0,G+3);ctx.lineTo(W,G+3);ctx.stroke();               // touchline
+  const hz=pitchHorizon(H), dome=34;
+  ctx.save();
+  // Clip to the domed pitch shape so the far edge curves (2.5D).
+  ctx.beginPath();
+  ctx.moveTo(0,hz);ctx.quadraticCurveTo(W/2,hz+dome,W,hz);
+  ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.closePath();ctx.clip();
+  // Bright cartoon green, sunlit near the horizon.
+  const gr=ctx.createLinearGradient(0,hz,0,H);
+  gr.addColorStop(0,"#54c877");gr.addColorStop(.55,"#41b365");gr.addColorStop(1,"#2c9350");
+  ctx.fillStyle=gr;ctx.fillRect(0,hz-6,W,H-hz+6);
+  // Vertical mowing stripes.
+  const stripes=14, sw=W/stripes;
+  for(let i=1;i<stripes;i+=2){ctx.fillStyle="rgba(255,255,255,.055)";ctx.fillRect(i*sw,hz-6,sw+1,H-hz+6);}
+  // Sunlight pool.
+  const pool=ctx.createRadialGradient(W/2,hz+30,40,W/2,hz+30,W*0.62);
+  pool.addColorStop(0,"rgba(255,255,255,.16)");pool.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=pool;ctx.fillRect(0,hz-6,W,H-hz+6);
+  ctx.fillStyle="rgba(0,0,0,.12)";ctx.fillRect(0,H-16,W,16);   // foreground apron
+  ctx.restore();
+  // Markings anchored to the ground play-plane.
+  ctx.strokeStyle="rgba(255,255,255,.9)";ctx.lineCap="round";
+  ctx.lineWidth=4;
+  ctx.beginPath();ctx.moveTo(6,hz+3);ctx.quadraticCurveTo(W/2,hz+dome+3,W-6,hz+3);ctx.stroke(); // far touchline
   ctx.lineWidth=3;
-  ctx.beginPath();ctx.moveTo(W/2,G+3);ctx.lineTo(W/2,H);ctx.stroke();             // halfway line
-  ctx.fillStyle="rgba(255,255,255,.92)";ctx.beginPath();ctx.arc(W/2,G+(H-G)/2,4,0,Math.PI*2);ctx.fill();
-  [150,W-150].forEach(x=>{ctx.beginPath();ctx.moveTo(x,G+4);ctx.lineTo(x,H);ctx.stroke();}); // penalty lines
-  // Corner quarter-arcs at the goal lines.
-  ctx.beginPath();ctx.arc(4,G+3,16,-Math.PI/2,0);ctx.stroke();
-  ctx.beginPath();ctx.arc(W-4,G+3,16,Math.PI,Math.PI*1.5);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(W/2,hz+dome);ctx.lineTo(W/2,H);ctx.stroke();                        // halfway line
+  ctx.beginPath();ctx.ellipse(W/2,G-24,116,42,0,0,Math.PI*2);ctx.stroke();                       // centre circle
+  ctx.fillStyle="rgba(255,255,255,.92)";ctx.beginPath();ctx.ellipse(W/2,G-24,5,2.4,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(0,G-20,150,66,0,-Math.PI*0.42,Math.PI*0.42);ctx.stroke();          // penalty arcs
+  ctx.beginPath();ctx.ellipse(W,G-20,150,66,0,Math.PI*0.58,Math.PI*1.42);ctx.stroke();
 }
 function drawGoal(ctx,right,W,G,GW,GH){
   const x0=right?W:0,dir=right?-1:1,inner=x0+dir*GW,topY=G-GH;
   const lo=Math.min(x0,inner),hi=Math.max(x0,inner);
-  // Net
+  // Goal-line shadow on the grass.
+  ctx.fillStyle="rgba(0,0,0,.14)";
+  ctx.beginPath();ctx.ellipse(inner,G+3,GW*0.7,7,0,0,Math.PI*2);ctx.fill();
+  // Net: soft backdrop + diagonal diamond lattice (hex-net look).
   ctx.save();ctx.beginPath();ctx.rect(lo,topY,GW,GH);ctx.clip();
-  ctx.fillStyle="rgba(230,245,255,.10)";ctx.fillRect(lo,topY,GW,GH);
-  ctx.strokeStyle="rgba(255,255,255,.30)";ctx.lineWidth=1;
-  for(let gx=lo;gx<=hi;gx+=11){ctx.beginPath();ctx.moveTo(gx,topY);ctx.lineTo(gx,G);ctx.stroke();}
-  for(let gy=topY;gy<=G;gy+=11){ctx.beginPath();ctx.moveTo(lo,gy);ctx.lineTo(hi,gy);ctx.stroke();}
+  const nb=ctx.createLinearGradient(0,topY,0,G);
+  nb.addColorStop(0,"rgba(240,250,255,.16)");nb.addColorStop(1,"rgba(210,235,255,.07)");
+  ctx.fillStyle=nb;ctx.fillRect(lo,topY,GW,GH);
+  ctx.strokeStyle="rgba(255,255,255,.32)";ctx.lineWidth=1;
+  for(let d=-GH;d<GW+GH;d+=14){
+    ctx.beginPath();ctx.moveTo(lo+d,topY);ctx.lineTo(lo+d+GH,G);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(lo+d+GH,topY);ctx.lineTo(lo+d,G);ctx.stroke();
+  }
   ctx.restore();
-  // Back post (thin, at the field edge)
-  ctx.strokeStyle="#dfeefc";ctx.lineWidth=4;ctx.lineCap="round";
+  // Back post (thin, at the field edge).
+  ctx.strokeStyle="#e9f4ff";ctx.lineWidth=5;ctx.lineCap="round";
   ctx.beginPath();ctx.moveTo(x0,topY);ctx.lineTo(x0,G);ctx.stroke();
-  // Front post + crossbar (thick, with soft shadow)
-  ctx.strokeStyle="#f6fbff";ctx.lineWidth=8;
-  ctx.shadowColor="rgba(0,0,0,.28)";ctx.shadowBlur=6;ctx.shadowOffsetY=2;
+  // Front post + crossbar (thick, rounded, soft shadow).
+  ctx.strokeStyle="#ffffff";ctx.lineWidth=11;
+  ctx.shadowColor="rgba(0,0,0,.30)";ctx.shadowBlur=7;ctx.shadowOffsetY=3;
   ctx.beginPath();ctx.moveTo(inner,G);ctx.lineTo(inner,topY);ctx.lineTo(x0,topY);ctx.stroke();
   ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
+  // Post highlight.
+  ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(inner-dir*3,G);ctx.lineTo(inner-dir*3,topY);ctx.stroke();
 }
 function drawBall(ctx,x,y,r){
   ctx.save();ctx.translate(x,y);ctx.rotate((x/r)*0.15);
@@ -507,7 +548,6 @@ function drawPentagon(ctx,cx,cy,rad,rot){
   ctx.beginPath();
   for(let i=0;i<5;i++){const a=rot+i*(2*Math.PI/5),px=cx+Math.cos(a)*rad,py=cy+Math.sin(a)*rad;i?ctx.lineTo(px,py):ctx.moveTo(px,py)}
   ctx.closePath();ctx.fill();
->>>>>>> 360ea4cbbef26ddf9cd4470a2e6ac5e80186572b
 }
 function roundedRectPath(ctx,x,y,w,h,r){
   const radius=Math.max(0,Math.min(r,w/2,h/2));
@@ -912,6 +952,100 @@ function challengeBotInArena(id,asBlue=true){
   runMatch();
 }
 
+function drawIdleFrame(){
+  const W=gameConfig.width||1280,G=gameConfig.ground_y||610;
+  const GW=gameConfig.goal_depth||122,PW=gameConfig.player_width||66,PH=gameConfig.player_height||84;
+  const p0=GW+150, p1=Math.max(p0+PW+10, W-GW-150-PW);
+  drawFrame({time:gameConfig.match_time||60,score:[0,0],
+    players:[{x:p0,y:G-PH,face:1},{x:p1,y:G-PH,face:-1}],
+    ball:{x:W/2,y:Math.max(50,G-460)},debug:[{},{}]});
+}
+
+// ---------- Admin game-config panel (superuser only) ----------
+let panelLoaded=false;
+function setPanelStatus(t){const el=$("panelStatus");if(el)el.textContent=t;}
+async function ensurePanelLoaded(){
+  if(panelLoaded||!$("panelGroups"))return;
+  try{
+    const data=await fetch("api/game-config/").then(r=>r.json());
+    if(data.error){setPanelStatus("❌ "+data.error);return;}
+    renderPanel(data.groups);panelLoaded=true;
+    setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
+  }catch(e){setPanelStatus("❌ خطا در بارگذاری تنظیمات.");}
+}
+function renderPanel(groups){
+  const host=$("panelGroups");if(!host)return;
+  host.innerHTML=groups.map(g=>`
+    <details class="panel-group" open>
+      <summary>${g.title} <span class="pg-count">${g.fields.length}</span></summary>
+      <div class="panel-fields">
+        ${g.fields.map(f=>{
+          const step=f.step||(f.int?1:0.01);
+          return `<div class="pfield" data-key="${f.key}">
+            <label title="${f.key}">${f.label}</label>
+            <input class="pf-range" type="range" min="${f.min}" max="${f.max}" step="${step}" value="${f.value}">
+            <input class="pf-num" type="number" min="${f.min}" max="${f.max}" step="${step}" value="${f.value}">
+          </div>`;
+        }).join("")}
+      </div>
+    </details>`).join("");
+  host.querySelectorAll(".pfield").forEach(row=>{
+    const rng=row.querySelector(".pf-range"),num=row.querySelector(".pf-num");
+    rng.oninput=()=>{num.value=rng.value;};
+    num.oninput=()=>{rng.value=num.value;};
+  });
+}
+function collectPanelValues(){
+  const out={};
+  document.querySelectorAll("#panelGroups .pfield").forEach(row=>{
+    const v=Number(row.querySelector(".pf-num").value);
+    if(Number.isFinite(v))out[row.dataset.key]=v;
+  });
+  return out;
+}
+function applyClientConfig(map){
+  Object.assign(gameConfig,map);
+  updateCanvasDimensions();
+  drawIdleFrame();
+}
+async function panelSave(){
+  try{
+    setPanelStatus("در حال ذخیره…");
+    const res=await postJSON("api/game-config/",{values:collectPanelValues()});
+    if(res.config)applyClientConfig(res.config);
+    if(res.groups)renderPanel(res.groups);
+    showToast("✅ تنظیمات برای همه ذخیره شد.","ok");
+    setPanelStatus("ذخیره شد ✓ — از این پس همهٔ مسابقه‌ها با این مقادیر اجرا می‌شوند.");
+  }catch(err){showToast("❌ "+humanizeError(err),"err");setPanelStatus("خطا در ذخیره.");}
+}
+async function panelReset(){
+  if(!confirm("همهٔ تنظیمات بازی به مقادیر پیش‌فرض بازگردد؟"))return;
+  try{
+    const res=await postJSON("api/game-config/reset/",{});
+    if(res.config)applyClientConfig(res.config);
+    if(res.groups)renderPanel(res.groups);
+    showToast("↩ به پیش‌فرض بازگشت.","ok");
+    setPanelStatus("به مقادیر پیش‌فرض بازگشت.");
+  }catch(err){showToast("❌ "+humanizeError(err),"err");}
+}
+async function panelTest(){
+  const overrides=collectPanelValues();
+  applyClientConfig(overrides);
+  const presets=(vocabulary&&vocabulary.presets)||{};
+  const keys=Object.keys(presets);
+  const blue=keys[0]||"smart", red=keys[1]||keys[0]||"adaptive";
+  try{
+    setPanelStatus("در حال شبیه‌سازی آزمایشی…");
+    const seed=Number(($("seedInput")||{}).value)||1;
+    const result=await postJSON("api/simulate/",{blue:{preset:blue},red:{preset:red},seed,overrides});
+    if($("blueName"))$("blueName").textContent=(presets[blue]||blue)+" (آبی)";
+    if($("redName"))$("redName").textContent=(presets[red]||red)+" (قرمز)";
+    switchView("arena");
+    playFrames(result.frames,result.record_fps);
+    setPanelStatus("آزمایش اجرا شد. اگر خوب بود، به تب «تنظیمات» برگرد و «ذخیره» کن.");
+  }catch(err){showToast("❌ "+humanizeError(err),"err");setPanelStatus("خطا در آزمایش.");}
+}
+
 async function init(){
   readInjectedConfig();
   vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
@@ -923,6 +1057,10 @@ async function init(){
   quickPreset("smart");
   $("builderTab").onclick=()=>switchView("builder");
   $("arenaTab").onclick=()=>switchView("arena");
+  if($("panelTab")) $("panelTab").onclick=()=>switchView("panel");
+  if($("panelSave")) $("panelSave").onclick=panelSave;
+  if($("panelReset")) $("panelReset").onclick=panelReset;
+  if($("panelTest")) $("panelTest").onclick=panelTest;
   $("addRule").onclick=()=>addSimple();
   $("buildBot").onclick=buildBot;
   $("compileWithAI").onclick=compileWithAI;
@@ -937,23 +1075,6 @@ async function init(){
   $("runBatch").onclick=runBatch;
   $("winClose").onclick=()=>$("winFx").classList.remove("show");
 
-  const W=gameConfig.width||1280;
-  const H=gameConfig.height||720;
-  const G=gameConfig.ground_y||610;
-  const GW=gameConfig.goal_depth||105;
-  const PW=gameConfig.player_width||58;
-  const PH=gameConfig.player_height||72;
-  const initP0x=GW+150;
-  const initP1x=Math.max(initP0x+PW+10, W-GW-150-PW);
-  const initPy=G-PH;
-  const initBallY=Math.max(50, G-460);
-
-  drawFrame({
-    time: gameConfig.match_time||60,
-    score: [0, 0],
-    players: [{x: initP0x, y: initPy, face: 1}, {x: initP1x, y: initPy, face: -1}],
-    ball: {x: W/2, y: initBallY},
-    debug: [{}, {}]
-  });
+  drawIdleFrame();
 }
 init();

@@ -9,6 +9,12 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
 from .engine import batch_matches, simulate_match
+from .gameconfig import (
+    config_with_overrides,
+    reset_overrides,
+    save_overrides,
+    spec as config_spec,
+)
 from .models import SavedStrategy
 from .strategy import get_preset, vocabulary
 from .validators import StrategyValidationError, validate_strategy
@@ -201,7 +207,14 @@ def api_simulate(request):
         blue = _resolve_strategy(payload, "blue", user=request.user)
         red = _resolve_strategy(payload, "red", user=request.user)
         seed = int(payload.get("seed", 1))
-        return JsonResponse(simulate_match(blue, red, seed=seed, record_frames=True))
+        # Superusers may preview a match with unsaved config overrides.
+        config = None
+        overrides = payload.get("overrides")
+        if overrides and request.user.is_superuser:
+            config = config_with_overrides(overrides)
+        return JsonResponse(
+            simulate_match(blue, red, seed=seed, record_frames=True, config=config)
+        )
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
@@ -217,6 +230,57 @@ def api_batch(request):
         return JsonResponse(batch_matches(blue, red, matches=matches, seed=seed))
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
+
+
+def _forbidden():
+    return JsonResponse({"error": "دسترسی فقط برای مدیر ارشد مجاز است."}, status=403)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def api_game_config(request):
+    """Superuser-only: read the tunable config spec (GET) or save overrides (POST)."""
+    if not request.user.is_superuser:
+        return _forbidden()
+
+    from .engine import get_game_config
+
+    if request.method == "GET":
+        return JsonResponse({"groups": config_spec(get_game_config())})
+
+    try:
+        payload = _json_body(request)
+        stored = save_overrides(payload.get("values") or {}, user=request.user)
+        cfg = get_game_config()
+        return JsonResponse({
+            "success": True,
+            "message": "تنظیمات بازی ذخیره شد.",
+            "stored": stored,
+            "config": cfg.to_dict(),
+            "groups": config_spec(cfg),
+        })
+    except StrategyValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    except Exception as exc:  # noqa: BLE001 - surface a friendly message
+        return JsonResponse({"error": f"خطا در ذخیره تنظیمات: {exc}"}, status=500)
+
+
+@login_required
+@require_POST
+def api_game_config_reset(request):
+    """Superuser-only: clear all overrides, back to code/env defaults."""
+    if not request.user.is_superuser:
+        return _forbidden()
+    from .engine import get_game_config
+
+    reset_overrides(user=request.user)
+    cfg = get_game_config()
+    return JsonResponse({
+        "success": True,
+        "message": "تنظیمات بازی به حالت پیش‌فرض بازگشت.",
+        "config": cfg.to_dict(),
+        "groups": config_spec(cfg),
+    })
 
 
 @login_required

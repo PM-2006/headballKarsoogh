@@ -5,7 +5,13 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 
-from .models import SavedStrategy
+from .models import GameConfigOverride, SavedStrategy
+
+
+@admin.register(GameConfigOverride)
+class GameConfigOverrideAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "updated_by", "updated_at")
+    readonly_fields = ("updated_at",)
 
 
 @admin.register(SavedStrategy)

@@ -281,3 +281,21 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
   header{padding:14px 16px}
   .header-controls{align-items:stretch}
 }
+
+/* ---------- Admin live-config panel (superuser) ---------- */
+.panel-card{max-width:100%}
+.panel-head{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:flex-start}
+.panel-actions{display:flex;gap:8px;flex-wrap:wrap}
+.panel-status{margin:12px 0 16px;padding:9px 13px;border-radius:11px;background:rgba(80,130,220,.10);border:1px solid var(--line-soft);color:var(--muted);font-size:12.5px}
+.panel-groups{display:flex;flex-direction:column;gap:12px}
+.panel-group{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#0c1830}
+.panel-group>summary{cursor:pointer;padding:12px 15px;font-weight:800;list-style:none;display:flex;align-items:center;gap:9px;background:rgba(80,130,220,.08)}
+.panel-group>summary::-webkit-details-marker{display:none}
+.panel-group>summary::before{content:"▸";color:var(--muted);transition:.15s}
+.panel-group[open]>summary::before{transform:rotate(90deg)}
+.pg-count{font-size:11px;font-weight:700;color:var(--muted);background:rgba(120,160,255,.14);padding:1px 9px;border-radius:20px}
+.panel-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px 20px;padding:15px}
+.pfield{display:grid;grid-template-columns:1fr 84px;grid-template-areas:"label label" "range num";gap:5px 10px;align-items:center}
+.pfield label{grid-area:label;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pfield .pf-range{grid-area:range;width:100%;padding:0;accent-color:#4d9bff;background:transparent;border:0}
+.pfield .pf-num{grid-area:num;width:84px;padding:7px 8px;border-radius:9px;border:1px solid var(--line);background:#0a1526;color:var(--text);direction:ltr;text-align:center;font-weight:700}

@@ -11,4 +11,6 @@ urlpatterns = [
     path("api/strategies/<int:pk>/", views.api_strategy_detail, name="api_strategy_detail"),
     path("api/simulate/", views.api_simulate, name="api_simulate"),
     path("api/batch/", views.api_batch, name="api_batch"),
+    path("api/game-config/", views.api_game_config, name="api_game_config"),
+    path("api/game-config/reset/", views.api_game_config_reset, name="api_game_config_reset"),
 ]

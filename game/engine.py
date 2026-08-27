@@ -37,12 +37,12 @@ class GameConfig:
     width: float = 1280.0
     height: float = 720.0
     ground_y: float = 610.0
-    goal_depth: float = 105.0
-    goal_height: float = 135.0
+    goal_depth: float = 122.0
+    goal_height: float = 205.0
     goal_post_radius: float = 7.0
 
     # Ball Physics & Elasticity
-    ball_radius: float = 22.0
+    ball_radius: float = 23.0
     gravity: float = 1700.0
     ball_max_speed: float = 1450.0
     floor_bounce: float = 0.58
@@ -57,8 +57,8 @@ class GameConfig:
     body_ball_impulse_scale: float = 0.05
 
     # Player Dimensions & Dynamics
-    player_width: float = 58.0
-    player_height: float = 72.0
+    player_width: float = 66.0
+    player_height: float = 84.0
     player_speed: float = 385.0
     player_jump_speed: float = 790.0
     player_gravity: float = 2050.0
@@ -67,7 +67,7 @@ class GameConfig:
     player_air_acceleration: float = 1300.0
     player_air_deceleration: float = 90.0
     jump_cooldown: float = 0.38
-    head_radius: float = 27.0
+    head_radius: float = 34.0
     head_center_y: float = 18.0
     body_inset_x: float = 10.0
     body_top_offset: float = 36.0
@@ -126,18 +126,19 @@ class GameConfig:
         return asdict(self)
 
 
-def get_game_config() -> GameConfig:
+def get_base_config() -> GameConfig:
+    """Config from code defaults + environment variables (no DB overrides)."""
     return GameConfig(
         # Playground Geometry
         width=_env_float("GAME_PLAYGROUND_WIDTH", 1280.0),
         height=_env_float("GAME_PLAYGROUND_HEIGHT", 720.0),
         ground_y=_env_float("GAME_GROUND_Y", 610.0),
-        goal_depth=_env_float("GAME_GOAL_DEPTH", 105.0),
-        goal_height=_env_float("GAME_GOAL_HEIGHT", 135.0),
+        goal_depth=_env_float("GAME_GOAL_DEPTH", 122.0),
+        goal_height=_env_float("GAME_GOAL_HEIGHT", 205.0),
         goal_post_radius=_env_float("GAME_GOAL_POST_RADIUS", 7.0),
 
         # Ball Physics & Elasticity
-        ball_radius=_env_float("GAME_BALL_RADIUS", 22.0),
+        ball_radius=_env_float("GAME_BALL_RADIUS", 23.0),
         gravity=_env_float("GAME_GRAVITY", 1700.0),
         ball_max_speed=_env_float("GAME_BALL_MAX_SPEED", 1450.0),
         floor_bounce=_env_float("GAME_FLOOR_BOUNCE", 0.58),
@@ -152,8 +153,8 @@ def get_game_config() -> GameConfig:
         body_ball_impulse_scale=_env_float("GAME_BALL_IMPULSE_SCALE", 0.05),
 
         # Player Dimensions & Dynamics
-        player_width=_env_float("GAME_PLAYER_WIDTH", 58.0),
-        player_height=_env_float("GAME_PLAYER_HEIGHT", 72.0),
+        player_width=_env_float("GAME_PLAYER_WIDTH", 66.0),
+        player_height=_env_float("GAME_PLAYER_HEIGHT", 84.0),
         player_speed=_env_float("GAME_PLAYER_SPEED", 385.0),
         player_jump_speed=_env_float("GAME_PLAYER_JUMP_SPEED", 790.0),
         player_gravity=_env_float("GAME_PLAYER_GRAVITY", 2050.0),
@@ -162,7 +163,7 @@ def get_game_config() -> GameConfig:
         player_air_acceleration=_env_float("GAME_PLAYER_AIR_ACCELERATION", 1300.0),
         player_air_deceleration=_env_float("GAME_PLAYER_AIR_DECELERATION", 90.0),
         jump_cooldown=_env_float("GAME_JUMP_COOLDOWN", 0.38),
-        head_radius=_env_float("GAME_PLAYER_HEAD_RADIUS", 27.0),
+        head_radius=_env_float("GAME_PLAYER_HEAD_RADIUS", 34.0),
         head_center_y=_env_float("GAME_PLAYER_HEAD_CENTER_Y", 18.0),
         body_inset_x=_env_float("GAME_PLAYER_BODY_INSET_X", 10.0),
         body_top_offset=_env_float("GAME_PLAYER_BODY_TOP_OFFSET", 36.0),
@@ -212,7 +213,21 @@ def get_game_config() -> GameConfig:
     )
 
 
-CONFIG = get_game_config()
+def get_game_config() -> GameConfig:
+    """Effective config: base (defaults+env) with admin DB overrides layered on.
+
+    DB overrides are applied lazily so this stays safe to call before the
+    database/migrations exist (falls back to the base config).
+    """
+    base = get_base_config()
+    try:
+        from .gameconfig import apply_overrides, load_overrides
+        return apply_overrides(base, load_overrides())
+    except Exception:
+        return base
+
+
+CONFIG = get_base_config()
 
 
 @dataclass

@@ -112,3 +112,43 @@ class SavedStrategy(models.Model):
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),
         }
+
+
+class GameConfigOverride(models.Model):
+    """
+    Singleton row holding admin overrides for the physics/game constants.
+    Values here are layered on top of the env/code defaults by
+    ``engine.get_game_config()``. Only superusers may edit it (via the in-app
+    settings panel). ``overrides`` maps GameConfig field names -> numbers.
+    """
+
+    singleton_id = models.PositiveSmallIntegerField(
+        default=1, unique=True, editable=False
+    )
+    overrides = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("مقادیر بازنویسی‌شده"),
+        help_text=_("نگاشت نام فیلد تنظیمات بازی به مقدار عددی."),
+    )
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("آخرین ویرایشگر"),
+    )
+
+    class Meta:
+        verbose_name = _("تنظیمات بازی")
+        verbose_name_plural = _("تنظیمات بازی")
+
+    def __str__(self) -> str:
+        return f"GameConfigOverride(#{self.pk}, {len(self.overrides or {})} overrides)"
+
+    @classmethod
+    def load(cls) -> "GameConfigOverride":
+        obj, _created = cls.objects.get_or_create(singleton_id=1)
+        return obj
