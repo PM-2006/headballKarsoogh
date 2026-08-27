@@ -8,9 +8,9 @@ let publicStrategies = [];
 let editingStrategyId = null;
 
 let gameConfig = {
-  width: 1280,
-  height: 720,
-  ground_y: 610,
+  width: 1500,
+  height: 860,
+  ground_y: 730,
   goal_depth: 122,
   goal_height: 205,
   ball_radius: 23,
@@ -37,6 +37,11 @@ function updateCanvasDimensions() {
   if (canvas) {
     if (gameConfig.width) canvas.width = gameConfig.width;
     if (gameConfig.height) canvas.height = gameConfig.height;
+    if (gameConfig.width && gameConfig.height) {
+      // Keep the on-screen box matching the world so nothing is stretched,
+      // even after an admin changes width/height in the panel.
+      canvas.style.aspectRatio = (gameConfig.width / gameConfig.height).toFixed(4);
+    }
   }
 }
 readInjectedConfig();
@@ -503,34 +508,53 @@ function drawPitch(ctx,W,H,G){
   ctx.beginPath();ctx.ellipse(0,G-20,150,66,0,-Math.PI*0.42,Math.PI*0.42);ctx.stroke();          // penalty arcs
   ctx.beginPath();ctx.ellipse(W,G-20,150,66,0,Math.PI*0.58,Math.PI*1.42);ctx.stroke();
 }
+function drawHexNet(ctx,x,y,w,h,r){
+  ctx.strokeStyle="rgba(255,255,255,.26)";ctx.lineWidth=1;
+  const dx=r*1.5, dy=r*Math.sqrt(3);
+  for(let col=0,cx=x-r; cx<=x+w+r; col++,cx+=dx){
+    const off=(col%2)?dy/2:0;
+    for(let cy=y+off-r; cy<=y+h+r; cy+=dy){
+      ctx.beginPath();
+      for(let k=0;k<6;k++){const a=Math.PI/180*(60*k+30);const px=cx+r*Math.cos(a),py=cy+r*Math.sin(a);k?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+      ctx.closePath();ctx.stroke();
+    }
+  }
+}
+function goalTube(ctx,x1,y1,x2,y2,w,vertical){
+  const g=vertical
+    ? ctx.createLinearGradient(x1-w/2,0,x1+w/2,0)
+    : ctx.createLinearGradient(0,y1-w/2,0,y1+w/2);
+  g.addColorStop(0,"#b3cae2");g.addColorStop(vertical?.44:.0,"#ffffff");g.addColorStop(1,"#9db6d1");
+  ctx.save();
+  ctx.strokeStyle=g;ctx.lineWidth=w;ctx.lineCap="round";
+  ctx.shadowColor="rgba(0,0,0,.28)";ctx.shadowBlur=7;ctx.shadowOffsetY=3;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.restore();
+}
 function drawGoal(ctx,right,W,G,GW,GH){
   const x0=right?W:0,dir=right?-1:1,inner=x0+dir*GW,topY=G-GH;
-  const lo=Math.min(x0,inner),hi=Math.max(x0,inner);
-  // Goal-line shadow on the grass.
-  ctx.fillStyle="rgba(0,0,0,.14)";
-  ctx.beginPath();ctx.ellipse(inner,G+3,GW*0.7,7,0,0,Math.PI*2);ctx.fill();
-  // Net: soft backdrop + diagonal diamond lattice (hex-net look).
+  const lo=Math.min(x0,inner);
+  const pw=Math.max(9,GW*0.09);
+  // Ground shadow at the mouth.
+  ctx.fillStyle="rgba(0,0,0,.15)";
+  ctx.beginPath();ctx.ellipse(inner+dir*GW*0.25,G+5,GW*0.6,8,0,0,Math.PI*2);ctx.fill();
+  // Net recess — hexagonal mesh, darkening toward the back wall for depth (2.5D).
   ctx.save();ctx.beginPath();ctx.rect(lo,topY,GW,GH);ctx.clip();
-  const nb=ctx.createLinearGradient(0,topY,0,G);
-  nb.addColorStop(0,"rgba(240,250,255,.16)");nb.addColorStop(1,"rgba(210,235,255,.07)");
-  ctx.fillStyle=nb;ctx.fillRect(lo,topY,GW,GH);
-  ctx.strokeStyle="rgba(255,255,255,.32)";ctx.lineWidth=1;
-  for(let d=-GH;d<GW+GH;d+=14){
-    ctx.beginPath();ctx.moveTo(lo+d,topY);ctx.lineTo(lo+d+GH,G);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(lo+d+GH,topY);ctx.lineTo(lo+d,G);ctx.stroke();
-  }
+  const depth=ctx.createLinearGradient(inner,0,x0,0);
+  depth.addColorStop(0,"rgba(205,228,250,.16)");depth.addColorStop(1,"rgba(58,84,120,.46)");
+  ctx.fillStyle=depth;ctx.fillRect(lo,topY,GW,GH);
+  drawHexNet(ctx,lo,topY,GW,GH,Math.max(8,GH*0.05));
+  // shade the very back edge
+  const back=ctx.createLinearGradient(inner,0,x0,0);
+  back.addColorStop(0,"rgba(0,0,0,0)");back.addColorStop(1,"rgba(0,0,0,.28)");
+  ctx.fillStyle=back;ctx.fillRect(lo,topY,GW,GH);
   ctx.restore();
-  // Back post (thin, at the field edge).
-  ctx.strokeStyle="#e9f4ff";ctx.lineWidth=5;ctx.lineCap="round";
-  ctx.beginPath();ctx.moveTo(x0,topY);ctx.lineTo(x0,G);ctx.stroke();
-  // Front post + crossbar (thick, rounded, soft shadow).
-  ctx.strokeStyle="#ffffff";ctx.lineWidth=11;
-  ctx.shadowColor="rgba(0,0,0,.30)";ctx.shadowBlur=7;ctx.shadowOffsetY=3;
-  ctx.beginPath();ctx.moveTo(inner,G);ctx.lineTo(inner,topY);ctx.lineTo(x0,topY);ctx.stroke();
-  ctx.shadowColor="transparent";ctx.shadowBlur=0;ctx.shadowOffsetY=0;
-  // Post highlight.
-  ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=3;
-  ctx.beginPath();ctx.moveTo(inner-dir*3,G);ctx.lineTo(inner-dir*3,topY);ctx.stroke();
+  // Frame: back post (thin) -> crossbar into the wall -> prominent front post.
+  goalTube(ctx,x0,topY,x0,G,pw*0.62,true);      // back post at the wall
+  goalTube(ctx,inner,topY,x0,topY,pw*0.9,false); // crossbar receding to the wall
+  goalTube(ctx,inner,topY,inner,G,pw,true);      // front post (nearest the field)
+  // Rounded joint cap where front post meets the crossbar.
+  ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(inner,topY,pw*0.56,0,Math.PI*2);ctx.fill();
 }
 function drawBall(ctx,x,y,r){
   ctx.save();ctx.translate(x,y);ctx.rotate((x/r)*0.15);
@@ -608,9 +632,13 @@ function drawPlayer(ctx,p,color,w,h,G){
   ctx.fill();
 
   ctx.save();
-  ctx.translate(cx,0);
+  // Scale the sprite around the player's own top-left (cx,p.y) so enlarging
+  // players keeps the drawing aligned with the physics hitbox (head at
+  // p.y+head_center_y, feet at p.y+player_height). Scaling from the canvas
+  // origin instead would sink the sprite ~sy*p.y pixels below its hitbox.
+  ctx.translate(cx,p.y);
   ctx.scale(facing*sx,sy);
-  ctx.translate(-cx,0);
+  ctx.translate(-cx,-p.y);
 
   // Head spikes: the front/right spike is longer than the rear/left spike.
   drawHeadSpike(ctx,cx+2,p.y+15-27,-Math.PI/2,20,18,palette.headDark);
@@ -687,7 +715,7 @@ function drawPlayer(ctx,p,color,w,h,G){
   ctx.font=`bold ${Math.max(8, Math.round(10*Math.min(sx, sy)))}px Arial`;
   ctx.textAlign="center";
   ctx.textBaseline="middle";
-  ctx.fillText(isRed?"7":"10",cx+2*sx,p.y+39+13*sy);
+  ctx.fillText(isRed?"7":"10",cx+2*sx,p.y+(39+11)*sy);
 }
 function batchRow(name,cls,wins,goals,total){
   const pct=total?Math.round(wins/total*100):0;
@@ -982,9 +1010,12 @@ function renderPanel(groups){
         ${g.fields.map(f=>{
           const step=f.step||(f.int?1:0.01);
           return `<div class="pfield" data-key="${f.key}">
-            <label title="${f.key}">${f.label}</label>
+            <div class="pf-top">
+              <label title="${f.key}">${f.label}</label>
+              <input class="pf-num" type="number" min="${f.min}" max="${f.max}" step="${step}" value="${f.value}">
+            </div>
             <input class="pf-range" type="range" min="${f.min}" max="${f.max}" step="${step}" value="${f.value}">
-            <input class="pf-num" type="number" min="${f.min}" max="${f.max}" step="${step}" value="${f.value}">
+            <div class="pf-scale"><span>${f.min}</span><span>${f.max}</span></div>
           </div>`;
         }).join("")}
       </div>

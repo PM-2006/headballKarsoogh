@@ -34,9 +34,9 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class GameConfig:
     # Playground & Geometry
-    width: float = 1280.0
-    height: float = 720.0
-    ground_y: float = 610.0
+    width: float = 1500.0
+    height: float = 860.0
+    ground_y: float = 730.0
     goal_depth: float = 122.0
     goal_height: float = 205.0
     goal_post_radius: float = 7.0
@@ -130,9 +130,9 @@ def get_base_config() -> GameConfig:
     """Config from code defaults + environment variables (no DB overrides)."""
     return GameConfig(
         # Playground Geometry
-        width=_env_float("GAME_PLAYGROUND_WIDTH", 1280.0),
-        height=_env_float("GAME_PLAYGROUND_HEIGHT", 720.0),
-        ground_y=_env_float("GAME_GROUND_Y", 610.0),
+        width=_env_float("GAME_PLAYGROUND_WIDTH", 1500.0),
+        height=_env_float("GAME_PLAYGROUND_HEIGHT", 860.0),
+        ground_y=_env_float("GAME_GROUND_Y", 730.0),
         goal_depth=_env_float("GAME_GOAL_DEPTH", 122.0),
         goal_height=_env_float("GAME_GOAL_HEIGHT", 205.0),
         goal_post_radius=_env_float("GAME_GOAL_POST_RADIUS", 7.0),
