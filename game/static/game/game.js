@@ -946,7 +946,7 @@ function renderBotGalleries(){
         <div class="bot-card-item">
           <div class="bot-card-head">
             <div class="bot-card-name">🤖 ${escapeHtml(b.name)}</div>
-            <span class="bot-badge on">${(b.strategy?.rules||[]).length} تصمیم</span>
+            <span class="bot-badge on">${b.rules_count ?? (b.strategy?.rules||[]).length} تصمیم</span>
           </div>
           <div class="bot-card-meta">
             <span>📅 آخرین ویرایش: ${b.updated_at}</span>
@@ -973,11 +973,10 @@ function renderBotGalleries(){
             <span class="badge-public">${b.author ? `👤 مدیر: ${escapeHtml(b.author)}` : "عمومی"}</span>
           </div>
           <div class="bot-card-meta">
-            <span>⚡ تعداد تصمیم‌ها: ${(b.strategy?.rules||[]).length}</span>
+            <span>⚡ تعداد تصمیم‌ها: ${b.rules_count ?? 0}</span>
             <span>📅 تاریخ انتشار: ${b.created_at}</span>
           </div>
           <div class="bot-card-actions">
-            <button onclick="loadBotIntoBuilder(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="challengeBotInArena(${b.id},false)">⚔️ مسابقه با این ربات</button>
           </div>
         </div>
@@ -1036,6 +1035,10 @@ function loadBotIntoBuilder(id){
   const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
   if(!bot){
     showToast("ربات مورد نظر یافت نشد.","err");
+    return;
+  }
+  if(!bot.is_owner || !bot.strategy){
+    showToast("مغز ربات‌های دیگران قابل مشاهده نیست.","err");
     return;
   }
   if(bot.is_owner){
@@ -1193,6 +1196,38 @@ async function fetchKit(){
     renderKitPicker();
   }catch(e){}
 }
+// ---- Colour-distinctness helpers (kit colours must differ in hue) ----
+function hexToHsl(hex){
+  let h=String(hex).replace("#","");
+  if(h.length===3) h=h.split("").map(x=>x+x).join("");
+  const r=parseInt(h.slice(0,2),16)/255,g=parseInt(h.slice(2,4),16)/255,b=parseInt(h.slice(4,6),16)/255;
+  const mx=Math.max(r,g,b),mn=Math.min(r,g,b),d=mx-mn;
+  let hue=0;
+  if(d){
+    if(mx===r) hue=((g-b)/d)%6;
+    else if(mx===g) hue=(b-r)/d+2;
+    else hue=(r-g)/d+4;
+    hue*=60; if(hue<0) hue+=360;
+  }
+  const l=(mx+mn)/2;
+  const s=d?d/(1-Math.abs(2*l-1)):0;
+  return {h:hue,s,l};
+}
+// Two kit colours are "too similar" when a player could confuse them on the
+// pitch: same hue family (unless their brightness differs a lot), or both are
+// near-neutral greys of similar lightness.
+const KIT_HUE_MIN=32;      // degrees – minimum hue separation for chromatic colours
+const KIT_NEUTRAL_S=0.18;  // saturation below this counts as a neutral/grey
+function kitColorsTooClose(a,b){
+  const A=hexToHsl(a),B=hexToHsl(b);
+  const neutralA=A.s<KIT_NEUTRAL_S,neutralB=B.s<KIT_NEUTRAL_S;
+  if(neutralA&&neutralB) return Math.abs(A.l-B.l)<0.22; // grey vs grey
+  if(neutralA!==neutralB) return false;                 // grey vs colour → distinct
+  let dh=Math.abs(A.h-B.h); if(dh>180) dh=360-dh;
+  if(dh>=KIT_HUE_MIN) return false;                     // clearly different hue
+  return Math.abs(A.l-B.l)<0.28;                        // same hue & similar brightness
+}
+
 function renderKitPicker(){
   const host=$("kitPicker");if(!host)return;
   const names=["اصلی (خانه)","دوم (میهمان)","جایگزین"];
@@ -1200,16 +1235,17 @@ function renderKitPicker(){
     `<button type="button" class="kit-slot${i===activeKitSlot?' active':''}" data-slot="${i}">
        <span class="kit-chip" style="background:${c}"></span>
        <span class="kit-slot-label">${names[i]}</span></button>`).join("");
-  // Colours already assigned to the OTHER two slots — cannot be reused, so the
-  // three kit colours always stay distinct.
-  const usedElsewhere=new Set(myKit.filter((_,i)=>i!==activeKitSlot).map(c=>String(c).toUpperCase()));
+  // Colours assigned to the OTHER two slots, plus any palette colour whose hue
+  // is too close to them, are disabled — the three kit colours must be
+  // visually distinct (different hue), not merely non-identical.
+  const others=myKit.filter((_,i)=>i!==activeKitSlot);
   const swatches=kitPalette.map(c=>{
-    const taken=usedElsewhere.has(String(c).toUpperCase());
     const sel=myKit[activeKitSlot]===c;
-    return `<button type="button" class="kit-sw${sel?' sel':''}${taken?' taken':''}" data-color="${c}" style="background:${c}" title="${taken?c+' — قبلاً انتخاب شده':c}"${taken?' disabled aria-disabled="true"':''}></button>`;
+    const taken=!sel&&others.some(o=>String(o).toUpperCase()===String(c).toUpperCase()||kitColorsTooClose(o,c));
+    return `<button type="button" class="kit-sw${sel?' sel':''}${taken?' taken':''}" data-color="${c}" style="background:${c}" title="${taken?c+' — رنگ مشابه انتخاب‌شده':c}"${taken?' disabled aria-disabled="true"':''}></button>`;
   }).join("");
   host.innerHTML=`<div class="kit-slots">${slots}</div>
-    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن. هر رنگ فقط برای یک خانه قابل انتخاب است.</div>
+    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن. رنگ هر خانه باید با دو خانه دیگر تفاوت واضح (اختلاف رنگ) داشته باشد.</div>
     <div class="kit-swatches">${swatches}</div>`;
   host.querySelectorAll(".kit-slot").forEach(b=>b.onclick=()=>{activeKitSlot=Number(b.dataset.slot);renderKitPicker();});
   host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{

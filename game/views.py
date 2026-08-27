@@ -30,6 +30,30 @@ def _json_body(request):
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StrategyValidationError("Request body must be valid JSON.") from exc
 
+
+# Keys that expose a bot's "brain" (its rules / the prompt it was built from).
+# These are stripped from any strategy the requesting user does not own, so no
+# one — student or admin — can inspect another player's or an official bot's logic.
+_BRAIN_KEYS = ("strategy", "ai_prompt")
+
+
+def _hide_brain(data: dict) -> dict:
+    """Return a copy of a strategy dict with its private brain fields removed."""
+    return {k: v for k, v in data.items() if k not in _BRAIN_KEYS}
+
+
+def _name_taken_by_other(name: str, user) -> bool:
+    """True if a *different* user already owns a bot with this name.
+
+    Names must be globally unique across users so a bot's name identifies its
+    creator, but a single user may reuse their own names as often as they like.
+    """
+    return (
+        SavedStrategy.objects.filter(name__iexact=name)
+        .exclude(user=user)
+        .exists()
+    )
+
 def _resolve_strategy(payload, key, user=None):
     item = payload.get(key)
     if not isinstance(item, dict):
@@ -93,7 +117,7 @@ def api_strategies(request):
                 {**s.to_dict(), "is_owner": True} for s in my_strategies
             ],
             "public_strategies": [
-                {**s.to_dict(), "is_owner": False} for s in public_strategies
+                {**_hide_brain(s.to_dict()), "is_owner": False} for s in public_strategies
             ],
         })
 
@@ -105,6 +129,11 @@ def api_strategies(request):
             return JsonResponse({"error": "نام استراتژی الزامی است."}, status=400)
         if len(name) > 120:
             return JsonResponse({"error": "نام استراتژی حداکثر می‌تواند ۱۲۰ کاراکتر باشد."}, status=400)
+        if _name_taken_by_other(name, request.user):
+            return JsonResponse(
+                {"error": f"نام «{name}» قبلاً توسط کاربر دیگری استفاده شده است. یک نام دیگر انتخاب کنید."},
+                status=409,
+            )
 
         raw_strategy = payload.get("strategy")
         if not raw_strategy:
@@ -150,8 +179,12 @@ def api_strategy_detail(request, pk: int):
     if request.method == "GET":
         if not (is_owner or saved.is_admin_strategy or is_admin):
             return JsonResponse({"error": "شما اجازه دسترسی به این استراتژی را ندارید."}, status=403)
+        data = saved.to_dict()
+        # Only the bot's own creator may see its brain (rules + prompt).
+        if not is_owner:
+            data = _hide_brain(data)
         return JsonResponse({
-            "strategy": {**saved.to_dict(), "is_owner": is_owner},
+            "strategy": {**data, "is_owner": is_owner},
         })
 
     if request.method == "DELETE":
@@ -170,6 +203,13 @@ def api_strategy_detail(request, pk: int):
             name = (payload.get("name") or "").strip()
             if not name:
                 return JsonResponse({"error": "نام استراتژی نمی‌تواند خالی باشد."}, status=400)
+            # Name must stay unique across users (checked against the bot's owner,
+            # not the editor, so an admin editing a bot can't steal another's name).
+            if _name_taken_by_other(name, saved.user):
+                return JsonResponse(
+                    {"error": f"نام «{name}» قبلاً توسط کاربر دیگری استفاده شده است. یک نام دیگر انتخاب کنید."},
+                    status=409,
+                )
             saved.name = name
 
         if "description" in payload:
@@ -186,10 +226,13 @@ def api_strategy_detail(request, pk: int):
             saved.is_public = bool(payload["is_public"])
 
         saved.save()
+        data = saved.to_dict()
+        if not is_owner:
+            data = _hide_brain(data)
         return JsonResponse({
             "success": True,
             "message": "استراتژی با موفقیت به‌روزرسانی شد.",
-            "strategy": {**saved.to_dict(), "is_owner": is_owner},
+            "strategy": {**data, "is_owner": is_owner},
         })
     except StrategyValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)

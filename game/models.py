@@ -108,6 +108,12 @@ class SavedStrategy(models.Model):
             pass
         return list(DEFAULT_KIT)
 
+    def rules_count(self) -> int:
+        data = self.strategy_data
+        if isinstance(data, dict) and isinstance(data.get("rules"), list):
+            return len(data["rules"])
+        return 0
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -115,6 +121,7 @@ class SavedStrategy(models.Model):
             "description": self.description,
             "ai_prompt": self.ai_prompt,
             "strategy": self.strategy_data,
+            "rules_count": self.rules_count(),
             "is_public": self.is_admin_strategy,
             "is_owner": True,  # adjusted in views based on request.user
             "author": self.user.username if self.user else "",
