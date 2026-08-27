@@ -76,7 +76,7 @@ class GameConfig:
     player_contact_velocity_transfer: float = 0.18
 
     # Kicks & Actions
-    kick_reach: float = 126.0
+    kick_reach: float = 90.0
     kick_low_x: float = 850.0
     kick_low_y: float = -170.0
     kick_low_cooldown: float = 0.40
@@ -117,11 +117,18 @@ class GameConfig:
 
     # Anti-Goal-Camping: a player parked in front of its own goal (while the ball
     # is not a threat) is booted hard toward midfield after this many seconds.
-    camp_penalty_after: float = 5.0
+    camp_penalty_after: float = 3.0
     camp_zone: float = 220.0          # how close to own goal counts as "camping"
     camp_kick_vx: float = 950.0       # horizontal boot speed toward the centre
     camp_kick_vy: float = 360.0       # upward pop when booted
     camp_stun_time: float = 0.8       # no-control window so the boot carries to midfield
+    # After being booted the player is kept OUT of its own-goal zone for this
+    # long, otherwise it just walks straight back and yo-yos forever. The
+    # lockout is cancelled early if the ball enters its own half (real danger).
+    camp_lockout: float = 4.0
+    # The goal only counts as "under threat" while the ball is this close to it.
+    # Outside that, squatting on the goal line is camping, not defending.
+    camp_danger_zone: float = 480.0
 
     # Match Timing & Precision
     match_time: float = 40.0          # duration of ONE round (quarter)
@@ -183,7 +190,7 @@ def get_base_config() -> GameConfig:
         player_contact_velocity_transfer=_env_float("GAME_PLAYER_CONTACT_VELOCITY_TRANSFER", 0.18),
 
         # Kicks & Actions
-        kick_reach=_env_float("GAME_KICK_REACH", 126.0),
+        kick_reach=_env_float("GAME_KICK_REACH", 90.0),
         kick_low_x=_env_float("GAME_KICK_LOW_X", 850.0),
         kick_low_y=_env_float("GAME_KICK_LOW_Y", -170.0),
         kick_low_cooldown=_env_float("GAME_KICK_LOW_COOLDOWN", 0.40),
@@ -213,11 +220,13 @@ def get_base_config() -> GameConfig:
         stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 10.0),
         stall_pop_vx=_env_float("GAME_STALL_POP_VX", 220.0),
         stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
-        camp_penalty_after=_env_float("GAME_CAMP_PENALTY_AFTER", 5.0),
+        camp_penalty_after=_env_float("GAME_CAMP_PENALTY_AFTER", 3.0),
         camp_zone=_env_float("GAME_CAMP_ZONE", 220.0),
         camp_kick_vx=_env_float("GAME_CAMP_KICK_VX", 950.0),
         camp_kick_vy=_env_float("GAME_CAMP_KICK_VY", 360.0),
         camp_stun_time=_env_float("GAME_CAMP_STUN_TIME", 0.8),
+        camp_lockout=_env_float("GAME_CAMP_LOCKOUT", 4.0),
+        camp_danger_zone=_env_float("GAME_CAMP_DANGER_ZONE", 480.0),
 
         # Match Timing & Precision
         match_time=_env_float("GAME_MATCH_TIME", 40.0),
@@ -259,6 +268,7 @@ class Player:
     jump_cd: float = 0.0
     camp_time: float = 0.0   # seconds parked in front of own goal (anti-camping)
     stun_time: float = 0.0   # brief no-control window (e.g. while booted for camping)
+    camp_lock: float = 0.0   # seconds still barred from its own-goal zone
 
 
 @dataclass
@@ -1047,19 +1057,50 @@ def _resolve_camping(world: World, dt: float, config: GameConfig) -> None:
     for team, player in enumerate(world.players):
         cx = player.x + config.player_width / 2.0
         own_goal_x = config.goal_depth if team == 0 else config.width - config.goal_depth
-        near_own_goal = abs(cx - own_goal_x) <= config.camp_zone
-        ball_in_own_half = world.ball.x < center if team == 0 else world.ball.x > center
-        if near_own_goal and not ball_in_own_half:
+        enemy_goal_x = config.width - own_goal_x
+        # "Stuck" = pinned against EITHER end wall (own goal line, or the far
+        # wall it got stranded at on a wide pitch), not just its own goal.
+        near_wall = (abs(cx - own_goal_x) <= config.camp_zone
+                     or abs(cx - enemy_goal_x) <= config.camp_zone)
+        # It is only doing something useful if the BALL is near it. A defender
+        # tracks the ball; a stuck/camping bot sits while the ball is elsewhere.
+        ball_near_me = abs(world.ball.x - cx) <= config.camp_danger_zone
+        if ball_near_me:
+            player.camp_lock = 0.0
+            player.camp_time = max(0.0, player.camp_time - dt * 2.0)
+            continue
+
+        if near_wall:
             player.camp_time += dt
             if player.camp_time >= config.camp_penalty_after:
+                # Always boot toward the centre of the pitch.
                 direction = 1.0 if cx < center else -1.0
                 player.vx = direction * config.camp_kick_vx
                 player.vy = -abs(config.camp_kick_vy)
                 player.on_ground = False
                 player.stun_time = config.camp_stun_time
+                # Barred from that wall zone for a while so it cannot walk
+                # straight back and trigger the same boot over and over.
+                player.camp_lock = config.camp_lockout
                 player.camp_time = 0.0
         else:
             player.camp_time = max(0.0, player.camp_time - dt * 2.0)
+
+
+def _apply_camp_lockout(world: World, config: GameConfig) -> None:
+    """Keep a just-booted player in the central band (out of BOTH wall zones)
+    until its lock expires, so it cannot walk straight back and yo-yo."""
+    lo = config.goal_depth + config.camp_zone - config.player_width / 2.0
+    hi = config.width - config.goal_depth - config.camp_zone - config.player_width / 2.0
+    for player in world.players:
+        if player.camp_lock <= 0.0:
+            continue
+        if player.x < lo:
+            player.x = lo
+            player.vx = max(0.0, player.vx)
+        elif player.x > hi:
+            player.x = hi
+            player.vx = min(0.0, player.vx)
 
 
 def _frame(world: World) -> dict:
@@ -1111,6 +1152,7 @@ def simulate_match(
             player.kick_cd = max(0.0, player.kick_cd - frame_dt)
             player.jump_cd = max(0.0, player.jump_cd - frame_dt)
             player.stun_time = max(0.0, player.stun_time - frame_dt)
+            player.camp_lock = max(0.0, player.camp_lock - frame_dt)
 
         if world.freeze > 0:
             world.freeze = max(0.0, world.freeze - frame_dt)
@@ -1157,6 +1199,7 @@ def simulate_match(
                         sub_dt,
                         config,
                     )
+                _apply_camp_lockout(world, config)
                 _resolve_players(world, config)
 
                 previous_ball_x = _integrate_ball(world.ball, sub_dt, config)

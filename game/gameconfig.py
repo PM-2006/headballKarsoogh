@@ -70,6 +70,7 @@ LABELS: dict[str, str] = {
     "camp_penalty_after": "زمان تا جریمهٔ کمپ در دروازه", "camp_zone": "محدودهٔ کمپ جلوی دروازه",
     "camp_kick_vx": "سرعت پرتاب جریمهٔ کمپ", "camp_kick_vy": "پرتاب عمودی جریمهٔ کمپ",
     "camp_stun_time": "زمان بی‌کنترلی پس از پرتاب",
+    "camp_lockout": "مدت ممنوعیت بازگشت به دروازه", "camp_danger_zone": "فاصلهٔ خطر توپ تا دروازه",
     "stall_speed_threshold": "آستانه توقف توپ", "stall_pop_after": "زمان تا پرتاب ضد توقف",
     "stall_kickoff_after": "زمان تا شروع مجدد", "stall_pop_vx": "سرعت افقی ضد توقف",
     "stall_pop_vy": "سرعت عمودی ضد توقف",

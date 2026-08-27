@@ -344,3 +344,42 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 /* neutral score boxes — the coloured dot + name carry the team identity */
 .sb-blue,.sb-red{background:linear-gradient(180deg,#182c4e,#0f1d38);color:#fff}
 .sb-round{display:block;text-align:center;margin:8px auto 0;font-size:12px;font-weight:700;color:var(--muted);direction:rtl;white-space:normal}
+
+/* ---------- Polished scoreboard / rounds section ---------- */
+.scorebug{max-width:660px;background:linear-gradient(180deg,#0f1e39,#0b1730);border:1px solid var(--line);border-radius:20px;padding:12px 13px 14px;box-shadow:var(--shadow)}
+.sb-row{gap:0;border:1px solid var(--line-soft);border-radius:15px;overflow:hidden}
+.sb-team{padding:13px 18px}
+.sb-blue,.sb-red{background:linear-gradient(180deg,#1a2e51,#111f3c)}
+.sb-score{min-width:118px;font-size:33px;font-weight:900;letter-spacing:2px;background:#08111f;color:#fff;border-inline:1px solid var(--line-soft)}
+.sb-dot{width:17px;height:17px;box-shadow:0 0 9px currentColor}
+.sb-meta{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.sb-round{margin:0;background:rgba(120,160,255,.13);border:1px solid var(--line-soft);border-radius:999px;padding:5px 15px;font-size:12.5px;font-weight:800;color:#cdd9ee}
+.sb-timer{margin-top:0}
+
+/* ---------- Team accents driven by the real team colours ---------- */
+/* JS sets --team on each element; these fall back to the old blue/red. */
+.live-team.live-blue{border-top:3px solid var(--team,var(--blue))}
+.live-team.live-red{border-top:3px solid var(--team,var(--red))}
+.live-blue .dot,.live-red .dot{background:var(--team,#888);box-shadow:0 0 10px var(--team,#888)}
+.win-card.blue,.win-card.red{border-top:5px solid var(--team,var(--blue))}
+.goal-word.blue,.goal-word.red{color:var(--team,var(--blue))}
+
+/* ---------- Rest / substitution overlay (clearer layout) ---------- */
+.rest-card{max-width:460px;padding:22px 26px}
+.rest-badge{display:inline-block;font-size:11.5px;font-weight:800;color:#cfe0ff;background:rgba(120,160,255,.16);border:1px solid var(--line-soft);border-radius:999px;padding:4px 13px;margin-bottom:9px}
+.rest-round{font-size:16px;font-weight:900;color:var(--text)}
+.rest-board{display:flex;align-items:center;justify-content:center;gap:14px;margin:14px 0 4px;padding:12px 14px;border-radius:14px;background:#0a1627;border:1px solid var(--line-soft)}
+.rest-side{display:flex;align-items:center;gap:10px;min-width:0;flex:1}
+.rest-side:first-child{justify-content:flex-end}
+.rest-side:last-child{justify-content:flex-start}
+.rest-team{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:800;color:#dbe6f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+.rest-dot{width:12px;height:12px;border-radius:50%;flex:none;border:1.5px solid rgba(255,255,255,.5)}
+.rest-num{font-size:30px;font-weight:900;color:#fff;line-height:1;font-variant-numeric:tabular-nums}
+.rest-vs{color:var(--muted);font-weight:800}
+.rest-board-cap{font-size:11px;color:var(--muted)}
+.rest-timer{margin:16px 0 6px}
+.rest-timer-top{font-size:13px;color:#cdd9ee;font-weight:700}
+.rest-timer-top b{font-size:19px;color:#4d9bff;font-variant-numeric:tabular-nums;margin:0 3px}
+.rest-bar{margin-top:8px;height:7px;border-radius:999px;background:#16233c;overflow:hidden}
+.rest-bar-fill{display:block;height:100%;width:100%;border-radius:999px;background:linear-gradient(90deg,#4d9bff,#2fe0a6);transition:width 1s linear}
+.rest-hint{margin:10px auto 16px;max-width:380px}
