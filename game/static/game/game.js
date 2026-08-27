@@ -1200,13 +1200,22 @@ function renderKitPicker(){
     `<button type="button" class="kit-slot${i===activeKitSlot?' active':''}" data-slot="${i}">
        <span class="kit-chip" style="background:${c}"></span>
        <span class="kit-slot-label">${names[i]}</span></button>`).join("");
-  const swatches=kitPalette.map(c=>
-    `<button type="button" class="kit-sw${myKit[activeKitSlot]===c?' sel':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
+  // Colours already assigned to the OTHER two slots — cannot be reused, so the
+  // three kit colours always stay distinct.
+  const usedElsewhere=new Set(myKit.filter((_,i)=>i!==activeKitSlot).map(c=>String(c).toUpperCase()));
+  const swatches=kitPalette.map(c=>{
+    const taken=usedElsewhere.has(String(c).toUpperCase());
+    const sel=myKit[activeKitSlot]===c;
+    return `<button type="button" class="kit-sw${sel?' sel':''}${taken?' taken':''}" data-color="${c}" style="background:${c}" title="${taken?c+' — قبلاً انتخاب شده':c}"${taken?' disabled aria-disabled="true"':''}></button>`;
+  }).join("");
   host.innerHTML=`<div class="kit-slots">${slots}</div>
-    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن.</div>
+    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن. هر رنگ فقط برای یک خانه قابل انتخاب است.</div>
     <div class="kit-swatches">${swatches}</div>`;
   host.querySelectorAll(".kit-slot").forEach(b=>b.onclick=()=>{activeKitSlot=Number(b.dataset.slot);renderKitPicker();});
-  host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
+  host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{
+    if(b.disabled)return;
+    myKit[activeKitSlot]=b.dataset.color;renderKitPicker();
+  });
 }
 async function saveKit(){
   try{

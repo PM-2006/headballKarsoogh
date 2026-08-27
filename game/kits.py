@@ -30,15 +30,31 @@ def normalize_color(c: str | None) -> str | None:
 
 
 def sanitize_kit(colors) -> list[str]:
-    """Return exactly three valid palette colours (home/away/alternative).
+    """Return exactly three *distinct* valid palette colours (home/away/alt).
 
-    Invalid or missing entries fall back to the default for that slot, and the
-    positions are preserved (no dedup) so the user's choices stay put.
+    Each slot must be a different colour so the three kits stay visually
+    separable. Invalid, missing, or duplicate entries fall back to the first
+    still-unused colour (preferring the slot's default), and positions are
+    otherwise preserved so the user's choices stay put.
     """
+
+    def first_unused(used: set[str], prefer: str) -> str:
+        if prefer not in used:
+            return prefer
+        for c in PALETTE:
+            if c not in used:
+                return c
+        return prefer  # palette has 28 colours, so this is unreachable for 3 slots
+
     out: list[str] = []
-    for c in (colors or [])[:3]:
+    used: set[str] = set()
+    raw = list((colors or [])[:3])
+    while len(raw) < 3:
+        raw.append(None)
+    for slot, c in enumerate(raw):
         norm = normalize_color(c)
-        out.append(norm if norm else DEFAULT_KIT[len(out)])
-    while len(out) < 3:
-        out.append(DEFAULT_KIT[len(out)])
+        if not norm or norm in used:
+            norm = first_unused(used, DEFAULT_KIT[slot])
+        out.append(norm)
+        used.add(norm)
     return out[:3]
