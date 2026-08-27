@@ -9,16 +9,9 @@ let editingStrategyId = null;
 
 // ---------- Team kit colours ----------
 const DEFAULT_KIT = ["#2196F3", "#E6194B", "#FFB300"];
-const MIN_KIT_DIST = 130;             // two kit colours must be at least this far apart
 let myKit = DEFAULT_KIT.slice();      // current user's 3 kit colours
 let kitPalette = [];                  // the 28-colour palette (from the server)
 let teamColors = ["#2196F3", "#E6194B"]; // the two colours chosen for the current match
-let teamNames = ["تیم ۱", "تیم ۲"];      // the two teams' names (bot/user names)
-
-// Role: admins configure both teams freely; a normal user IS the right team
-// (team 1) and may only field a preset or one of their own bots there.
-let IS_ADMIN = false, MY_USERNAME = "";
-(function(){try{const el=document.getElementById("user-meta");if(el){const m=JSON.parse(el.textContent);IS_ADMIN=!!m.is_admin;MY_USERNAME=m.username||"";}}catch(e){}})();
 function hexToRgb(h){h=(h||"").replace("#","");if(h.length===3)h=h.split("").map(c=>c+c).join("");return{r:parseInt(h.slice(0,2),16)||0,g:parseInt(h.slice(2,4),16)||0,b:parseInt(h.slice(4,6),16)||0};}
 function rgbHex(r,g,b){return "#"+[r,g,b].map(v=>Math.max(0,Math.min(255,v|0)).toString(16).padStart(2,"0")).join("");}
 function darken(hex,f){const c=hexToRgb(hex);return rgbHex(c.r*(1-f),c.g*(1-f),c.b*(1-f));}
@@ -47,7 +40,7 @@ function resolveTeamColors(blueSel,redSel){
 }
 
 let gameConfig = {
-  width: 2000,
+  width: 1500,
   height: 860,
   ground_y: 730,
   goal_depth: 122,
@@ -188,11 +181,7 @@ async function postJSON(url,payload,method="POST"){
   let data;
   try{data=await response.json();}
   catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
-  if(!response.ok){
-    const err=new Error(data.error||`خطای سرور (کد ${response.status}).`);
-    err.status=response.status;err.data=data;      // e.g. {name_taken, suggestion}
-    throw err;
-  }
+  if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
   return data;
 }
 // Turn any raw error into a short, clear Persian message a student can act on.
@@ -255,20 +244,14 @@ function describeCondition(cond){
   const opFa={"<":"کمتر از","<=":"کمتر یا مساوی",">":"بیشتر از",">=":"بیشتر یا مساوی","==":"برابر","!=":"نابرابر"};
   return `${sensorFa[cond.left] || cond.left} ${opFa[cond.operator] || cond.operator} ${describeRight(cond)}`;
 }
-// The bot's rules in plain Persian — shared by the builder panel and by the
-// read-only "brain viewer" modal.
-function brainRulesHTML(strategy){
-  if(!strategy||!Array.isArray(strategy.rules))return '<div class="brain-rule">این ربات هیچ تصمیمی ندارد.</div>';
-  return [...strategy.rules]
-    .sort((a,b)=>a.priority-b.priority)
-    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${(r.conditions||[]).map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
-    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
-}
 function renderCompiledStrategy(strategy){
   myStrategy=strategy;
   $("jsonView").textContent=JSON.stringify(strategy,null,2);
   $("humanBrain").classList.remove("empty");
-  $("humanBrain").innerHTML=brainRulesHTML(strategy);
+  $("humanBrain").innerHTML=[...strategy.rules]
+    .sort((a,b)=>a.priority-b.priority)
+    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${r.conditions.map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
+    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
   markBotReady();
   refreshOpponentMenus();
 }
@@ -345,30 +328,14 @@ function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
 
-function paintTeamColors(){
-  ["blueDot","tbDot0","liveBlueDot"].forEach(id=>{const e=$(id);if(e){e.style.background=teamColors[0];e.style.color=teamColors[0];}});
-  ["redDot","tbDot1","liveRedDot"].forEach(id=>{const e=$(id);if(e){e.style.background=teamColors[1];e.style.color=teamColors[1];}});
-  // Cards/labels accented per team: drive them from the real team colour so a
-  // purple-vs-amber match never shows a stale blue/red trim.
-  document.querySelectorAll(".live-blue").forEach(e=>e.style.setProperty("--team",teamColors[0]));
-  document.querySelectorAll(".live-red").forEach(e=>e.style.setProperty("--team",teamColors[1]));
-  const rd0=$("restDot0"),rd1=$("restDot1");
-  if(rd0)rd0.style.background=teamColors[0];
-  if(rd1)rd1.style.background=teamColors[1];
-}
-function setTxt(id,t){const e=$(id);if(e)e.textContent=t;}
-// Resolve the two teams' colours + names from the current selections and paint
-// them everywhere (toolbar, scorebug, live panel). Team = the bot/user name.
-function applyTeamIdentity(blueSel,redSel){
-  resolveTeamColors(blueSel,redSel);
-  teamNames=[labelFor(blueSel),labelFor(redSel)];
-  setTxt("blueName",teamNames[0]);setTxt("redName",teamNames[1]);
-  setTxt("liveBlueName",teamNames[0]);setTxt("liveRedName",teamNames[1]);
-  paintTeamColors();
+function paintTeamDots(){
+  const bd=$("blueDot"),rd=$("redDot");
+  if(bd)bd.style.background=teamColors[0];
+  if(rd)rd.style.background=teamColors[1];
 }
 function updateRoundInfo(){
   const el=$("roundInfo");if(!el||!tournament)return;
-  el.textContent=`راند ${tournament.round} از ${tournament.rounds}`;
+  el.textContent=`راند ${tournament.round} از ${tournament.rounds} · مجموع ${tournament.total[0]} : ${tournament.total[1]}`;
 }
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
@@ -381,8 +348,9 @@ async function runMatch(){
 }
 async function playRound(){
   const blue=$("blueSelect").value,red=$("redSelect").value;
-  applyTeamIdentity(blue,red);
-  updateRoundInfo();
+  resolveTeamColors(blue,red);
+  $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);
+  paintTeamDots();updateRoundInfo();
   try{
     $("playMatch").disabled=true;
     const result=await postJSON("api/simulate/",{
@@ -406,21 +374,15 @@ function showRest(){
   const rest=$("restFx");
   if(!rest){advanceRound();return;}
   const secs=Math.max(3,Math.round(gameConfig.rest_time||25));
-  setTxt("restRound",`پایان راند ${tournament.round} از ${tournament.rounds}`);
-  // Name + colour next to each number, so it is obvious whose score is whose.
-  setTxt("restName0",teamNames[0]);setTxt("restName1",teamNames[1]);
-  setTxt("restScore0",tournament.total[0]);setTxt("restScore1",tournament.total[1]);
-  paintTeamColors();
+  if($("restRound"))$("restRound").textContent=`پایان راند ${tournament.round} از ${tournament.rounds}`;
+  if($("restTotal"))$("restTotal").textContent=`مجموع تا این‌جا: ${tournament.total[0]} — ${tournament.total[1]}`;
   rest.classList.add("show");
   let remain=secs;
-  setTxt("restCountdown",remain);
-  const bar=$("restBar");
-  if(bar)bar.style.width="100%";
+  if($("restCountdown"))$("restCountdown").textContent=remain;
   clearInterval(restTimerHandle);
   restTimerHandle=setInterval(()=>{
     remain--;
-    setTxt("restCountdown",Math.max(0,remain));
-    if(bar)bar.style.width=Math.max(0,(remain/secs)*100)+"%";
+    if($("restCountdown"))$("restCountdown").textContent=Math.max(0,remain);
     if(remain<=0){advanceRound();}
   },1000);
 }
@@ -435,14 +397,13 @@ function hideRest(){const r=$("restFx");if(r)r.classList.remove("show");clearInt
 function showFinal(){
   const win=$("winFx");if(!win){return;}
   const b=tournament.total[0],r=tournament.total[1],card=win.querySelector(".win-card");
-  let title,cls="",accent="";
-  if(b>r){title=`🏆 برندهٔ مسابقه: ${teamNames[0]}`;cls="blue";accent=teamColors[0];}
-  else if(r>b){title=`🏆 برندهٔ مسابقه: ${teamNames[1]}`;cls="red";accent=teamColors[1];}
+  let title,cls="";
+  if(b>r){title="🏆 برندهٔ مسابقه: تیم آبی";cls="blue";}
+  else if(r>b){title="🏆 برندهٔ مسابقه: تیم قرمز";cls="red";}
   else{title="🤝 مسابقه مساوی شد!";}
-  if($("winTitle")){$("winTitle").textContent=title;$("winTitle").style.color=accent||"";}
+  if($("winTitle"))$("winTitle").textContent=title;
   if($("winScore"))$("winScore").textContent=`${b} : ${r}`;
   card.className="win-card"+(cls?" "+cls:"");
-  card.style.setProperty("--team",accent||"var(--blue)");
   win.classList.add("show");
   spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
 }
@@ -512,8 +473,7 @@ function celebrateGoal(team){
   const fx=$("goalFx");if(!fx)return;
   const word=fx.querySelector(".goal-word");
   word.className="goal-word "+(team===0?"blue":"red");
-  word.style.color=teamColors[team];
-  word.textContent=`گل ${teamNames[team]}!`;
+  word.textContent=team===0?"گل آبی!":"گل قرمز!";
   fx.classList.remove("show","flash");void fx.offsetWidth; // restart the animation
   fx.classList.add("show","flash");
   spawnConfetti(document.querySelector(".stage"),
@@ -524,15 +484,13 @@ function celebrateGoal(team){
 function showWinner(frame){
   const win=$("winFx");if(!win)return;
   const b=frame.score[0],r=frame.score[1],card=win.querySelector(".win-card");
-  let title,cls="",accent="";
-  if(b>r){title=`🏆 برنده: ${teamNames[0]}`;cls="blue";accent=teamColors[0];}
-  else if(r>b){title=`🏆 برنده: ${teamNames[1]}`;cls="red";accent=teamColors[1];}
+  let title,cls="";
+  if(b>r){title="🔵 برنده: تیم آبی";cls="blue";}
+  else if(r>b){title="🔴 برنده: تیم قرمز";cls="red";}
   else{title="🤝 مساوی شد!";}
   $("winTitle").textContent=title;
-  $("winTitle").style.color=accent||"";
   $("winScore").textContent=`${b} : ${r}`;
   card.className="win-card"+(cls?" "+cls:"");
-  card.style.setProperty("--team",accent||"var(--blue)");
   win.classList.add("show");
   spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
 }
@@ -566,12 +524,7 @@ function drawFrame(frame){
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
   ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
   drawBall(ctx,frame.ball.x,frame.ball.y,BR);
-  // During a match, the big score shows the running MATCH TOTAL (completed rounds
-  // + this round's live score); otherwise just this frame's score.
-  const disp=(tournament&&tournament.playing)
-    ? [tournament.total[0]+frame.score[0], tournament.total[1]+frame.score[1]]
-    : frame.score;
-  $("score").textContent=`${disp[0]} : ${disp[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
+  $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -923,52 +876,52 @@ function strategyPayload(selection){
   return {preset:selection};
 }
 
-function _grpMyBots(){
-  let g="";
-  if(myStrategy) g+=`<option value="mybot">🤖 ربات جاری (پیش‌نویس)</option>`;
-  savedStrategies.forEach(s=>g+=`<option value="saved_${s.id}">👤 ${escapeHtml(s.name)}</option>`);
-  return g?`<optgroup label="🤖 ربات‌های من">${g}</optgroup>`:"";
-}
-function _grpPublic(){
-  if(!publicStrategies.length) return "";
-  let g="";
-  publicStrategies.forEach(s=>g+=`<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"ادمین")})</option>`);
-  return `<optgroup label="🏆 ربات‌های رسمی و مدیران">${g}</optgroup>`;
-}
-function _grpPresets(){
-  if(!vocabulary||!vocabulary.presets) return "";
-  let g="";
-  Object.entries(vocabulary.presets).forEach(([k,label])=>g+=`<option value="${k}">⚡ ${label}</option>`);
-  return `<optgroup label="⚡ الگوهای پیش‌فرض">${g}</optgroup>`;
-}
-function _firstOpt(sel){return sel.options.length?sel.options[0].value:"";}
-function _hasOpt(sel,v){return [...sel.options].some(o=>o.value===v);}
-
-// blueSelect = team 0 (LEFT), redSelect = team 1 (RIGHT).
 function refreshOpponentMenus(){
-  const bs=$("blueSelect"),rs=$("redSelect");
-  const curBlue=bs.value,curRed=rs.value;
-  const my=_grpMyBots(),pub=_grpPublic(),pre=_grpPresets();
+  const currentBlue=$("blueSelect").value||"predictive",currentRed=$("redSelect").value||"adaptive";
 
-  if(IS_ADMIN){
-    // Admin: both teams can be anything.
-    const all=my+pub+pre;
-    bs.innerHTML=all;rs.innerHTML=all;
-    setTxt("tbLabel0","تیم ۱");setTxt("tbLabel1","تیم ۲");
-  }else{
-    // User: RIGHT team (team 1) is them — only their own bots or a preset.
-    rs.innerHTML=my+pre;
-    // LEFT team (team 0) is the opponent — official bots + presets (+ own for self-test).
-    bs.innerHTML=pub+my+pre;
-    setTxt("tbLabel0","حریف");setTxt("tbLabel1","تیم شما 👤");
+  let blueOpts="", redOpts="";
+
+  // 1. My Bots group
+  let myGroup="";
+  if(myStrategy){
+    myGroup+=`<option value="mybot">🤖 My Bot (پیش‌نویس جاری)</option>`;
+  }
+  savedStrategies.forEach(s=>{
+    myGroup+=`<option value="saved_${s.id}">👤 ${escapeHtml(s.name)}</option>`;
+  });
+  if(myGroup){
+    blueOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
+    redOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
   }
 
-  bs.value=_hasOpt(bs,curBlue)?curBlue
-    :(!IS_ADMIN&&publicStrategies[0]?"pub_"+publicStrategies[0].id:_firstOpt(bs));
-  rs.value=_hasOpt(rs,curRed)?curRed
-    :(myStrategy?"mybot":(savedStrategies[0]?"saved_"+savedStrategies[0].id:_firstOpt(rs)));
+  // 2. Admin & Public bots group
+  if(publicStrategies.length){
+    let pubGroup="";
+    publicStrategies.forEach(s=>{
+      pubGroup+=`<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"ادمین")})</option>`;
+    });
+    blueOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
+    redOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
+  }
 
-  if(!(tournament&&tournament.playing)) applyTeamIdentity(bs.value,rs.value);
+  // 3. Presets group
+  if(vocabulary?.presets){
+    let preGroup="";
+    Object.entries(vocabulary.presets).forEach(([k,label])=>{
+      preGroup+=`<option value="${k}">⚡ ${label}</option>`;
+    });
+    blueOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
+    redOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
+  }
+
+  $("blueSelect").innerHTML=blueOpts;
+  $("redSelect").innerHTML=redOpts;
+
+  if([...$("blueSelect").options].some(o=>o.value===currentBlue)) $("blueSelect").value=currentBlue;
+  else $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "predictive"));
+
+  if([...$("redSelect").options].some(o=>o.value===currentRed)) $("redSelect").value=currentRed;
+  else $("redSelect").value=(publicStrategies[0] ? "pub_"+publicStrategies[0].id : "adaptive");
 }
 
 async function loadStrategiesFromServer(){
@@ -999,7 +952,6 @@ function renderBotGalleries(){
             <span>📅 آخرین ویرایش: ${b.updated_at}</span>
           </div>
           <div class="bot-card-actions">
-            <button onclick="viewBotBrain(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="loadBotIntoBuilder(${b.id})">📂 ویرایش و بارگذاری</button>
             <button class="success" onclick="challengeBotInArena(${b.id},true)">⚽ مسابقه در آرنا</button>
             <button class="btn-danger" onclick="deleteSavedBot(${b.id},'${escapeHtml(b.name)}')">🗑 حذف</button>
@@ -1025,7 +977,7 @@ function renderBotGalleries(){
             <span>📅 تاریخ انتشار: ${b.created_at}</span>
           </div>
           <div class="bot-card-actions">
-            <button onclick="viewBotBrain(${b.id})">👁 مشاهده مغز ربات</button>
+            <button onclick="loadBotIntoBuilder(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="challengeBotInArena(${b.id},false)">⚔️ مسابقه با این ربات</button>
           </div>
         </div>
@@ -1039,22 +991,7 @@ async function saveCurrentBot(){
     showToast("ابتدا یک استراتژی بسازید تا بتوانید آن را ذخیره کنید.","err");
     return;
   }
-  const name=($("botNameInput").value || "").trim();
-  if(!name){
-    showToast("برای ربات یک نام بگذار. نام هر ربات باید یکتا باشد.","err");
-    $("botNameInput").focus();
-    return;
-  }
-  // Catch the obvious clash before the round-trip: names are unique for
-  // everyone, so a name already on screen is definitely taken.
-  const clash=[...savedStrategies,...publicStrategies].find(
-    b=>b.id!==editingStrategyId && (b.name||"").trim().toLowerCase()===name.toLowerCase());
-  if(clash){
-    showToast(`رباتی با نام «${name}» از قبل وجود دارد. یک نام دیگر انتخاب کن.`,"err");
-    $("botNameInput").focus();
-    $("botNameInput").select();
-    return;
-  }
+  const name=($("botNameInput").value || "").trim() || myStrategy.label || "My Bot";
   const ai_prompt=($("strategyText").value || "").trim();
   const btn=$("saveBotBtn");
   try{
@@ -1082,19 +1019,7 @@ async function saveCurrentBot(){
     }
     await loadStrategiesFromServer();
   }catch(err){
-    const info=err&&err.data;
-    if(info&&info.name_taken){
-      // Offer the first free variant so the student can just hit save again.
-      if(info.suggestion&&$("botNameInput")){
-        $("botNameInput").value=info.suggestion;
-        showToast(`${info.error} نام «${info.suggestion}» برایت پیشنهاد شد.`,"err");
-      }else{
-        showToast(info.error,"err");
-      }
-      if($("botNameInput")){$("botNameInput").focus();$("botNameInput").select();}
-    }else{
-      showToast("❌ "+humanizeError(err),"err");
-    }
+    showToast("❌ "+humanizeError(err),"err");
   }finally{
     btn.disabled=false;
     btn.textContent=editingStrategyId ? "💾 ذخیره تغییرات" : "💾 ذخیره ربات";
@@ -1107,40 +1032,8 @@ function cancelEdit(){
   if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره ربات";
 }
 
-// ---------- Read-only brain viewer ----------
-// Everyone (students and admins) may LOOK at any bot they can see, without
-// that overwriting the draft currently in the builder.
-function findBot(id){
-  return savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id) || null;
-}
-function viewBotBrain(id){
-  const bot=findBot(id);
-  const modal=$("brainModal");
-  if(!bot||!modal){showToast("ربات مورد نظر یافت نشد.","err");return;}
-  const rules=(bot.strategy&&bot.strategy.rules)||[];
-  setTxt("brainModalName",bot.name);
-  const who=bot.is_owner ? "ربات خودت" : (bot.author ? `سازنده: ${bot.author}` : "ربات عمومی");
-  setTxt("brainModalMeta",`${who} • ${rules.length} تصمیم • آخرین ویرایش: ${bot.updated_at||"-"}`);
-  $("brainModalBody").innerHTML=brainRulesHTML(bot.strategy);
-  $("brainModalJson").textContent=JSON.stringify(bot.strategy,null,2);
-  const prompt=$("brainModalPrompt");
-  if(prompt){
-    prompt.style.display=bot.ai_prompt?"block":"none";
-    const t=$("brainModalPromptText");if(t)t.textContent=bot.ai_prompt||"";
-  }
-  const edit=$("brainModalEdit");
-  if(edit){
-    edit.style.display=bot.is_owner?"inline-flex":"none";
-    edit.onclick=()=>{closeBrainModal();loadBotIntoBuilder(bot.id);};
-  }
-  const play=$("brainModalPlay");
-  if(play) play.onclick=()=>{closeBrainModal();challengeBotInArena(bot.id,!!bot.is_owner);};
-  modal.classList.add("show");
-}
-function closeBrainModal(){const m=$("brainModal");if(m)m.classList.remove("show");}
-
 function loadBotIntoBuilder(id){
-  const bot=findBot(id);
+  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
   if(!bot){
     showToast("ربات مورد نظر یافت نشد.","err");
     return;
@@ -1161,10 +1054,6 @@ function loadBotIntoBuilder(id){
   }
   renderCompiledStrategy(bot.strategy);
   switchView("builder");
-  // The brain panel sits at the top of a long page: without this the click
-  // looked like it did nothing at all.
-  const card=document.querySelector(".mybot-card");
-  if(card)card.scrollIntoView({behavior:"smooth",block:"start"});
   showToast(`ربات «${bot.name}» در ویرایشگر بارگذاری شد.`,"ok");
 }
 
@@ -1182,21 +1071,17 @@ async function deleteSavedBot(id,name){
   }
 }
 
-// mine=true  -> play one of MY saved bots (goes on the RIGHT = my team)
-// mine=false -> challenge an official/public bot (goes on the LEFT = opponent)
-function challengeBotInArena(id,mine=true){
-  const bot=findBot(id);
+function challengeBotInArena(id,asBlue=true){
+  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
   if(!bot) return;
   refreshOpponentMenus();
-  const bs=$("blueSelect"),rs=$("redSelect");
-  if(mine){
-    if(_hasOpt(rs,"saved_"+bot.id)) rs.value="saved_"+bot.id;
-    bs.value=(_hasOpt(bs,"adaptive")?"adaptive":_firstOpt(bs));
+  if(asBlue){
+    $("blueSelect").value="saved_"+bot.id;
+    $("redSelect").value="adaptive";
   }else{
-    if(_hasOpt(bs,"pub_"+bot.id)) bs.value="pub_"+bot.id;
-    rs.value=(myStrategy?"mybot":(savedStrategies[0]?"saved_"+savedStrategies[0].id:_firstOpt(rs)));
+    $("redSelect").value="pub_"+bot.id;
+    $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "smart"));
   }
-  applyTeamIdentity(bs.value,rs.value);
   switchView("arena");
   runMatch();
 }
@@ -1290,7 +1175,8 @@ async function panelTest(){
     setPanelStatus("در حال شبیه‌سازی آزمایشی…");
     const seed=Number(($("seedInput")||{}).value)||1;
     const result=await postJSON("api/simulate/",{blue:{preset:blue},red:{preset:red},seed,overrides});
-    applyTeamIdentity(blue,red);
+    if($("blueName"))$("blueName").textContent=(presets[blue]||blue)+" (آبی)";
+    if($("redName"))$("redName").textContent=(presets[red]||red)+" (قرمز)";
     switchView("arena");
     playFrames(result.frames,result.record_fps);
     setPanelStatus("آزمایش اجرا شد. اگر خوب بود، به تب «تنظیمات» برگرد و «ذخیره» کن.");
@@ -1314,18 +1200,13 @@ function renderKitPicker(){
     `<button type="button" class="kit-slot${i===activeKitSlot?' active':''}" data-slot="${i}">
        <span class="kit-chip" style="background:${c}"></span>
        <span class="kit-slot-label">${names[i]}</span></button>`).join("");
-  const swatches=kitPalette.map(c=>{
-    // block colours that are the same as / too close to the OTHER two slots
-    const conflict=myKit.some((sc,i)=>i!==activeKitSlot && colorDist(c,sc)<MIN_KIT_DIST);
-    const cls="kit-sw"+(myKit[activeKitSlot]===c?" sel":"")+(conflict?" dis":"");
-    const tip=conflict?"خیلی نزدیک به یک رنگ دیگرِ تیم":c;
-    return `<button type="button" class="${cls}" data-color="${c}" ${conflict?"disabled":""} style="background:${c}" title="${tip}"></button>`;
-  }).join("");
+  const swatches=kitPalette.map(c=>
+    `<button type="button" class="kit-sw${myKit[activeKitSlot]===c?' sel':''}" data-color="${c}" style="background:${c}" title="${c}"></button>`).join("");
   host.innerHTML=`<div class="kit-slots">${slots}</div>
-    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن. رنگ‌های خیلی نزدیک به دو رنگ دیگر غیرفعال می‌شوند تا هر سه رنگ کاملاً متفاوت بمانند.</div>
+    <div class="kit-hint muted">یک خانه را انتخاب کن، سپس رنگ دلخواه را از پالت بزن.</div>
     <div class="kit-swatches">${swatches}</div>`;
   host.querySelectorAll(".kit-slot").forEach(b=>b.onclick=()=>{activeKitSlot=Number(b.dataset.slot);renderKitPicker();});
-  host.querySelectorAll(".kit-sw:not(.dis)").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
+  host.querySelectorAll(".kit-sw").forEach(b=>b.onclick=()=>{myKit[activeKitSlot]=b.dataset.color;renderKitPicker();});
 }
 async function saveKit(){
   try{
@@ -1352,15 +1233,13 @@ async function init(){
   if($("panelReset")) $("panelReset").onclick=panelReset;
   if($("panelTest")) $("panelTest").onclick=panelTest;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
-  if($("blueSelect")) $("blueSelect").onchange=()=>{if(!(tournament&&tournament.playing))applyTeamIdentity($("blueSelect").value,$("redSelect").value);};
-  if($("redSelect")) $("redSelect").onchange=()=>{if(!(tournament&&tournament.playing))applyTeamIdentity($("blueSelect").value,$("redSelect").value);};
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();
   $("addRule").onclick=()=>addSimple();
   $("buildBot").onclick=buildBot;
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
-  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("redSelect").value="mybot";$("blueSelect").value=(_hasOpt($("blueSelect"),"adaptive")?"adaptive":_firstOpt($("blueSelect")));applyTeamIdentity($("blueSelect").value,$("redSelect").value);switchView("arena");runMatch()};
+  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
   $("deleteBot").onclick=deleteBot;
   if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
   if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;
@@ -1369,10 +1248,6 @@ async function init(){
   $("playMatch").onclick=runMatch;
   $("runBatch").onclick=runBatch;
   $("winClose").onclick=()=>$("winFx").classList.remove("show");
-  if($("brainModalClose")) $("brainModalClose").onclick=closeBrainModal;
-  if($("brainModalDismiss")) $("brainModalDismiss").onclick=closeBrainModal;
-  if($("brainModal")) $("brainModal").onclick=(e)=>{if(e.target===$("brainModal"))closeBrainModal();};
-  document.addEventListener("keydown",e=>{if(e.key==="Escape")closeBrainModal();});
 
   drawIdleFrame();
 }

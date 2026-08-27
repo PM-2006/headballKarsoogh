@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from django.contrib import admin
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from .models import GameConfigOverride, SavedStrategy
@@ -75,10 +74,10 @@ class SavedStrategyAdmin(admin.ModelAdmin):
     @admin.display(description=_("نوع استراتژی"), boolean=False)
     def is_admin_badge(self, obj: SavedStrategy) -> str:
         if obj.is_admin_strategy:
-            return mark_safe(
+            return format_html(
                 '<span style="background-color: #2e7d32; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold;">🏆 عمومی / رسمی</span>'
             )
-        return mark_safe(
+        return format_html(
             '<span style="background-color: #1976d2; color: #fff; padding: 3px 8px; border-radius: 4px;">👤 ربات کاربر</span>'
         )
 

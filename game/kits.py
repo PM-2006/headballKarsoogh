@@ -20,36 +20,7 @@ PALETTE = [
 # home, away, alternative
 DEFAULT_KIT = ["#2196F3", "#E6194B", "#FFB300"]
 
-# Two of a user's three kit colours must be at least this far apart (perceptual
-# "redmean" distance) so they are never the same or too close ("same frequency").
-MIN_KIT_DISTANCE = 130.0
-
 _PALETTE_UPPER = {c.upper(): c for c in PALETTE}
-
-
-def _rgb(hex_color: str):
-    h = hex_color.lstrip("#")
-    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-
-def color_distance(a: str, b: str) -> float:
-    ar, ag, ab = _rgb(a)
-    br, bg, bb = _rgb(b)
-    rmean = (ar + br) / 2
-    dr, dg, db = ar - br, ag - bg, ab - bb
-    return ((2 + rmean / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rmean) / 256) * db * db) ** 0.5
-
-
-def kit_conflict(colors) -> tuple[int, int] | None:
-    """Return the first pair of indices whose colours are too similar, else None."""
-    for i in range(len(colors)):
-        for j in range(i + 1, len(colors)):
-            try:
-                if color_distance(colors[i], colors[j]) < MIN_KIT_DISTANCE:
-                    return (i, j)
-            except (ValueError, IndexError):
-                continue
-    return None
 
 
 def normalize_color(c: str | None) -> str | None:
