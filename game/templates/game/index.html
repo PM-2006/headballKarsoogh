@@ -114,21 +114,25 @@
 </section>
 <section id="arenaView" class="view">
   <div class="arena-toolbar">
-    <label class="tb-field tb-blue"><span>🔵 تیم آبی</span><select id="blueSelect"></select></label>
-    <label class="tb-field tb-red"><span>🔴 تیم قرمز</span><select id="redSelect"></select></label>
+    <label class="tb-field tb-team1"><span id="team1Label">🟩 تیم من (سمت راست)</span><select id="blueSelect"></select></label>
+    <label class="tb-field tb-team2"><span id="team2Label">🟦 حریف (سمت چپ)</span><select id="redSelect"></select></label>
     <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
     <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
   </div>
   <div class="scorebug">
     <div class="sb-row">
-      <div class="sb-team sb-blue"><span id="blueName" class="sb-name">Blue</span><span id="blueDot" class="sb-dot"></span></div>
+      <div class="sb-team sb-team1"><span id="blueName" class="sb-name">تیم ۱</span><span id="blueDot" class="sb-dot"></span></div>
       <div class="sb-center">
-        <div class="sb-score" id="score">0 : 0</div>
-        <div class="sb-round" id="roundInfo">راند ۱ از ۴</div>
+        <div class="sb-score"><span id="score1">۰</span><span class="sb-colon">:</span><span id="score2">۰</span></div>
       </div>
-      <div class="sb-team sb-red"><span id="redDot" class="sb-dot"></span><span id="redName" class="sb-name">Red</span></div>
+      <div class="sb-team sb-team2"><span id="redDot" class="sb-dot"></span><span id="redName" class="sb-name">تیم ۲</span></div>
     </div>
     <div class="sb-timer"><span class="clock">⏱</span> <span id="time">40.0s</span></div>
+    <div class="round-bar" id="roundBar" style="display:none">
+      <div class="round-dots" id="roundDots"></div>
+      <div class="round-label" id="roundInfo">راند ۱ از ۴</div>
+      <div class="round-agg" id="roundAgg"></div>
+    </div>
   </div>
   <div class="stage">
     <canvas id="game" width="{{ game_config.width|default:1280 }}" height="{{ game_config.height|default:720 }}"></canvas>
@@ -143,10 +147,20 @@
     </div>
     <div id="restFx" class="rest-fx">
       <div class="rest-card">
-        <div class="rest-round" id="restRound">استراحت</div>
-        <div class="rest-total" id="restTotal">مجموع: ۰ — ۰</div>
-        <div class="rest-count"><span id="restCountdown">۲۵</span><span class="rest-count-unit">ثانیه تا راند بعد</span></div>
-        <p class="rest-hint">می‌توانی از منوی بالای زمین، بات آبی یا قرمز را عوض کنی و با بات دیگری وارد راند بعد شوی.</p>
+        <div class="rest-round" id="restRound">پایان راند</div>
+        <div class="rest-scoreline">
+          <div class="rest-side rest-side1">
+            <span class="rest-side-name" id="restName1">تیم ۱</span>
+            <span class="rest-side-score" id="restScore1">۰</span>
+          </div>
+          <span class="rest-dash">—</span>
+          <div class="rest-side rest-side2">
+            <span class="rest-side-score" id="restScore2">۰</span>
+            <span class="rest-side-name" id="restName2">تیم ۲</span>
+          </div>
+        </div>
+        <div class="rest-count"><span class="rest-count-num" id="restCountdown">۲۵</span><span class="rest-count-unit">ثانیه تا راند بعد</span></div>
+        <p class="rest-hint" id="restHint">می‌توانی از منوی بالای زمین، تیم‌ها را عوض کنی و با ربات دیگری وارد راند بعد شوی.</p>
         <button id="restNext" class="primary">شروع راند بعد ▶</button>
       </div>
     </div>
@@ -155,13 +169,13 @@
   <div class="grid two lower">
     <div class="card"><h2>⚡ وضعیت زنده</h2>
       <div class="live-grid">
-        <div class="live-team live-blue">
-          <div class="live-head"><span class="dot"></span><b>تیم آبی</b></div>
+        <div class="live-team live-team1">
+          <div class="live-head"><span class="dot"></span><b id="liveName1">تیم ۱</b></div>
           <div><span id="blueAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="blueRule">-</span></div>
         </div>
-        <div class="live-team live-red">
-          <div class="live-head"><span class="dot"></span><b>تیم قرمز</b></div>
+        <div class="live-team live-team2">
+          <div class="live-head"><span class="dot"></span><b id="liveName2">تیم ۲</b></div>
           <div><span id="redAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="redRule">-</span></div>
         </div>

@@ -323,7 +323,7 @@ class SavedStrategyTests(TestCase):
         )
         self.assertEqual(res.status_code, 409)
 
-    def test_public_bot_brain_is_hidden(self):
+    def test_public_bot_brain_is_viewable_read_only(self):
         from .models import SavedStrategy
         boss = SavedStrategy.objects.create(
             user=self.admin, name="Boss Bot",
@@ -332,19 +332,44 @@ class SavedStrategyTests(TestCase):
         )
         self.client.login(username="student1", password="pass123456user")
 
-        # In the gallery listing: no rules, no prompt — only a decision count.
-        data = self.client.get(reverse("game:api_strategies")).json()
-        pub = data["public_strategies"][0]
-        self.assertNotIn("strategy", pub)
-        self.assertNotIn("ai_prompt", pub)
-        self.assertEqual(pub["rules_count"], 1)
-
-        # Direct detail fetch is also stripped for a non-owner.
+        # A student may READ an official bot's brain (for the view-only popup)...
         detail = self.client.get(
             reverse("game:api_strategy_detail", kwargs={"pk": boss.pk})
         ).json()["strategy"]
-        self.assertNotIn("strategy", detail)
-        self.assertNotIn("ai_prompt", detail)
+        self.assertFalse(detail["is_owner"])
+        self.assertEqual(detail["rules_count"], 1)
+        self.assertEqual(detail["strategy"]["rules"][0]["action"], "KICK_LOW")
+
+        # ...but may NOT edit it.
+        res = self.client.post(
+            reverse("game:api_strategy_detail", kwargs={"pk": boss.pk}),
+            data=json.dumps({"name": "Hijacked"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_admin_can_line_up_every_users_bot(self):
+        from .models import SavedStrategy
+        SavedStrategy.objects.create(
+            user=self.user1, name="Student1 Bot", strategy_data=self.sample_strategy,
+        )
+        SavedStrategy.objects.create(
+            user=self.user2, name="Student2 Bot", strategy_data=self.sample_strategy,
+        )
+        # Admin: gets is_admin + all_strategies covering every user's bot.
+        self.client.login(username="superadmin", password="admin123456pass")
+        data = self.client.get(reverse("game:api_strategies")).json()
+        self.assertTrue(data["is_admin"])
+        names = {b["name"] for b in data["all_strategies"]}
+        self.assertIn("Student1 Bot", names)
+        self.assertIn("Student2 Bot", names)
+
+        # Student: no admin pool, and is_admin is false.
+        self.client.logout()
+        self.client.login(username="student1", password="pass123456user")
+        sdata = self.client.get(reverse("game:api_strategies")).json()
+        self.assertFalse(sdata["is_admin"])
+        self.assertNotIn("all_strategies", sdata)
 
     def test_owner_still_sees_own_brain(self):
         from .models import SavedStrategy

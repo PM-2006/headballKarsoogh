@@ -5,6 +5,9 @@ let myStrategy = null;
 let playbackHandle = null;
 let savedStrategies = [];
 let publicStrategies = [];
+let allStrategies = [];       // every bot (admins only) — for lining up any match
+let isAdmin = false;          // set from the strategies API
+let currentUsername = "";     // the logged-in user's name (their "team" name)
 let editingStrategyId = null;
 
 // ---------- Team kit colours ----------
@@ -28,15 +31,32 @@ function pickContrastPair(optsA,optsB){
 function paletteFromColor(color){
   return {head:color,headDark:darken(color,0.32),jersey:darken(color,0.12),boots:darken(color,0.2),skin:color};
 }
+function botById(id){
+  return savedStrategies.find(s=>s.id===id) || publicStrategies.find(s=>s.id===id) || allStrategies.find(s=>s.id===id);
+}
 function kitOptionsFor(sel){
   if(!sel) return DEFAULT_KIT;
   if(sel==="mybot") return myKit;
-  if(sel.startsWith("saved_")){const b=savedStrategies.find(s=>s.id===Number(sel.slice(6)));return (b&&b.kit)||myKit;}
-  if(sel.startsWith("pub_")){const b=publicStrategies.find(s=>s.id===Number(sel.slice(4)));return (b&&b.kit)||DEFAULT_KIT;}
+  if(sel.startsWith("saved_")){const b=botById(Number(sel.slice(6)));return (b&&b.kit)||myKit;}
+  if(sel.startsWith("pub_")){const b=botById(Number(sel.slice(4)));return (b&&b.kit)||DEFAULT_KIT;}
+  if(sel.startsWith("any_")){const b=botById(Number(sel.slice(4)));return (b&&b.kit)||DEFAULT_KIT;}
   return DEFAULT_KIT; // presets
 }
-function resolveTeamColors(blueSel,redSel){
-  teamColors=pickContrastPair(kitOptionsFor(blueSel),kitOptionsFor(redSel));
+function resolveTeamColors(sel1,sel2){
+  teamColors=pickContrastPair(kitOptionsFor(sel1),kitOptionsFor(sel2));
+}
+// Publish the two live team colours as CSS variables so the whole match UI
+// (scorebug, round bar, live cards, winner, goal, batch bars) tints itself to
+// the actual teams instead of a hard-coded blue/red.
+function applyTeamColors(){
+  const root=document.querySelector(".app")||document.documentElement;
+  const c1=teamColors[0]||DEFAULT_KIT[0], c2=teamColors[1]||DEFAULT_KIT[1];
+  root.style.setProperty("--team1",c1);
+  root.style.setProperty("--team1-deep",darken(c1,0.30));
+  root.style.setProperty("--team1-ink",luminance(c1)>0.62?"#0a1424":"#ffffff");
+  root.style.setProperty("--team2",c2);
+  root.style.setProperty("--team2-deep",darken(c2,0.30));
+  root.style.setProperty("--team2-ink",luminance(c2)>0.62?"#0a1424":"#ffffff");
 }
 
 let gameConfig = {
@@ -244,16 +264,66 @@ function describeCondition(cond){
   const opFa={"<":"کمتر از","<=":"کمتر یا مساوی",">":"بیشتر از",">=":"بیشتر یا مساوی","==":"برابر","!=":"نابرابر"};
   return `${sensorFa[cond.left] || cond.left} ${opFa[cond.operator] || cond.operator} ${describeRight(cond)}`;
 }
+// Render a strategy's rules as read-only "brain" HTML (shared by the builder
+// preview and the read-only view popup).
+function strategyBrainHtml(strategy){
+  if(!strategy || !Array.isArray(strategy.rules)){
+    return '<div class="brain-rule muted">اطلاعات مغز این ربات در دسترس نیست.</div>';
+  }
+  return [...strategy.rules]
+    .sort((a,b)=>a.priority-b.priority)
+    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${(r.conditions||[]).map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
+    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
+}
 function renderCompiledStrategy(strategy){
   myStrategy=strategy;
   $("jsonView").textContent=JSON.stringify(strategy,null,2);
   $("humanBrain").classList.remove("empty");
-  $("humanBrain").innerHTML=[...strategy.rules]
-    .sort((a,b)=>a.priority-b.priority)
-    .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${r.conditions.map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
-    .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
+  $("humanBrain").innerHTML=strategyBrainHtml(strategy);
   markBotReady();
   refreshOpponentMenus();
+}
+
+// ---- Read-only "view bot brain" popup ----
+function brainModalEsc(e){ if(e.key==="Escape") closeBrainModal(); }
+function closeBrainModal(){
+  const m=$("brainModal");
+  if(m){ m.remove(); document.removeEventListener("keydown",brainModalEsc); }
+}
+function openBrainModal(bot,strategy){
+  closeBrainModal();
+  const who=bot.author ? `👤 مدیر: ${escapeHtml(bot.author)}` : (bot.is_owner ? "👤 ربات شما" : "");
+  const count=(bot.rules_count ?? (strategy&&strategy.rules?strategy.rules.length:0));
+  const overlay=document.createElement("div");
+  overlay.className="modal-overlay"; overlay.id="brainModal";
+  overlay.innerHTML=`
+    <div class="modal-box" role="dialog" aria-modal="true" aria-label="مشاهده مغز ربات">
+      <div class="modal-head">
+        <div class="modal-title">🧠 مغز ربات «${escapeHtml(bot.name)}»</div>
+        <button type="button" class="modal-close" aria-label="بستن">✕</button>
+      </div>
+      <div class="modal-sub muted">${who}${who?" • ":""}${count} تصمیم • <span class="view-only-tag">فقط مشاهده</span></div>
+      <div class="modal-body"><div class="brain">${strategyBrainHtml(strategy)}</div></div>
+      <div class="modal-foot"><button type="button" class="primary modal-close-btn">بستن</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector(".modal-close").onclick=closeBrainModal;
+  overlay.querySelector(".modal-close-btn").onclick=closeBrainModal;
+  overlay.onclick=(e)=>{ if(e.target===overlay) closeBrainModal(); };
+  document.addEventListener("keydown",brainModalEsc);
+}
+async function viewBot(id){
+  let bot=botById(id);
+  if(!bot){ showToast("ربات مورد نظر یافت نشد.","err"); return; }
+  let strategy=bot.strategy;
+  if(!strategy){
+    // Fall back to fetching the single bot's brain on demand.
+    try{
+      const res=await fetch(`api/strategies/${id}/`).then(r=>r.json());
+      strategy=res && res.strategy && res.strategy.strategy;
+    }catch(e){}
+  }
+  openBrainModal(bot,strategy);
 }
 function markBotReady(){
   $("deleteBot").disabled=false;
@@ -323,19 +393,47 @@ function setFeedback(text,kind=""){
   if(kind==="err"||kind==="ok"){showToast(text,kind);return;}
   $("feedback").textContent=text;$("feedback").className="feedback "+kind;
 }
-function strategyPayload(selection){if(selection==="mybot"){if(!myStrategy)throw new Error("اول My Bot را بساز.");return{strategy:myStrategy}}return{preset:selection}}
 // ---------- Basketball-style match: N rounds with substitution rests ----------
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
+
+const FA_DIGITS="۰۱۲۳۴۵۶۷۸۹";
+function toFa(n){ return String(n).replace(/[0-9]/g,d=>FA_DIGITS[d]); }
+function currentSels(){ return [$("blueSelect")?.value, $("redSelect")?.value]; }
+function teamNames(){ const [a,b]=currentSels(); return [teamDisplayName(a),teamDisplayName(b)]; }
 
 function paintTeamDots(){
   const bd=$("blueDot"),rd=$("redDot");
   if(bd)bd.style.background=teamColors[0];
   if(rd)rd.style.background=teamColors[1];
 }
-function updateRoundInfo(){
-  const el=$("roundInfo");if(!el||!tournament)return;
-  el.textContent=`راند ${tournament.round} از ${tournament.rounds} · مجموع ${tournament.total[0]} : ${tournament.total[1]}`;
+function updateScore(a,b){
+  if($("score1"))$("score1").textContent=toFa(a);
+  if($("score2"))$("score2").textContent=toFa(b);
+}
+// Segmented round indicator + running aggregate, coloured per team.
+function renderRoundBar(){
+  if(!tournament) return;
+  const bar=$("roundBar"); if(bar) bar.style.display="";
+  const dots=$("roundDots");
+  if(dots){
+    let h="";
+    for(let i=1;i<=tournament.rounds;i++){
+      const st=i<tournament.round?"done":(i===tournament.round?"now":"");
+      h+=`<span class="rseg ${st}">${toFa(i)}</span>`;
+    }
+    dots.innerHTML=h;
+  }
+  if($("roundInfo"))$("roundInfo").textContent=`راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+  const [n1,n2]=teamNames();
+  const agg=$("roundAgg");
+  if(agg){
+    agg.innerHTML=
+      `<span class="agg-name agg-t1">${escapeHtml(n1)}</span>`+
+      `<span class="agg-score"><b class="agg-t1">${toFa(tournament.total[0])}</b>`+
+      `<span class="agg-dash">—</span><b class="agg-t2">${toFa(tournament.total[1])}</b></span>`+
+      `<span class="agg-name agg-t2">${escapeHtml(n2)}</span>`;
+  }
 }
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
@@ -347,14 +445,18 @@ async function runMatch(){
   await playRound();
 }
 async function playRound(){
-  const blue=$("blueSelect").value,red=$("redSelect").value;
-  resolveTeamColors(blue,red);
-  $("blueName").textContent=labelFor(blue);$("redName").textContent=labelFor(red);
-  paintTeamDots();updateRoundInfo();
+  const [s1,s2]=currentSels();
+  resolveTeamColors(s1,s2); applyTeamColors();
+  const [n1,n2]=[teamDisplayName(s1),teamDisplayName(s2)];
+  if($("blueName"))$("blueName").textContent=n1;
+  if($("redName"))$("redName").textContent=n2;
+  if($("liveName1"))$("liveName1").textContent=n1;
+  if($("liveName2"))$("liveName2").textContent=n2;
+  paintTeamDots(); updateScore(0,0); renderRoundBar();
   try{
     $("playMatch").disabled=true;
     const result=await postJSON("api/simulate/",{
-      blue:strategyPayload(blue),red:strategyPayload(red),
+      blue:strategyPayload(s1),red:strategyPayload(s2),
       seed:tournament.baseSeed+tournament.round
     });
     playFrames(result.frames,result.record_fps,onRoundEnd);
@@ -366,7 +468,7 @@ async function playRound(){
 function onRoundEnd(lastFrame){
   tournament.total[0]+=lastFrame.score[0];
   tournament.total[1]+=lastFrame.score[1];
-  updateRoundInfo();
+  renderRoundBar();
   if(tournament.round<tournament.rounds){ showRest(); }
   else{ tournament.playing=false;$("playMatch").disabled=false; showFinal(); }
 }
@@ -374,15 +476,22 @@ function showRest(){
   const rest=$("restFx");
   if(!rest){advanceRound();return;}
   const secs=Math.max(3,Math.round(gameConfig.rest_time||25));
-  if($("restRound"))$("restRound").textContent=`پایان راند ${tournament.round} از ${tournament.rounds}`;
-  if($("restTotal"))$("restTotal").textContent=`مجموع تا این‌جا: ${tournament.total[0]} — ${tournament.total[1]}`;
+  const [n1,n2]=teamNames();
+  if($("restRound"))$("restRound").textContent=`پایان راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+  if($("restName1"))$("restName1").textContent=n1;
+  if($("restName2"))$("restName2").textContent=n2;
+  if($("restScore1"))$("restScore1").textContent=toFa(tournament.total[0]);
+  if($("restScore2"))$("restScore2").textContent=toFa(tournament.total[1]);
+  if($("restHint"))$("restHint").textContent = isAdmin
+    ? "می‌توانی از منوی بالای زمین هر یک از دو تیم را با ربات دیگری عوض کنی، سپس راند بعد را شروع کنی."
+    : "می‌توانی از منوی بالای زمین، تیم خودت یا حریف را با ربات دیگری عوض کنی و وارد راند بعد شوی.";
   rest.classList.add("show");
   let remain=secs;
-  if($("restCountdown"))$("restCountdown").textContent=remain;
+  if($("restCountdown"))$("restCountdown").textContent=toFa(remain);
   clearInterval(restTimerHandle);
   restTimerHandle=setInterval(()=>{
     remain--;
-    if($("restCountdown"))$("restCountdown").textContent=Math.max(0,remain);
+    if($("restCountdown"))$("restCountdown").textContent=toFa(Math.max(0,remain));
     if(remain<=0){advanceRound();}
   },1000);
 }
@@ -394,18 +503,25 @@ function advanceRound(){
   playRound();
 }
 function hideRest(){const r=$("restFx");if(r)r.classList.remove("show");clearInterval(restTimerHandle);}
+function paintWinCard(card,winnerColor){
+  card.className="win-card";
+  card.style.borderTopStyle="solid";
+  card.style.borderTopWidth="5px";
+  card.style.borderTopColor=winnerColor;
+}
 function showFinal(){
   const win=$("winFx");if(!win){return;}
   const b=tournament.total[0],r=tournament.total[1],card=win.querySelector(".win-card");
-  let title,cls="";
-  if(b>r){title="🏆 برندهٔ مسابقه: تیم آبی";cls="blue";}
-  else if(r>b){title="🏆 برندهٔ مسابقه: تیم قرمز";cls="red";}
+  const [n1,n2]=teamNames();
+  let title,col="var(--gold)";
+  if(b>r){title=`🏆 برندهٔ مسابقه: ${n1}`;col=teamColors[0];}
+  else if(r>b){title=`🏆 برندهٔ مسابقه: ${n2}`;col=teamColors[1];}
   else{title="🤝 مسابقه مساوی شد!";}
   if($("winTitle"))$("winTitle").textContent=title;
-  if($("winScore"))$("winScore").textContent=`${b} : ${r}`;
-  card.className="win-card"+(cls?" "+cls:"");
+  if($("winScore"))$("winScore").innerHTML=`<b class="agg-t1">${toFa(b)}</b> : <b class="agg-t2">${toFa(r)}</b>`;
+  paintWinCard(card,col);
   win.classList.add("show");
-  spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
+  spawnConfetti(win,[teamColors[0],teamColors[1],"#ffcb4d","#2fe0a6","#ffffff"],64);
 }
 function isFiniteNumber(value){return typeof value==="number"&&Number.isFinite(value)}
 function isValidReplayFrame(frame){
@@ -472,27 +588,30 @@ function spawnConfetti(container,colors,count){
 function celebrateGoal(team){
   const fx=$("goalFx");if(!fx)return;
   const word=fx.querySelector(".goal-word");
-  word.className="goal-word "+(team===0?"blue":"red");
-  word.textContent=team===0?"گل آبی!":"گل قرمز!";
+  const col=teamColors[team]||"#fff";
+  const nm=teamNames()[team]||"";
+  word.className="goal-word";
+  word.style.color=col;
+  word.textContent=`گل! ${nm}`;
   fx.classList.remove("show","flash");void fx.offsetWidth; // restart the animation
   fx.classList.add("show","flash");
-  spawnConfetti(document.querySelector(".stage"),
-    team===0?["#39a4ff","#8fd0ff","#ffffff","#2fe0a6"]:["#ff5a78","#ffb3c0","#ffffff","#ffcb4d"],28);
+  spawnConfetti(document.querySelector(".stage"),[col,"#ffffff","#ffcb4d","#2fe0a6"],28);
   clearTimeout(celebrateGoal._t);
   celebrateGoal._t=setTimeout(()=>fx.classList.remove("show","flash"),1550);
 }
 function showWinner(frame){
   const win=$("winFx");if(!win)return;
   const b=frame.score[0],r=frame.score[1],card=win.querySelector(".win-card");
-  let title,cls="";
-  if(b>r){title="🔵 برنده: تیم آبی";cls="blue";}
-  else if(r>b){title="🔴 برنده: تیم قرمز";cls="red";}
+  const [n1,n2]=teamNames();
+  let title,col="var(--gold)";
+  if(b>r){title=`🏆 برنده: ${n1}`;col=teamColors[0];}
+  else if(r>b){title=`🏆 برنده: ${n2}`;col=teamColors[1];}
   else{title="🤝 مساوی شد!";}
   $("winTitle").textContent=title;
-  $("winScore").textContent=`${b} : ${r}`;
-  card.className="win-card"+(cls?" "+cls:"");
+  $("winScore").innerHTML=`<b class="agg-t1">${toFa(b)}</b> : <b class="agg-t2">${toFa(r)}</b>`;
+  paintWinCard(card,col);
   win.classList.add("show");
-  spawnConfetti(win,["#39a4ff","#ff5a78","#ffcb4d","#2fe0a6","#ffffff"],64);
+  spawnConfetti(win,[teamColors[0],teamColors[1],"#ffcb4d","#2fe0a6","#ffffff"],64);
 }
 const ACT_FA={
   MOVE_LEFT:{t:"حرکت به چپ",i:"⬅️"},MOVE_RIGHT:{t:"حرکت به راست",i:"➡️"},
@@ -518,13 +637,21 @@ function drawFrame(frame){
   drawStadium(ctx,W,H,G);
   drawPitch(ctx,W,H,G);
   drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);
-  drawPlayer(ctx,frame.players[0],teamColors[0],PW,PH,G,"10");drawPlayer(ctx,frame.players[1],teamColors[1],PW,PH,G,"7");
+  // The engine puts player 0 (Team 1) on the LEFT, but the scoreboard shows
+  // Team 1 on the RIGHT. Mirror the pitch horizontally so the field matches:
+  // Team 1 ends up on the right, Team 2 on the left. Goals/markings are
+  // symmetric, so only the players and ball need their x flipped (and the
+  // players' facing negated). Shirt numbers are drawn upright regardless.
+  const mirrorPlayer=p=>({...p,x:W-p.x-PW,face:-p.face});
+  const ballX=W-frame.ball.x;
+  drawPlayer(ctx,mirrorPlayer(frame.players[0]),teamColors[0],PW,PH,G,"10");
+  drawPlayer(ctx,mirrorPlayer(frame.players[1]),teamColors[1],PW,PH,G,"7");
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
-  ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
-  drawBall(ctx,frame.ball.x,frame.ball.y,BR);
-  $("score").textContent=`${frame.score[0]} : ${frame.score[1]}`;$("time").textContent=`${frame.time.toFixed(1)}s`;
+  ctx.beginPath();ctx.ellipse(ballX,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
+  drawBall(ctx,ballX,frame.ball.y,BR);
+  updateScore(frame.score[0],frame.score[1]);$("time").textContent=`${frame.time.toFixed(1)}s`;
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -833,11 +960,12 @@ async function runBatch(){
   try{
     $("runBatch").disabled=true;
     const blue=$("blueSelect").value,red=$("redSelect").value;
+    resolveTeamColors(blue,red); applyTeamColors();
     const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});
     const total=result.matches;
     $("batchResult").innerHTML=
-      batchRow(labelFor(blue),"blue",result.blue_wins,result.blue_goals,total)+
-      batchRow(labelFor(red),"red",result.red_wins,result.red_goals,total)+
+      batchRow(labelFor(blue),"t1",result.blue_wins,result.blue_goals,total)+
+      batchRow(labelFor(red),"t2",result.red_wins,result.red_goals,total)+
       `<div class="bt-draws">🤝 ${result.draws} مساوی · میانگین گل ${result.blue_goals_per_match} به ${result.red_goals_per_match}</div>`;
   }
   catch(err){showToast(humanizeError(err),"err");$("batchResult").innerHTML=`<span class="batch-empty">هنوز آزمونی اجرا نشده.</span>`}finally{$("runBatch").disabled=false}
@@ -848,16 +976,29 @@ function escapeHtml(str){
 }
 
 function labelFor(key){
-  if(key==="mybot") return myStrategy?.label || "My Bot";
+  if(!key) return "—";
+  if(key==="mybot") return myStrategy?.label || "ربات من";
   if(key.startsWith("saved_")){
-    const id=Number(key.replace("saved_",""));
-    const b=savedStrategies.find(s=>s.id===id);
-    return b ? b.name : "My Bot";
+    const b=botById(Number(key.slice(6)));
+    return b ? b.name : "ربات من";
   }
-  if(key.startsWith("pub_")){
-    const id=Number(key.replace("pub_",""));
-    const b=publicStrategies.find(s=>s.id===id);
-    return b ? `🏆 ${b.name}` : key;
+  if(key.startsWith("pub_") || key.startsWith("any_")){
+    const b=botById(Number(key.slice(4)));
+    return b ? b.name : key;
+  }
+  return vocabulary?.presets?.[key]||key;
+}
+
+// A match is between TEAMS (users), so scoreboard/live/winner show the owning
+// user's name — the team — rather than the bot's name. Presets have no owner,
+// so they fall back to the preset label.
+function teamDisplayName(key){
+  if(!key) return "—";
+  if(key==="mybot") return currentUsername || (myStrategy?.label || "تیم من");
+  if(key.startsWith("saved_") || key.startsWith("pub_") || key.startsWith("any_")){
+    const b=botById(Number(key.slice(key.indexOf("_")+1)));
+    if(b) return b.author || b.name;
+    return key;
   }
   return vocabulary?.presets?.[key]||key;
 }
@@ -868,67 +1009,82 @@ function strategyPayload(selection){
     return {strategy:myStrategy};
   }
   if(selection.startsWith("saved_")){
-    return {strategy_id:Number(selection.replace("saved_",""))};
+    return {strategy_id:Number(selection.slice(6))};
   }
-  if(selection.startsWith("pub_")){
-    return {strategy_id:Number(selection.replace("pub_",""))};
+  if(selection.startsWith("pub_") || selection.startsWith("any_")){
+    return {strategy_id:Number(selection.slice(4))};
   }
   return {preset:selection};
 }
 
+// ---- option-group builders (shared by both team menus) ----
+function grpMine(){
+  let g="";
+  if(myStrategy) g+=`<option value="mybot">🤖 ربات جاری (پیش‌نویس)</option>`;
+  savedStrategies.forEach(s=>{ g+=`<option value="saved_${s.id}">👤 ${escapeHtml(s.name)}</option>`; });
+  return g?`<optgroup label="🤖 ربات‌های من">${g}</optgroup>`:"";
+}
+function grpPublic(){
+  if(!publicStrategies.length) return "";
+  let g="";
+  publicStrategies.forEach(s=>{ g+=`<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"مدیر")})</option>`; });
+  return `<optgroup label="🏆 ربات‌های رسمی و مدیران">${g}</optgroup>`;
+}
+function grpAll(){
+  if(!allStrategies.length) return "";
+  let g="";
+  allStrategies.forEach(s=>{ g+=`<option value="any_${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.author||"?")}</option>`; });
+  return `<optgroup label="🗂 همهٔ ربات‌ها (${toFa(allStrategies.length)})">${g}</optgroup>`;
+}
+function grpPresets(){
+  if(!vocabulary?.presets) return "";
+  let g="";
+  Object.entries(vocabulary.presets).forEach(([k,label])=>{ g+=`<option value="${k}">⚡ ${label}</option>`; });
+  return `<optgroup label="⚡ الگوهای پیش‌فرض">${g}</optgroup>`;
+}
+
 function refreshOpponentMenus(){
-  const currentBlue=$("blueSelect").value||"predictive",currentRed=$("redSelect").value||"adaptive";
+  const s1=$("blueSelect"), s2=$("redSelect");
+  if(!s1||!s2) return;
+  const cur1=s1.value, cur2=s2.value;
 
-  let blueOpts="", redOpts="";
-
-  // 1. My Bots group
-  let myGroup="";
-  if(myStrategy){
-    myGroup+=`<option value="mybot">🤖 My Bot (پیش‌نویس جاری)</option>`;
-  }
-  savedStrategies.forEach(s=>{
-    myGroup+=`<option value="saved_${s.id}">👤 ${escapeHtml(s.name)}</option>`;
-  });
-  if(myGroup){
-    blueOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
-    redOpts+=`<optgroup label="🤖 ربات‌های من">${myGroup}</optgroup>`;
-  }
-
-  // 2. Admin & Public bots group
-  if(publicStrategies.length){
-    let pubGroup="";
-    publicStrategies.forEach(s=>{
-      pubGroup+=`<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"ادمین")})</option>`;
-    });
-    blueOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
-    redOpts+=`<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubGroup}</optgroup>`;
+  let opts1, opts2, lab1, lab2, def1, def2;
+  if(isAdmin){
+    // Admin: both sides may line up ANY bot ever made + presets.
+    const draft=myStrategy?`<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری</option></optgroup>`:"";
+    const full=draft+grpAll()+grpPresets();
+    opts1=opts2=full;
+    lab1="🟩 تیم ۱ (سمت راست)"; lab2="🟦 تیم ۲ (سمت چپ)";
+    const first=allStrategies[0]?("any_"+allStrategies[0].id):"predictive";
+    const second=allStrategies[1]?("any_"+allStrategies[1].id):(allStrategies[0]?("any_"+allStrategies[0].id):"adaptive");
+    def1=first; def2=second;
+  }else{
+    // Student: own team can be only THEIR bots + presets (no admin/official bots);
+    // the opponent may be anything, including official/admin bots.
+    opts1=grpMine()+grpPresets();
+    opts2=grpMine()+grpPublic()+grpPresets();
+    lab1="🟩 تیم من (سمت راست)"; lab2="🟦 حریف (سمت چپ)";
+    def1=(myStrategy?"mybot":(savedStrategies[0]?("saved_"+savedStrategies[0].id):"predictive"));
+    def2=(publicStrategies[0]?("pub_"+publicStrategies[0].id):"adaptive");
   }
 
-  // 3. Presets group
-  if(vocabulary?.presets){
-    let preGroup="";
-    Object.entries(vocabulary.presets).forEach(([k,label])=>{
-      preGroup+=`<option value="${k}">⚡ ${label}</option>`;
-    });
-    blueOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
-    redOpts+=`<optgroup label="⚡ الگوهای پیش‌فرض">${preGroup}</optgroup>`;
-  }
+  s1.innerHTML=opts1; s2.innerHTML=opts2;
+  if($("team1Label"))$("team1Label").textContent=lab1;
+  if($("team2Label"))$("team2Label").textContent=lab2;
 
-  $("blueSelect").innerHTML=blueOpts;
-  $("redSelect").innerHTML=redOpts;
-
-  if([...$("blueSelect").options].some(o=>o.value===currentBlue)) $("blueSelect").value=currentBlue;
-  else $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "predictive"));
-
-  if([...$("redSelect").options].some(o=>o.value===currentRed)) $("redSelect").value=currentRed;
-  else $("redSelect").value=(publicStrategies[0] ? "pub_"+publicStrategies[0].id : "adaptive");
+  const has=(sel,v)=>[...sel.options].some(o=>o.value===v);
+  s1.value = has(s1,cur1)?cur1:def1;
+  s2.value = has(s2,cur2)?cur2:def2;
 }
 
 async function loadStrategiesFromServer(){
   try{
     const res=await fetch("api/strategies/").then(r=>r.json());
+    isAdmin=!!res.is_admin;
+    currentUsername=res.username || "";
     savedStrategies=res.my_strategies || [];
     publicStrategies=res.public_strategies || [];
+    allStrategies=res.all_strategies || [];
     renderBotGalleries();
     refreshOpponentMenus();
   }catch(e){
@@ -952,6 +1108,7 @@ function renderBotGalleries(){
             <span>📅 آخرین ویرایش: ${b.updated_at}</span>
           </div>
           <div class="bot-card-actions">
+            <button onclick="viewBot(${b.id})">👁 مشاهده</button>
             <button class="primary" onclick="loadBotIntoBuilder(${b.id})">📂 ویرایش و بارگذاری</button>
             <button class="success" onclick="challengeBotInArena(${b.id},true)">⚽ مسابقه در آرنا</button>
             <button class="btn-danger" onclick="deleteSavedBot(${b.id},'${escapeHtml(b.name)}')">🗑 حذف</button>
@@ -977,6 +1134,7 @@ function renderBotGalleries(){
             <span>📅 تاریخ انتشار: ${b.created_at}</span>
           </div>
           <div class="bot-card-actions">
+            <button onclick="viewBot(${b.id})">👁 مشاهده مغز ربات</button>
             <button class="primary" onclick="challengeBotInArena(${b.id},false)">⚔️ مسابقه با این ربات</button>
           </div>
         </div>
@@ -1074,16 +1232,25 @@ async function deleteSavedBot(id,name){
   }
 }
 
-function challengeBotInArena(id,asBlue=true){
-  const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
+// Return whichever menu value (saved_/pub_/any_) actually exists for this bot id.
+function optionForBotIn(select,id){
+  for(const p of ["saved_","pub_","any_"]){
+    const v=p+id;
+    if([...select.options].some(o=>o.value===v)) return v;
+  }
+  return null;
+}
+function challengeBotInArena(id,asTeam1=true){
+  const bot=botById(id);
   if(!bot) return;
   refreshOpponentMenus();
-  if(asBlue){
-    $("blueSelect").value="saved_"+bot.id;
-    $("redSelect").value="adaptive";
+  const s1=$("blueSelect"), s2=$("redSelect");
+  if(asTeam1){
+    const v=optionForBotIn(s1,id); if(v) s1.value=v;
+    if([...s2.options].some(o=>o.value==="adaptive")) s2.value="adaptive";
   }else{
-    $("redSelect").value="pub_"+bot.id;
-    $("blueSelect").value=(myStrategy ? "mybot" : (savedStrategies[0] ? "saved_"+savedStrategies[0].id : "smart"));
+    const v=optionForBotIn(s2,id); if(v) s2.value=v;
+    if(myStrategy && [...s1.options].some(o=>o.value==="mybot")) s1.value="mybot";
   }
   switchView("arena");
   runMatch();
@@ -1178,8 +1345,13 @@ async function panelTest(){
     setPanelStatus("در حال شبیه‌سازی آزمایشی…");
     const seed=Number(($("seedInput")||{}).value)||1;
     const result=await postJSON("api/simulate/",{blue:{preset:blue},red:{preset:red},seed,overrides});
-    if($("blueName"))$("blueName").textContent=(presets[blue]||blue)+" (آبی)";
-    if($("redName"))$("redName").textContent=(presets[red]||red)+" (قرمز)";
+    resolveTeamColors(blue,red); applyTeamColors();
+    const n1=presets[blue]||blue, n2=presets[red]||red;
+    if($("blueName"))$("blueName").textContent=n1;
+    if($("redName"))$("redName").textContent=n2;
+    if($("liveName1"))$("liveName1").textContent=n1;
+    if($("liveName2"))$("liveName2").textContent=n2;
+    paintTeamDots();
     switchView("arena");
     playFrames(result.frames,result.record_fps);
     setPanelStatus("آزمایش اجرا شد. اگر خوب بود، به تب «تنظیمات» برگرد و «ذخیره» کن.");

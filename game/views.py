@@ -31,17 +31,6 @@ def _json_body(request):
         raise StrategyValidationError("Request body must be valid JSON.") from exc
 
 
-# Keys that expose a bot's "brain" (its rules / the prompt it was built from).
-# These are stripped from any strategy the requesting user does not own, so no
-# one — student or admin — can inspect another player's or an official bot's logic.
-_BRAIN_KEYS = ("strategy", "ai_prompt")
-
-
-def _hide_brain(data: dict) -> dict:
-    """Return a copy of a strategy dict with its private brain fields removed."""
-    return {k: v for k, v in data.items() if k not in _BRAIN_KEYS}
-
-
 def _name_taken_by_other(name: str, user) -> bool:
     """True if a *different* user already owns a bot with this name.
 
@@ -107,19 +96,32 @@ def api_validate_strategy(request):
 @require_http_methods(["GET", "POST"])
 def api_strategies(request):
     if request.method == "GET":
+        is_admin = bool(request.user.is_staff or request.user.is_superuser)
         my_strategies = request.user.saved_strategies.select_related("user__kit").all()
         public_strategies = SavedStrategy.objects.filter(
             Q(is_public=True) | Q(user__is_staff=True) | Q(user__is_superuser=True)
         ).exclude(user=request.user).select_related("user__kit")
 
-        return JsonResponse({
+        resp = {
+            "is_admin": is_admin,
+            "username": request.user.username,
             "my_strategies": [
                 {**s.to_dict(), "is_owner": True} for s in my_strategies
             ],
             "public_strategies": [
-                {**_hide_brain(s.to_dict()), "is_owner": False} for s in public_strategies
+                {**s.to_dict(), "is_owner": False} for s in public_strategies
             ],
-        })
+        }
+        # Admins may line up and work with every bot ever made by any user.
+        if is_admin:
+            everyone = SavedStrategy.objects.select_related("user__kit").order_by(
+                "user__username", "name"
+            )
+            resp["all_strategies"] = [
+                {**s.to_dict(), "is_owner": s.user_id == request.user.id}
+                for s in everyone
+            ]
+        return JsonResponse(resp)
 
     # POST: Create a new strategy
     try:
@@ -179,12 +181,10 @@ def api_strategy_detail(request, pk: int):
     if request.method == "GET":
         if not (is_owner or saved.is_admin_strategy or is_admin):
             return JsonResponse({"error": "شما اجازه دسترسی به این استراتژی را ندارید."}, status=403)
-        data = saved.to_dict()
-        # Only the bot's own creator may see its brain (rules + prompt).
-        if not is_owner:
-            data = _hide_brain(data)
+        # Read-only viewing of official/public bots is open to everyone; editing
+        # stays restricted to the owner (enforced on the PUT/POST/DELETE paths).
         return JsonResponse({
-            "strategy": {**data, "is_owner": is_owner},
+            "strategy": {**saved.to_dict(), "is_owner": is_owner},
         })
 
     if request.method == "DELETE":
@@ -226,13 +226,10 @@ def api_strategy_detail(request, pk: int):
             saved.is_public = bool(payload["is_public"])
 
         saved.save()
-        data = saved.to_dict()
-        if not is_owner:
-            data = _hide_brain(data)
         return JsonResponse({
             "success": True,
             "message": "استراتژی با موفقیت به‌روزرسانی شد.",
-            "strategy": {**data, "is_owner": is_owner},
+            "strategy": {**saved.to_dict(), "is_owner": is_owner},
         })
     except StrategyValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
