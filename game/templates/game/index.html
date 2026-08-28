@@ -42,7 +42,7 @@
   <div class="grid two">
     <div class="card">
       <h2>مغز رباتت را بساز</h2>
-      <p class="muted">فقط انتخاب کن در هر موقعیت ربات چه کاری انجام دهد. ترتیب تصمیم‌ها مهم است.</p>
+      <p class="muted">{% if is_student %}استراتژی‌ات را با زبان خودت بنویس تا به مغز ربات تبدیل شود. راهنمای پایین صفحه را حتماً بخوان — ترتیب تصمیم‌ها مهم است.{% else %}فقط انتخاب کن در هر موقعیت ربات چه کاری انجام دهد. ترتیب تصمیم‌ها مهم است.{% endif %}</p>
       <div class="llm-box">
         <div class="llm-title">✨ ساخت با هوش مصنوعی</div>
         <p class="muted">استراتژی را با زبان خودت بنویس. هوش مصنوعی فقط منطق تو را به قوانین بازی تبدیل می‌کند و اجازه ندارد آن را بهتر کند.</p>
@@ -53,6 +53,7 @@
         </div>
         <div id="llmMeta" class="llm-meta"></div>
       </div>
+      {% if not is_student %}
       <div class="separator"><span>یا دستی بساز</span></div>
       <div class="presets">
         <button data-quick="attack">⚽ مهاجم</button><button data-quick="defend">🛡 دفاعی</button>
@@ -60,7 +61,9 @@
       </div>
       <div id="simpleRules"></div>
       <div class="actions"><button id="addRule">＋ تصمیم جدید</button><button id="buildBot" class="primary">✓ ساخت مغز ربات</button></div>
-      <div id="feedback" class="feedback">یکی از نمونه‌ها را انتخاب کن یا تصمیم جدید بساز.</div>
+      {% endif %}
+      <div id="feedback" class="feedback">{% if is_student %}استراتژی‌ات را در کادر بالا بنویس و دکمهٔ «تبدیل استراتژی» را بزن.{% else %}یکی از نمونه‌ها را انتخاب کن یا تصمیم جدید بساز.{% endif %}</div>
+      {% if is_student %}{% include "game/_student_guide.html" %}{% endif %}
     </div>
     <div class="card mybot-card">
       <div class="mybot-head"><h2>🤖 ربات من</h2><span id="botBadge" class="bot-badge off">ساخته نشده</span></div>
@@ -75,7 +78,17 @@
           <button id="cancelEditBtn" class="mini danger">انصراف از ویرایش</button>
         </div>
       </div>
+      {% if is_student %}
+      <div id="promptBox" class="prompt-box empty">
+        <div class="prompt-box-head">
+          <span>📝 متن استراتژی تو</span>
+          <button id="editPromptBtn" class="mini" type="button">✏️ ویرایش و ساخت دوباره</button>
+        </div>
+        <div id="promptText" class="prompt-text muted">هنوز متنی ننوشته‌ای. استراتژی‌ات را در کادر «ساخت با هوش مصنوعی» بنویس.</div>
+      </div>
+      {% else %}
       <details class="json-details"><summary>🔧 جزئیات فنی (Strategy JSON)</summary><pre id="jsonView"></pre></details>
+      {% endif %}
       <div class="mybot-actions">
         <button id="testBot" class="success">⚽ آزمایش ربات من</button>
         <button id="deleteBot" class="btn-danger" disabled>🗑 پاکسازی صفحه</button>
@@ -208,5 +221,6 @@
 </section>
 {% endif %}
 </div>
+<script>window.IS_STUDENT = {% if is_student %}true{% else %}false{% endif %};</script>
 <script src="{% static 'game/game.js' %}"></script>
 </body></html>

@@ -75,7 +75,17 @@ def _resolve_strategy(payload, key, user=None):
 @ensure_csrf_cookie
 def index(request):
     from .engine import get_game_config
-    return render(request, "game/index.html", {"game_config": get_game_config().to_dict()})
+    # "Students" are ordinary players: they get the guided AI-only builder,
+    # while staff/superusers keep the manual rule editor and the raw JSON view.
+    is_student = not (request.user.is_staff or request.user.is_superuser)
+    return render(
+        request,
+        "game/index.html",
+        {
+            "game_config": get_game_config().to_dict(),
+            "is_student": is_student,
+        },
+    )
 
 @login_required
 @require_GET

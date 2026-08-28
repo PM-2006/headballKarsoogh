@@ -271,7 +271,49 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .bot-card-actions button{padding:6px 12px;font-size:12.5px;border-radius:8px}
 .empty-list{text-align:center;color:var(--muted);padding:28px 16px;border:1px dashed var(--line);border-radius:12px;font-size:13.5px}
 
+
+/* ===== Student guide (AI-only builder) ===== */
+.guide-box{margin-top:16px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#0d1b33,#0a1526);overflow:hidden}
+.guide-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;
+  background:linear-gradient(90deg,rgba(47,224,166,.14),transparent);border-bottom:1px solid var(--line-soft)}
+.guide-title{font-weight:900;color:#fff;font-size:15px}
+.guide-hint{font-size:11.5px;color:var(--muted)}
+.guide-sec{margin:0;border-bottom:1px solid var(--line-soft)}
+.guide-sec:last-child{border-bottom:0}
+.guide-sec>summary{cursor:pointer;list-style:none;padding:11px 14px;font-weight:800;font-size:13.5px;color:#cfe0ff;
+  display:flex;align-items:center;gap:8px;user-select:none}
+.guide-sec>summary::-webkit-details-marker{display:none}
+.guide-sec>summary:before{content:"▸";color:var(--accent);font-size:12px;transition:transform .15s}
+.guide-sec[open]>summary:before{transform:rotate(-90deg)}
+.guide-sec>summary:hover{background:#101f3a;color:#fff}
+.guide-body{padding:2px 16px 16px;font-size:13px;line-height:2.05;color:#c8d7ef}
+.guide-body p{margin:0 0 10px}
+.guide-body h4{margin:0 0 6px;font-size:12.5px;color:var(--accent);font-weight:800}
+.guide-body b{color:#fff}
+.guide-list{margin:0 0 10px;padding-inline-start:20px}
+.guide-list li{margin-bottom:5px}
+.guide-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-bottom:10px}
+.guide-col{background:#0b1729;border:1px solid var(--line-soft);border-radius:11px;padding:11px 12px}
+.guide-col .guide-list{margin-bottom:0;font-size:12.5px;line-height:1.95}
+.guide-actions{columns:2;column-gap:22px}
+.guide-questions li{margin-bottom:8px}
+.guide-note{background:#0b1729;border:1px dashed var(--line);border-radius:10px;padding:9px 12px;font-size:12.5px;color:#a9bcd9}
+.guide-warn{background:#2a1e0c;border:1px solid #6b5220;border-radius:10px;padding:9px 12px;color:#ffdf9e}
+.guide-bad{background:#26121a;border:1px solid #7b3742;border-radius:10px;padding:9px 12px;color:#ffc5cb}
+.guide-good{background:#0c241a;border:1px solid #2c6f52;border-radius:10px;padding:9px 12px;color:#a4f3cd}
+.guide-sample{margin:0 0 10px;padding:12px 14px;background:#0a1526;border:1px solid var(--line);border-radius:11px;
+  font-family:var(--font);font-size:12.5px;line-height:2.1;color:#dbe8ff;white-space:pre-wrap;direction:rtl;text-align:right}
+
+/* Student "my prompt" panel (replaces the admin-only Strategy JSON view) */
+.prompt-box{margin-top:14px;border-top:1px solid var(--line-soft);padding-top:12px}
+.prompt-box-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;
+  font-weight:800;font-size:13px;color:#cfe0ff}
+.prompt-text{background:#0b1729;border:1px solid var(--line-soft);border-radius:11px;padding:11px 13px;
+  font-size:12.5px;line-height:2;max-height:180px;overflow:auto;white-space:pre-wrap;direction:rtl;text-align:right}
+.prompt-box.empty .prompt-text{border-style:dashed;text-align:center}
+
 @media(max-width:850px){
+  .guide-actions{columns:1}
   .grid.two{grid-template-columns:1fr}
   .live-grid{grid-template-columns:1fr}
   .arena-toolbar .primary{margin-inline-start:0}

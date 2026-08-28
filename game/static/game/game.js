@@ -158,6 +158,8 @@ function condRowHTML(ruleId,ci,index,canRemove){
   return `<div class="cond-line"><select data-rule="${ruleId}" data-ci="${index}" data-field="cond">${conditionOptions(ci.key)}</select>${valInput}${unit}${removeBtn}</div>`;
 }
 function renderSimpleRules(){
+  // Students get the AI-only builder, so the manual rule editor is not rendered.
+  if(!$("simpleRules")) return;
   $("simpleRules").innerHTML=simpleRules.map((r,i)=>{
     const conds=r.conds.map((ci,ci_i)=>condRowHTML(r.id,ci,ci_i,r.conds.length>1)).join(`<div class="and-tag">و</div>`);
     return `<div class="simple-rule">
@@ -275,9 +277,49 @@ function strategyBrainHtml(strategy){
     .map(r=>`<div class="brain-rule"><b>${r.priority}.</b> اگر ${(r.conditions||[]).map(describeCondition).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action] || r.action}</b></div>`)
     .join("") + `<div class="brain-rule"><b>در غیر این صورت:</b> ${simpleActions[strategy.default_action] || strategy.default_action}</div>`;
 }
+// The raw Strategy JSON panel is admin-only; students never see it.
+function setJsonView(strategy){
+  const el=$("jsonView");
+  if(!el) return;
+  el.textContent=strategy?JSON.stringify(strategy,null,2):"";
+}
+
+// ---- Student view: the Persian text this bot's brain was compiled from ----
+let currentPrompt="";
+function setCurrentPrompt(text){
+  currentPrompt=(text||"").trim();
+  if($("strategyText")) $("strategyText").value=currentPrompt;
+  renderPromptBox();
+}
+function renderPromptBox(){
+  const box=$("promptBox"),out=$("promptText");
+  if(!box||!out) return;
+  if(currentPrompt){
+    box.classList.remove("empty");
+    out.classList.remove("muted");
+    out.textContent=currentPrompt;
+  }else{
+    box.classList.add("empty");
+    out.classList.add("muted");
+    out.textContent="هنوز متنی ننوشته‌ای. استراتژی‌ات را در کادر «ساخت با هوش مصنوعی» بنویس.";
+  }
+}
+// Jump back to the textarea so the student can rewrite the strategy and recompile.
+function editPrompt(){
+  const ta=$("strategyText");
+  if(!ta) return;
+  switchView("builder");
+  if(currentPrompt) ta.value=currentPrompt;
+  ta.scrollIntoView({behavior:"smooth",block:"center"});
+  ta.focus();
+  const end=ta.value.length;
+  try{ ta.setSelectionRange(end,end); }catch(e){}
+  setFeedback("متن را عوض کن و دوباره «✨ تبدیل استراتژی» را بزن تا مغز ربات به‌روز شود.");
+}
+
 function renderCompiledStrategy(strategy){
   myStrategy=strategy;
-  $("jsonView").textContent=JSON.stringify(strategy,null,2);
+  setJsonView(strategy);
   $("humanBrain").classList.remove("empty");
   $("humanBrain").innerHTML=strategyBrainHtml(strategy);
   markBotReady();
@@ -333,12 +375,13 @@ function markBotReady(){
 function deleteBot(){
   if(!myStrategy){showToast("رباتی برای حذف وجود ندارد.","err");return;}
   myStrategy=null;
-  $("jsonView").textContent="";
+  setJsonView(null);
   const hb=$("humanBrain");hb.className="brain empty";
   hb.innerHTML='هنوز رباتی ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span>';
   $("deleteBot").disabled=true;
   if($("saveBotBtn")) $("saveBotBtn").disabled=true;
   if($("botNameInput")) $("botNameInput").value="";
+  setCurrentPrompt("");
   cancelEdit();
   const badge=$("botBadge");if(badge){badge.className="bot-badge off";badge.textContent="ساخته نشده";}
   refreshOpponentMenus();
@@ -360,6 +403,7 @@ async function compileWithAI(){
       return;
     }
     renderCompiledStrategy(result.strategy);
+    setCurrentPrompt(text);
     const extra=(result.feedback || []).join(" ");
     setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد."+(extra ? " "+extra : ""),"ok");
   }catch(err){
@@ -384,7 +428,7 @@ async function buildBot(){
   }
   const strategy={label:"My Bot",rules:simpleRules.map((r,i)=>({priority:i+1,conditions:ruleConditionsJSON(r),action:r.action})),default_action:"IDLE"};
   try{
-    await postJSON("api/validate/",{strategy});myStrategy=strategy;$("jsonView").textContent=JSON.stringify(strategy,null,2);$("humanBrain").classList.remove("empty");
+    await postJSON("api/validate/",{strategy});myStrategy=strategy;setJsonView(strategy);$("humanBrain").classList.remove("empty");
     $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${r.conds.map(condInstanceLabel).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
     markBotReady();setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
   }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
@@ -1414,9 +1458,7 @@ function loadBotIntoBuilder(id){
     cancelEdit();
   }
   if($("botNameInput")) $("botNameInput").value=bot.name;
-  if(bot.ai_prompt && $("strategyText")){
-    $("strategyText").value=bot.ai_prompt;
-  }
+  setCurrentPrompt(bot.ai_prompt || "");
   renderCompiledStrategy(bot.strategy);
   switchView("builder");
   showToast(`ربات «${bot.name}» در ویرایشگر بارگذاری شد.`,"ok");
@@ -1638,6 +1680,13 @@ async function saveKit(){
   }catch(err){showToast("❌ "+humanizeError(err),"err");}
 }
 
+// Keep the student guide honest about the live arena size / round length.
+function fillGuideNumbers(){
+  const w=$("guideWidth"),t=$("guideTime");
+  if(w&&gameConfig.width) w.textContent=toFa(Math.round(gameConfig.width));
+  if(t&&gameConfig.match_time) t.textContent=toFa(Math.round(gameConfig.match_time));
+}
+
 async function init(){
   readInjectedConfig();
   vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
@@ -1646,7 +1695,9 @@ async function init(){
     updateCanvasDimensions();
   }
   await loadStrategiesFromServer();
-  quickPreset("smart");
+  if($("simpleRules")) quickPreset("smart");
+  fillGuideNumbers();
+  renderPromptBox();
   $("builderTab").onclick=()=>switchView("builder");
   $("arenaTab").onclick=()=>switchView("arena");
   if($("panelTab")) $("panelTab").onclick=()=>switchView("panel");
@@ -1656,8 +1707,9 @@ async function init(){
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();
-  $("addRule").onclick=()=>addSimple();
-  $("buildBot").onclick=buildBot;
+  if($("addRule")) $("addRule").onclick=()=>addSimple();
+  if($("buildBot")) $("buildBot").onclick=buildBot;
+  if($("editPromptBtn")) $("editPromptBtn").onclick=editPrompt;
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
   $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
