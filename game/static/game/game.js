@@ -519,7 +519,10 @@ function onRoundEnd(lastFrame){
 function showRest(){
   const rest=$("restFx");
   if(!rest){advanceRound();return;}
-  const secs=Math.max(3,Math.round(gameConfig.rest_time||25));
+  // rest_time is admin-configurable; 0 means "no break", so skip the screen.
+  const configured=Number(gameConfig.rest_time);
+  const secs=Number.isFinite(configured)?Math.round(configured):25;
+  if(secs<=0){advanceRound();return;}
   const [n1,n2]=teamNames();
   if($("restRound"))$("restRound").textContent=`پایان راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
   if($("restName1"))$("restName1").textContent=n1;

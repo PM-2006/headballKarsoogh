@@ -90,7 +90,8 @@ GROUP_ORDER = [
 _GEOMETRY = {"width", "height", "ground_y", "goal_depth", "goal_height", "goal_post_radius"}
 _BALL = {"gravity", "floor_bounce", "floor_friction", "horizontal_drag_per_60fps",
          "body_ball_impulse_scale"}
-_TIMING = {"match_time", "kickoff_freeze", "physics_fps", "record_fps", "physics_substeps"}
+_TIMING = {"match_time", "match_rounds", "rest_time", "kickoff_freeze",
+           "physics_fps", "record_fps", "physics_substeps"}
 
 
 def _group_of(key: str) -> str:
@@ -110,8 +111,19 @@ def _group_of(key: str) -> str:
     return "player"
 
 
+# Fields whose sensible range is not "0 .. 3x the default": (min, max, step).
+_EXPLICIT_BOUNDS: dict[str, tuple[float, float, float]] = {
+    # A match needs at least one round, and rounds are whole numbers.
+    "match_rounds": (1.0, 10.0, 1.0),
+    # 0 means "no break at all" -- the arena skips the rest screen entirely.
+    "rest_time": (0.0, 120.0, 1.0),
+}
+
+
 def _bounds(key: str, default: float) -> tuple[float, float, float]:
     """Return (min, max, step) for an editable field."""
+    if key in _EXPLICIT_BOUNDS:
+        return _EXPLICIT_BOUNDS[key]
     if any(tok in key for tok in _COEFF_TOKENS):
         return (0.0, 2.0, 0.01)
     if default < 0:
@@ -127,6 +139,9 @@ def _bounds(key: str, default: float) -> tuple[float, float, float]:
         step = 0.05
     else:
         step = 1.0
+    if key in INT_FIELDS:
+        # Whole-number fields must not offer fractional spinner steps.
+        step = max(1.0, round(step))
     return (float(lo), float(hi), float(step))
 
 
