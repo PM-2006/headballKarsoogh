@@ -14,7 +14,7 @@ from typing import Any
 from .engine import GameConfig, get_base_config
 
 # Fields stored as integers rather than floats.
-INT_FIELDS = {"physics_fps", "record_fps", "physics_substeps"}
+INT_FIELDS = {"physics_fps", "record_fps", "physics_substeps", "match_rounds"}
 
 # Coefficient-like fields are constrained to a small 0..2 range.
 _COEFF_TOKENS = (
@@ -71,7 +71,8 @@ LABELS: dict[str, str] = {
     "stall_kickoff_after": "زمان تا شروع مجدد", "stall_pop_vx": "سرعت افقی ضد توقف",
     "stall_pop_vy": "سرعت عمودی ضد توقف",
     # Timing
-    "match_time": "زمان مسابقه", "kickoff_freeze": "مکث پس از گل",
+    "match_time": "زمان هر راند", "match_rounds": "تعداد راندها",
+    "rest_time": "زمان استراحت بین راندها", "kickoff_freeze": "مکث پس از گل",
     "physics_fps": "نرخ فریم فیزیک", "record_fps": "نرخ ضبط فریم",
     "physics_substeps": "زیرگام‌های فیزیک",
 }

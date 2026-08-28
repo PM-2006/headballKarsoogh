@@ -99,6 +99,21 @@ class SavedStrategy(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+    def _owner_kit(self) -> list[str]:
+        from .kits import DEFAULT_KIT
+        try:
+            if self.user_id and hasattr(self.user, "kit"):
+                return self.user.kit.colors()
+        except Exception:
+            pass
+        return list(DEFAULT_KIT)
+
+    def rules_count(self) -> int:
+        data = self.strategy_data
+        if isinstance(data, dict) and isinstance(data.get("rules"), list):
+            return len(data["rules"])
+        return 0
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -106,9 +121,11 @@ class SavedStrategy(models.Model):
             "description": self.description,
             "ai_prompt": self.ai_prompt,
             "strategy": self.strategy_data,
+            "rules_count": self.rules_count(),
             "is_public": self.is_admin_strategy,
             "is_owner": True,  # adjusted in views based on request.user
             "author": self.user.username if self.user else "",
+            "kit": self._owner_kit(),
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M"),
             "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M"),
         }
@@ -151,4 +168,34 @@ class GameConfigOverride(models.Model):
     @classmethod
     def load(cls) -> "GameConfigOverride":
         obj, _created = cls.objects.get_or_create(singleton_id=1)
+        return obj
+
+
+class PlayerKit(models.Model):
+    """A user's three team-kit colours (home / away / alternative)."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="kit",
+        verbose_name=_("کاربر"),
+    )
+    home = models.CharField(max_length=9, default="#2196F3", verbose_name=_("رنگ اصلی (خانه)"))
+    away = models.CharField(max_length=9, default="#E6194B", verbose_name=_("رنگ دوم (میهمان)"))
+    alternative = models.CharField(max_length=9, default="#FFB300", verbose_name=_("رنگ جایگزین"))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("رنگ تیم")
+        verbose_name_plural = _("رنگ‌های تیم")
+
+    def __str__(self) -> str:
+        return f"{self.user.username}: {self.home}/{self.away}/{self.alternative}"
+
+    def colors(self) -> list[str]:
+        return [self.home, self.away, self.alternative]
+
+    @classmethod
+    def for_user(cls, user) -> "PlayerKit":
+        obj, _created = cls.objects.get_or_create(user=user)
         return obj

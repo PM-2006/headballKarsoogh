@@ -283,6 +283,138 @@ class SavedStrategyTests(TestCase):
         self.assertEqual(sim_res.status_code, 200)
         self.assertIn("frames", sim_res.json())
 
+    def _create(self, name):
+        return self.client.post(
+            reverse("game:api_strategies"),
+            data=json.dumps({"name": name, "strategy": self.sample_strategy}),
+            content_type="application/json",
+        )
+
+    def test_bot_name_unique_across_users_but_reusable_by_owner(self):
+        # student1 registers "Falcon"
+        self.client.login(username="student1", password="pass123456user")
+        self.assertEqual(self._create("Falcon").status_code, 201)
+        # same user may reuse their own name as many times as they like
+        self.assertEqual(self._create("Falcon").status_code, 201)
+        self.assertEqual(self._create("  Falcon  ").status_code, 201)
+
+        # a different user cannot take that name (case-insensitive)
+        self.client.logout()
+        self.client.login(username="student2", password="pass123456user")
+        res = self._create("falcon")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("error", res.json())
+        # but a fresh name works
+        self.assertEqual(self._create("Hawk").status_code, 201)
+
+    def test_rename_cannot_steal_another_users_name(self):
+        from .models import SavedStrategy
+        self.client.login(username="student1", password="pass123456user")
+        self._create("Falcon")
+        mine = SavedStrategy.objects.create(
+            user=self.user2, name="Sparrow", strategy_data=self.sample_strategy,
+        )
+        self.client.logout()
+        self.client.login(username="student2", password="pass123456user")
+        res = self.client.post(
+            reverse("game:api_strategy_detail", kwargs={"pk": mine.pk}),
+            data=json.dumps({"name": "Falcon"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 409)
+
+    def test_public_bot_brain_is_viewable_read_only(self):
+        from .models import SavedStrategy
+        boss = SavedStrategy.objects.create(
+            user=self.admin, name="Boss Bot",
+            strategy_data=self.sample_strategy, ai_prompt="secret sauce",
+            is_public=True,
+        )
+        self.client.login(username="student1", password="pass123456user")
+
+        # A student may READ an official bot's brain (for the view-only popup)...
+        detail = self.client.get(
+            reverse("game:api_strategy_detail", kwargs={"pk": boss.pk})
+        ).json()["strategy"]
+        self.assertFalse(detail["is_owner"])
+        self.assertEqual(detail["rules_count"], 1)
+        self.assertEqual(detail["strategy"]["rules"][0]["action"], "KICK_LOW")
+
+        # ...but may NOT edit it.
+        res = self.client.post(
+            reverse("game:api_strategy_detail", kwargs={"pk": boss.pk}),
+            data=json.dumps({"name": "Hijacked"}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_admin_can_line_up_every_users_bot(self):
+        from .models import SavedStrategy
+        SavedStrategy.objects.create(
+            user=self.user1, name="Student1 Bot", strategy_data=self.sample_strategy,
+        )
+        SavedStrategy.objects.create(
+            user=self.user2, name="Student2 Bot", strategy_data=self.sample_strategy,
+        )
+        # Admin: gets is_admin + all_strategies covering every user's bot.
+        self.client.login(username="superadmin", password="admin123456pass")
+        data = self.client.get(reverse("game:api_strategies")).json()
+        self.assertTrue(data["is_admin"])
+        names = {b["name"] for b in data["all_strategies"]}
+        self.assertIn("Student1 Bot", names)
+        self.assertIn("Student2 Bot", names)
+
+        # Student: no admin pool, and is_admin is false.
+        self.client.logout()
+        self.client.login(username="student1", password="pass123456user")
+        sdata = self.client.get(reverse("game:api_strategies")).json()
+        self.assertFalse(sdata["is_admin"])
+        self.assertNotIn("all_strategies", sdata)
+
+    def test_owner_still_sees_own_brain(self):
+        from .models import SavedStrategy
+        strat = SavedStrategy.objects.create(
+            user=self.user1, name="Mine", strategy_data=self.sample_strategy,
+        )
+        self.client.login(username="student1", password="pass123456user")
+        detail = self.client.get(
+            reverse("game:api_strategy_detail", kwargs={"pk": strat.pk})
+        ).json()["strategy"]
+        self.assertIn("strategy", detail)
+        self.assertEqual(detail["strategy"]["rules"][0]["action"], "KICK_LOW")
+
+
+class KitTests(TestCase):
+    def test_sanitize_kit_enforces_distinct_hues(self):
+        from .kits import sanitize_kit, colors_too_close, PALETTE
+        # three near-hue oranges collapse to three hue-distinct colours
+        result = sanitize_kit(["#F58231", "#FF8C00", "#FFB300"])
+        self.assertEqual(len(result), 3)
+        for c in result:
+            self.assertIn(c, PALETTE)
+        for i in range(3):
+            for j in range(i + 1, 3):
+                self.assertFalse(colors_too_close(result[i], result[j]))
+
+    def test_sanitize_kit_default_survives(self):
+        from .kits import sanitize_kit, DEFAULT_KIT
+        self.assertEqual(sanitize_kit(DEFAULT_KIT), DEFAULT_KIT)
+
+    def test_api_kit_rejects_similar_colors(self):
+        user = User.objects.create_user(username="kituser", password="pass123456user")
+        self.client.login(username="kituser", password="pass123456user")
+        res = self.client.post(
+            reverse("game:api_kit"),
+            data=json.dumps({"colors": ["#F58231", "#FF8C00", "#FFB300"]}),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        from .kits import colors_too_close
+        colors = res.json()["colors"]
+        for i in range(3):
+            for j in range(i + 1, 3):
+                self.assertFalse(colors_too_close(colors[i], colors[j]))
+
 
 
 

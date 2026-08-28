@@ -3,7 +3,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI Football Arena</title>
+<title>گیلبال | GilBall</title>
 <link rel="stylesheet" href="{% static 'game/styles.css' %}">
 </head>
 <body>
@@ -13,8 +13,8 @@
   <div class="brand">
     <div class="logo"><span>⚽</span></div>
     <div class="brand-text">
-      <h1>AI Football Arena</h1>
-      <p>زمین بازیِ رباتِ فوتبالیست — استراتژی‌ات را بساز و به میدان بفرست.</p>
+      <h1>گیلبال</h1>
+      <p>زمین بازیِ ربات‌ها — استراتژی‌ات را بساز و به میدان بفرست.</p>
     </div>
   </div>
   <div class="header-controls">
@@ -102,21 +102,37 @@
       <div id="publicBotsList" class="bot-list"><div class="empty-list">هنوز ربات رسمی‌ای منتشر نشده است.</div></div>
     </div>
   </div>
+
+  <div class="card kit-card">
+    <div class="gallery-head">
+      <h2>🎨 رنگ‌های تیم من</h2>
+      <button id="saveKitBtn" class="primary mini">💾 ذخیره رنگ‌ها</button>
+    </div>
+    <p class="muted">سه رنگ برای پیراهن تیمت انتخاب کن (اصلی، دوم، جایگزین). هنگام مسابقه، سیستم از میان رنگ‌های دو تیم، متضادترین‌ها را برمی‌گزیند تا بازیکن‌ها همیشه از هم قابل تشخیص باشند.</p>
+    <div id="kitPicker" class="kit-picker"></div>
+  </div>
 </section>
 <section id="arenaView" class="view">
   <div class="arena-toolbar">
-    <label class="tb-field tb-blue"><span>🔵 تیم آبی</span><select id="blueSelect"></select></label>
-    <label class="tb-field tb-red"><span>🔴 تیم قرمز</span><select id="redSelect"></select></label>
+    <label class="tb-field tb-team1"><span id="team1Label">🟩 تیم من (سمت راست)</span><select id="blueSelect"></select></label>
+    <label class="tb-field tb-team2"><span id="team2Label">🟦 حریف (سمت چپ)</span><select id="redSelect"></select></label>
     <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
     <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
   </div>
   <div class="scorebug">
     <div class="sb-row">
-      <div class="sb-team sb-blue"><span id="blueName" class="sb-name">Blue</span><span class="sb-badge">⚽</span></div>
-      <div class="sb-score" id="score">0 : 0</div>
-      <div class="sb-team sb-red"><span class="sb-badge">⚽</span><span id="redName" class="sb-name">Red</span></div>
+      <div class="sb-team sb-team1"><span id="blueName" class="sb-name">تیم ۱</span><span id="blueDot" class="sb-dot"></span></div>
+      <div class="sb-center">
+        <div class="sb-score"><span id="score1">۰</span><span class="sb-colon">:</span><span id="score2">۰</span></div>
+      </div>
+      <div class="sb-team sb-team2"><span id="redDot" class="sb-dot"></span><span id="redName" class="sb-name">تیم ۲</span></div>
     </div>
-    <div class="sb-timer"><span class="clock">⏱</span> <span id="time">60.0s</span></div>
+    <div class="sb-timer"><span class="clock">⏱</span> <span id="time">40.0s</span></div>
+    <div class="round-bar" id="roundBar" style="display:none">
+      <div class="round-dots" id="roundDots"></div>
+      <div class="round-label" id="roundInfo">راند ۱ از ۴</div>
+      <div class="round-agg" id="roundAgg"></div>
+    </div>
   </div>
   <div class="stage">
     <canvas id="game" width="{{ game_config.width|default:1280 }}" height="{{ game_config.height|default:720 }}"></canvas>
@@ -129,18 +145,37 @@
         <button class="primary" id="winClose">باشه</button>
       </div>
     </div>
+    <div id="restFx" class="rest-fx">
+      <div class="rest-card">
+        <div class="rest-round" id="restRound">پایان راند</div>
+        <div class="rest-scoreline">
+          <div class="rest-side rest-side1">
+            <span class="rest-side-name" id="restName1">تیم ۱</span>
+            <span class="rest-side-score" id="restScore1">۰</span>
+          </div>
+          <span class="rest-dash">—</span>
+          <div class="rest-side rest-side2">
+            <span class="rest-side-score" id="restScore2">۰</span>
+            <span class="rest-side-name" id="restName2">تیم ۲</span>
+          </div>
+        </div>
+        <div class="rest-count"><span class="rest-count-num" id="restCountdown">۲۵</span><span class="rest-count-unit">ثانیه تا راند بعد</span></div>
+        <p class="rest-hint" id="restHint">می‌توانی از منوی بالای زمین، تیم‌ها را عوض کنی و با ربات دیگری وارد راند بعد شوی.</p>
+        <button id="restNext" class="primary">شروع راند بعد ▶</button>
+      </div>
+    </div>
   </div>
   {{ game_config|json_script:"game-config-data" }}
   <div class="grid two lower">
     <div class="card"><h2>⚡ وضعیت زنده</h2>
       <div class="live-grid">
-        <div class="live-team live-blue">
-          <div class="live-head"><span class="dot"></span><b>تیم آبی</b></div>
+        <div class="live-team live-team1">
+          <div class="live-head"><span class="dot"></span><b id="liveName1">تیم ۱</b></div>
           <div><span id="blueAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="blueRule">-</span></div>
         </div>
-        <div class="live-team live-red">
-          <div class="live-head"><span class="dot"></span><b>تیم قرمز</b></div>
+        <div class="live-team live-team2">
+          <div class="live-head"><span class="dot"></span><b id="liveName2">تیم ۲</b></div>
           <div><span id="redAction" class="act-chip">منتظر</span></div>
           <div class="live-rule">قانون فعال: <span id="redRule">-</span></div>
         </div>

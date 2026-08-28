@@ -30,6 +30,19 @@ def _json_body(request):
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise StrategyValidationError("Request body must be valid JSON.") from exc
 
+
+def _name_taken_by_other(name: str, user) -> bool:
+    """True if a *different* user already owns a bot with this name.
+
+    Names must be globally unique across users so a bot's name identifies its
+    creator, but a single user may reuse their own names as often as they like.
+    """
+    return (
+        SavedStrategy.objects.filter(name__iexact=name)
+        .exclude(user=user)
+        .exists()
+    )
+
 def _resolve_strategy(payload, key, user=None):
     item = payload.get(key)
     if not isinstance(item, dict):
@@ -83,19 +96,32 @@ def api_validate_strategy(request):
 @require_http_methods(["GET", "POST"])
 def api_strategies(request):
     if request.method == "GET":
-        my_strategies = request.user.saved_strategies.all()
+        is_admin = bool(request.user.is_staff or request.user.is_superuser)
+        my_strategies = request.user.saved_strategies.select_related("user__kit").all()
         public_strategies = SavedStrategy.objects.filter(
             Q(is_public=True) | Q(user__is_staff=True) | Q(user__is_superuser=True)
-        ).exclude(user=request.user)
+        ).exclude(user=request.user).select_related("user__kit")
 
-        return JsonResponse({
+        resp = {
+            "is_admin": is_admin,
+            "username": request.user.username,
             "my_strategies": [
                 {**s.to_dict(), "is_owner": True} for s in my_strategies
             ],
             "public_strategies": [
                 {**s.to_dict(), "is_owner": False} for s in public_strategies
             ],
-        })
+        }
+        # Admins may line up and work with every bot ever made by any user.
+        if is_admin:
+            everyone = SavedStrategy.objects.select_related("user__kit").order_by(
+                "user__username", "name"
+            )
+            resp["all_strategies"] = [
+                {**s.to_dict(), "is_owner": s.user_id == request.user.id}
+                for s in everyone
+            ]
+        return JsonResponse(resp)
 
     # POST: Create a new strategy
     try:
@@ -105,6 +131,11 @@ def api_strategies(request):
             return JsonResponse({"error": "نام استراتژی الزامی است."}, status=400)
         if len(name) > 120:
             return JsonResponse({"error": "نام استراتژی حداکثر می‌تواند ۱۲۰ کاراکتر باشد."}, status=400)
+        if _name_taken_by_other(name, request.user):
+            return JsonResponse(
+                {"error": f"نام «{name}» قبلاً توسط کاربر دیگری استفاده شده است. یک نام دیگر انتخاب کنید."},
+                status=409,
+            )
 
         raw_strategy = payload.get("strategy")
         if not raw_strategy:
@@ -150,6 +181,8 @@ def api_strategy_detail(request, pk: int):
     if request.method == "GET":
         if not (is_owner or saved.is_admin_strategy or is_admin):
             return JsonResponse({"error": "شما اجازه دسترسی به این استراتژی را ندارید."}, status=403)
+        # Read-only viewing of official/public bots is open to everyone; editing
+        # stays restricted to the owner (enforced on the PUT/POST/DELETE paths).
         return JsonResponse({
             "strategy": {**saved.to_dict(), "is_owner": is_owner},
         })
@@ -170,6 +203,13 @@ def api_strategy_detail(request, pk: int):
             name = (payload.get("name") or "").strip()
             if not name:
                 return JsonResponse({"error": "نام استراتژی نمی‌تواند خالی باشد."}, status=400)
+            # Name must stay unique across users (checked against the bot's owner,
+            # not the editor, so an admin editing a bot can't steal another's name).
+            if _name_taken_by_other(name, saved.user):
+                return JsonResponse(
+                    {"error": f"نام «{name}» قبلاً توسط کاربر دیگری استفاده شده است. یک نام دیگر انتخاب کنید."},
+                    status=409,
+                )
             saved.name = name
 
         if "description" in payload:
@@ -230,6 +270,31 @@ def api_batch(request):
         return JsonResponse(batch_matches(blue, red, matches=matches, seed=seed))
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def api_kit(request):
+    """Get the current user's team-kit colours + the palette, or save new ones."""
+    from .kits import PALETTE
+    from .models import PlayerKit
+
+    kit = PlayerKit.for_user(request.user)
+    if request.method == "POST":
+        from .kits import sanitize_kit
+        try:
+            payload = _json_body(request)
+        except StrategyValidationError as exc:
+            return JsonResponse({"error": str(exc)}, status=400)
+        colors = sanitize_kit(payload.get("colors"))
+        kit.home, kit.away, kit.alternative = colors
+        kit.save()
+        return JsonResponse({
+            "success": True,
+            "message": "رنگ‌های تیم ذخیره شد.",
+            "colors": kit.colors(),
+        })
+    return JsonResponse({"palette": PALETTE, "colors": kit.colors()})
 
 
 def _forbidden():
