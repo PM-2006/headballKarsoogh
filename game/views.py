@@ -1,6 +1,9 @@
 from __future__ import annotations
+import hashlib
 import json
+import threading
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.http import JsonResponse
@@ -8,7 +11,14 @@ from django.shortcuts import render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
 
-from .engine import batch_matches, simulate_match
+from .engine import (
+    DEFAULT_BATCH_MATCHES,
+    MAX_BATCH_MATCHES,
+    PHYSICS_VERSION,
+    batch_matches,
+    get_game_config,
+    simulate_match,
+)
 from .gameconfig import (
     config_with_overrides,
     reset_overrides,
@@ -23,6 +33,29 @@ from .services.llm import (
     LLMServiceError,
     compile_persian_strategy,
 )
+
+# Only one batch at a time per worker process. A batch is a pure-CPU loop, so
+# running two in one process just splits a single core between them and makes
+# both slower; run gunicorn with one worker per vCPU to use every core.
+_BATCH_SLOT = threading.BoundedSemaphore(1)
+
+BATCH_BUSY_MESSAGE = (
+    "سرور در حال اجرای یک Batch Test دیگر است. چند لحظه دیگر دوباره تلاش کن."
+)
+
+
+def _result_key(kind, config, *parts):
+    """Cache key for a deterministic engine result.
+
+    A match is a pure function of the strategies, the seed and the effective
+    game config. The config is hashed in because superusers can retune the
+    physics at runtime, which must invalidate every result computed under the
+    old settings rather than serve a replay that no longer matches the engine.
+    """
+    blob = json.dumps([config.to_dict(), *parts], sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:32]
+    return f"{kind}:{PHYSICS_VERSION}:{digest}"
+
 
 def _json_body(request):
     try:
@@ -212,9 +245,14 @@ def api_simulate(request):
         overrides = payload.get("overrides")
         if overrides and request.user.is_superuser:
             config = config_with_overrides(overrides)
-        return JsonResponse(
-            simulate_match(blue, red, seed=seed, record_frames=True, config=config)
-        )
+        if config is None:
+            config = get_game_config()
+        key = _result_key("sim", config, blue, red, seed)
+        result = cache.get(key)
+        if result is None:
+            result = simulate_match(blue, red, seed=seed, record_frames=True, config=config)
+            cache.set(key, result)
+        return JsonResponse(result)
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
@@ -226,10 +264,27 @@ def api_batch(request):
         blue = _resolve_strategy(payload, "blue", user=request.user)
         red = _resolve_strategy(payload, "red", user=request.user)
         seed = int(payload.get("seed", 1))
-        matches = int(payload.get("matches", 100))
-        return JsonResponse(batch_matches(blue, red, matches=matches, seed=seed))
+        matches = int(payload.get("matches", DEFAULT_BATCH_MATCHES))
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
+
+    matches = max(1, min(matches, MAX_BATCH_MATCHES))
+    config = get_game_config()
+    key = _result_key("batch", config, blue, red, matches, seed)
+    result = cache.get(key)
+    if result is not None:
+        return JsonResponse(result)
+
+
+    if not _BATCH_SLOT.acquire(blocking=False):
+        return JsonResponse({"error": BATCH_BUSY_MESSAGE}, status=429)
+    try:
+        result = batch_matches(blue, red, matches=matches, seed=seed, config=config)
+    finally:
+        _BATCH_SLOT.release()
+
+    cache.set(key, result)
+    return JsonResponse(result)
 
 
 def _forbidden():
