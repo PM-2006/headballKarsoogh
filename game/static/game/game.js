@@ -686,35 +686,11 @@ const ACT_FA={
 function actLabel(code){const a=ACT_FA[code];return a?`${a.i} ${a.t}`:(code||"—")}
 function ruleLabel(rule){if(rule==null)return "—";if(rule==="default")return "پیش‌فرض";return "شماره "+rule}
 
-const PLAYER_SPRITES = {
-  blue: loadSpriteSheet("/static/game/sprites/headball-blue.png"),
-  red: loadSpriteSheet("/static/game/sprites/headball-red.png", true),
-};
 const ARENA_IMAGES = {
   background: loadArenaImage("/static/game/arena/stadium-v3.png"),
   grass: loadArenaImage("/static/game/arena/grass-field-v3.png"),
   goal: loadArenaImage("/static/game/arena/goal-left.png"),
 };
-const PLAYER_SPRITE = {
-  cols: 6,
-  rows: 4,
-  idleRow: 0,
-  runRow: 1,
-  jumpRow: 2,
-  kickRow: 3,
-};
-function loadSpriteSheet(src, reverseFrames=false){
-  const img = new Image();
-  img.src = src;
-  img.loaded = false;
-  img.onload = () => {
-    img.frames = detectSpriteFrames(img, reverseFrames);
-    img.loaded = true;
-    drawIdleFrame();
-  };
-  img.onerror = () => { img.failed = true; };
-  return img;
-}
 function loadArenaImage(src){
   const img = new Image();
   img.src = src;
@@ -723,123 +699,6 @@ function loadArenaImage(src){
   img.onerror = () => { img.failed = true; };
   return img;
 }
-function detectSpriteFrames(img, reverseFrames){
-  const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const scan = canvas.getContext("2d", {willReadFrequently:true});
-  scan.drawImage(img, 0, 0);
-  const pixels = scan.getImageData(0, 0, canvas.width, canvas.height).data;
-  const rowH = canvas.height / PLAYER_SPRITE.rows;
-  const rows = [];
-
-  for(let row=0; row<PLAYER_SPRITE.rows; row++){
-    const y0 = Math.floor(row * rowH);
-    const y1 = Math.floor((row + 1) * rowH);
-    const activeX = new Uint8Array(canvas.width);
-    for(let y=y0; y<y1; y++){
-      for(let x=0; x<canvas.width; x++){
-        if(pixels[(y * canvas.width + x) * 4 + 3] > 20) activeX[x] = 1;
-      }
-    }
-
-    const runs = [];
-    for(let x=0; x<canvas.width; x++){
-      if(!activeX[x]) continue;
-      const start = x;
-      while(x + 1 < canvas.width && activeX[x + 1]) x++;
-      if(x - start > 30) runs.push([start, x]);
-    }
-
-    const frames = runs.slice(0, PLAYER_SPRITE.cols).map(([left,right])=>{
-      let top = y1, bottom = y0;
-      for(let y=y0; y<y1; y++){
-        for(let x=left; x<=right; x++){
-          if(pixels[(y * canvas.width + x) * 4 + 3] > 20){
-            top = Math.min(top, y);
-            bottom = Math.max(bottom, y);
-          }
-        }
-      }
-      const pad = 2;
-      const sx = Math.max(0, left - pad);
-      const sy = Math.max(y0, top - pad);
-      const ex = Math.min(canvas.width - 1, right + pad);
-      const ey = Math.min(y1 - 1, bottom + pad);
-      return {sx, sy, sw:ex-sx+1, sh:ey-sy+1};
-    });
-    rows.push(reverseFrames ? frames.reverse() : frames);
-  }
-  return rows;
-}
-function playerAnimFor(p, action, G, h){
-  const air = Math.abs((p.y + h) - G) > 4 || Math.abs(p.vy || 0) > 45;
-  const moving = Math.abs(p.vx || 0) > 35 || /^MOVE_/.test(action || "");
-  if((action || "").startsWith("KICK")) return {row:PLAYER_SPRITE.kickRow,fps:8};
-  if(action === "JUMP" || air) return {row:PLAYER_SPRITE.jumpRow,fps:6};
-  if(moving) return {row:PLAYER_SPRITE.runRow,fps:7};
-  return {row:PLAYER_SPRITE.idleRow,fps:3};
-}
-// Recolour one sprite frame toward `color`, keeping the character's shading and
-// silhouette. Cached offscreen canvas so playback stays cheap.
-let _kitTintCanvas = null;
-function tintedSpriteFrame(sheet, frame, color){
-  if(!_kitTintCanvas) _kitTintCanvas = document.createElement("canvas");
-  const c = _kitTintCanvas;
-  c.width = frame.sw; c.height = frame.sh;
-  const g = c.getContext("2d");
-  g.clearRect(0, 0, frame.sw, frame.sh);
-  g.globalCompositeOperation = "source-over";
-  g.globalAlpha = 1;
-  g.drawImage(sheet, frame.sx, frame.sy, frame.sw, frame.sh, 0, 0, frame.sw, frame.sh);
-  // Wash the kit colour over only the drawn pixels (keeps transparent bg + shading).
-  g.globalCompositeOperation = "source-atop";
-  g.globalAlpha = 0.55;
-  g.fillStyle = color;
-  g.fillRect(0, 0, frame.sw, frame.sh);
-  g.globalAlpha = 1;
-  g.globalCompositeOperation = "source-over";
-  return c;
-}
-function drawSpritePlayer(ctx,p,team,w,h,G,action,time,kitColor){
-  const sheet = PLAYER_SPRITES[team];
-  if(!sheet || !sheet.loaded || !sheet.frames) return false;
-
-  const cellW = sheet.naturalWidth / PLAYER_SPRITE.cols;
-  const cellH = sheet.naturalHeight / PLAYER_SPRITE.rows;
-  const anim = playerAnimFor(p, action, G, h);
-  const frames = sheet.frames[anim.row];
-  if(!frames || !frames.length) return false;
-  const frame = frames[Math.floor((time || 0) * anim.fps) % frames.length];
-
-  const cx = p.x + w / 2;
-  const scale = Math.max(w / 66, h / 84);
-  const dw = (frame.sw / cellW) * 150 * scale;
-  const dh = (frame.sh / cellH) * 150 * scale;
-  const feetY = Math.min(G, p.y + h);
-  const dy = feetY - dh + 10 * scale;
-  const nativeFace = team === "red" ? -1 : 1;
-  const playerFace = Math.sign(p.face || nativeFace);
-  const mirror = playerFace !== nativeFace;
-
-  ctx.fillStyle = "rgba(0,0,0,.18)";
-  ctx.beginPath();
-  ctx.ellipse(cx, G + 6, Math.max(8, 34 * scale), Math.max(3, 8 * scale), 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.imageSmoothingEnabled = true;
-  ctx.save();
-  ctx.translate(cx, 0);
-  ctx.scale(mirror ? -1 : 1, 1);
-  if(kitColor){
-    const tinted = tintedSpriteFrame(sheet, frame, kitColor);
-    ctx.drawImage(tinted, 0, 0, frame.sw, frame.sh, -dw / 2, dy, dw, dh);
-  }else{
-    ctx.drawImage(sheet, frame.sx, frame.sy, frame.sw, frame.sh, -dw / 2, dy, dw, dh);
-  }
-  ctx.restore();
-  return true;
-}
-
 function drawFrame(frame){
   const canvas=$("game"),ctx=canvas.getContext("2d");
   const W=gameConfig.width||canvas.width;
@@ -857,10 +716,10 @@ function drawFrame(frame){
   // Draw the pitch in the engine's NATURAL orientation — player 0 (Team 1) on
   // the LEFT, player 1 (Team 2) on the RIGHT — so a "MOVE_LEFT" action really
   // moves left on screen. The scoreboard/live/selection are laid out Team 1 on
-  // the left to match. New animated sprite characters, tinted to each team's kit.
+  // the left to match. Each character is drawn in its own team's kit colour.
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
-  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,d0.action,frame.time,teamColors[0]);
-  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,d1.action,frame.time,teamColors[1]);
+  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,teamColors[0]);
+  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,teamColors[1]);
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
@@ -1091,13 +950,13 @@ function drawLimb(ctx,x1,y1,x2,y2,thickness,color){
   ctx.lineTo(x2,y2);
   ctx.stroke();
 }
-function drawPlayer(ctx,p,team,w,h,G,action,time,kitColor){
-  // New sprite-based animated character, tinted to the team's kit colour.
-  if(drawSpritePlayer(ctx,p,team,w,h,G,action,time,kitColor)) return;
-  // Fallback (sprite not loaded yet): the vector character in the kit colour.
-  drawFallbackPlayer(ctx,p,kitColor||(team==="red"?"#ff5262":"#2f9bff"),w,h,G);
+// The original hand-drawn character: spiky head, big eyes, kit-coloured shirt.
+// Drawn as vectors (not a sprite sheet) so it takes the team's kit colour
+// directly instead of being tinted.
+function drawPlayer(ctx,p,team,w,h,G,kitColor){
+  drawVectorPlayer(ctx,p,kitColor||(team==="red"?"#ff5262":"#2f9bff"),w,h,G);
 }
-function drawFallbackPlayer(ctx,p,color,w,h,G){
+function drawVectorPlayer(ctx,p,color,w,h,G){
   const number="";
   const palette=paletteFromColor(color);
 
