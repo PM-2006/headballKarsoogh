@@ -3,6 +3,7 @@ const csrf = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
 let vocabulary = null;
 let myStrategy = null;
 let playbackHandle = null;
+let playbackPaused = false;   // match replay frozen by the pause button
 let savedStrategies = [];
 let publicStrategies = [];
 let allStrategies = [];       // every bot (admins only) — for lining up any match
@@ -482,6 +483,7 @@ function renderRoundBar(){
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
+  setPlaybackControls(false);
   hideRest();
   setArenaMsg("");
   tournament={round:1, rounds:Math.max(1,Math.round(gameConfig.match_rounds||4)),
@@ -605,10 +607,33 @@ function interpolateReplayFrame(a,b,t){
     ball:blendEntity(a.ball,b.ball),
   };
 }
+// ---- Pause / resume for the match replay ----
+function setPlaybackControls(active){
+  const btn=$("pauseMatch");
+  if(!btn) return;
+  btn.disabled=!active;
+  if(!active) setPaused(false);
+}
+function setPaused(value){
+  playbackPaused=!!value;
+  const btn=$("pauseMatch");
+  if(!btn) return;
+  btn.textContent=playbackPaused ? "▶ ادامه" : "⏸ توقف";
+  btn.classList.toggle("resumed",playbackPaused);
+  btn.setAttribute("aria-pressed",playbackPaused ? "true" : "false");
+}
+function togglePause(){
+  const btn=$("pauseMatch");
+  if(!btn||btn.disabled) return;
+  setPaused(!playbackPaused);
+}
+
 function playFrames(frames,fps,onEnd){
-  const done=onEnd||showWinner;
+  const done=(lastFrame)=>{setPlaybackControls(false);(onEnd||showWinner)(lastFrame);};
   validateReplay(frames,fps);
   resetFx();
+  setPaused(false);
+  setPlaybackControls(true);
   const frameMs=1000/fps;
   let elapsed=0,last=null,lastScore=[frames[0].score[0],frames[0].score[1]];
   drawFrame(frames[0]);
@@ -617,6 +642,13 @@ function playFrames(frames,fps,onEnd){
     // Advance by real time, but clamp each step. When the tab is hidden rAF
     // pauses; on return the first delta is huge, and without this clamp the
     // replay would jump straight to the final frame (players/ball "vanish").
+    if(playbackPaused){
+      // Keep the loop alive but stop the clock, and swallow the paused span so
+      // resuming does not fast-forward the replay.
+      last=now;
+      playbackHandle=requestAnimationFrame(tick);
+      return;
+    }
     if(last!==null)elapsed+=Math.min(now-last,PLAYBACK_MAX_STEP_MS);
     last=now;
     const idx=Math.min(frames.length-1,Math.floor(elapsed/frameMs));
@@ -1581,6 +1613,19 @@ async function init(){
   if($("refreshMyBotsBtn")) $("refreshMyBotsBtn").onclick=loadStrategiesFromServer;
   document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
   $("playMatch").onclick=runMatch;
+  if($("pauseMatch")) $("pauseMatch").onclick=togglePause;
+  // Space toggles pause, but only while watching the arena and never while the
+  // user is typing into a field.
+  document.addEventListener("keydown",(e)=>{
+    if(e.code!=="Space"&&e.key!==" ") return;
+    if(!$("arenaView")||!$("arenaView").classList.contains("active")) return;
+    const t=e.target;
+    if(t&&(t.matches("input,textarea,select")||t.isContentEditable)) return;
+    const btn=$("pauseMatch");
+    if(!btn||btn.disabled) return;
+    e.preventDefault();
+    togglePause();
+  });
   $("runBatch").onclick=runBatch;
   $("winClose").onclick=()=>$("winFx").classList.remove("show");
 
