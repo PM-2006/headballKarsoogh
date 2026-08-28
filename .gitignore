@@ -9,3 +9,4 @@ env/
 staticfiles/
 .idea/
 .vscode/
+data/

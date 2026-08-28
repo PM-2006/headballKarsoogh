@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from django.conf import settings
+from django.contrib.sessions.models import Session
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.translation import gettext_lazy as _
@@ -199,3 +200,27 @@ class PlayerKit(models.Model):
     def for_user(cls, user) -> "PlayerKit":
         obj, _created = cls.objects.get_or_create(user=user)
         return obj
+
+
+class UserSession(models.Model):
+    """Maps a user to the single login session they are allowed to hold at a time."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="active_session",
+        verbose_name=_("کاربر"),
+    )
+    session = models.OneToOneField(
+        Session,
+        on_delete=models.CASCADE,
+        verbose_name=_("نشست"),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("نشست فعال")
+        verbose_name_plural = _("نشست‌های فعال")
+
+    def __str__(self) -> str:
+        return f"{self.user.username}: {self.session_id}"

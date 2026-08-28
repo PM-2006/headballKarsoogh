@@ -418,3 +418,57 @@ class KitTests(TestCase):
 
 
 
+
+
+class SingleSessionTests(TestCase):
+    """Only the most recent login for a user stays valid."""
+
+    def setUp(self):
+        self.password = "pass123456user"
+        self.user = User.objects.create_user(username="oneuser", password=self.password)
+
+    def test_second_login_kills_the_first_session(self):
+        from django.test import Client
+        from .models import UserSession
+
+        first = Client()
+        first.login(username="oneuser", password=self.password)
+        first_key = first.session.session_key
+        self.assertEqual(first.get(reverse("game:index")).status_code, 200)
+
+        second = Client()
+        second.login(username="oneuser", password=self.password)
+        second_key = second.session.session_key
+        self.assertNotEqual(first_key, second_key)
+
+        # The first browser is bounced to the login page on its next request.
+        self.assertEqual(first.get(reverse("game:index")).status_code, 302)
+        self.assertEqual(second.get(reverse("game:index")).status_code, 200)
+
+        mapping = UserSession.objects.get(user=self.user)
+        self.assertEqual(mapping.session_id, second_key)
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 1)
+
+    def test_other_users_sessions_are_untouched(self):
+        from django.test import Client
+
+        other = User.objects.create_user(username="otheruser", password=self.password)
+        other_client = Client()
+        other_client.login(username="otheruser", password=self.password)
+
+        mine = Client()
+        mine.login(username="oneuser", password=self.password)
+
+        self.assertEqual(other_client.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(int(other_client.session["_auth_user_id"]), other.pk)
+
+    def test_logout_clears_the_mapping(self):
+        from django.test import Client
+        from .models import UserSession
+
+        client = Client()
+        client.login(username="oneuser", password=self.password)
+        self.assertTrue(UserSession.objects.filter(user=self.user).exists())
+
+        client.logout()
+        self.assertFalse(UserSession.objects.filter(user=self.user).exists())
