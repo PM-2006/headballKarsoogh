@@ -146,9 +146,9 @@ details{margin-top:14px}summary{cursor:pointer;color:var(--muted)}
 pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;padding:12px;border-radius:11px;max-height:330px;overflow:auto;border:1px solid var(--line-soft)}
 
 /* ===== Arena ===== */
-.arena-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;
+.arena-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;direction:ltr;
   background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
-.tb-field{display:flex;flex-direction:column;gap:8px;color:var(--muted);font-weight:800;font-size:12.5px}
+.tb-field{display:flex;flex-direction:column;gap:8px;color:var(--muted);font-weight:800;font-size:12.5px;direction:rtl}
 .tb-field span{padding-inline-start:3px}
 .tb-field select,.tb-field input{width:100%}
 .tb-team1 span{color:var(--team1)}.tb-team2 span{color:var(--team2)}
@@ -157,14 +157,14 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 
 /* Scorebug — broadcast style; RTL so Team 1 sits on the RIGHT */
 .scorebug{margin:6px auto 14px;max-width:660px;text-align:center}
-.sb-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;direction:rtl;
+.sb-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;direction:ltr;
   border-radius:16px;overflow:hidden;box-shadow:var(--shadow);border:1px solid var(--line)}
 .sb-team{display:flex;align-items:center;gap:10px;padding:14px 16px;font-weight:900;font-size:18px;min-width:0}
 .sb-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Team 1 = first cell = right side; Team 2 = last cell = left side. */
 .sb-team1{background:linear-gradient(180deg,var(--team1),var(--team1-deep));justify-content:flex-start;color:var(--team1-ink)}
 .sb-team2{background:linear-gradient(180deg,var(--team2),var(--team2-deep));justify-content:flex-end;color:var(--team2-ink)}
-.sb-score{display:flex;align-items:center;justify-content:center;gap:10px;min-width:110px;padding:10px 18px;direction:rtl;
+.sb-score{display:flex;align-items:center;justify-content:center;gap:10px;min-width:110px;padding:10px 18px;direction:ltr;
   background:#0a1424;font-size:30px;font-weight:900;letter-spacing:1px;color:#fff}
 .sb-score #score1{color:var(--team1)}.sb-score #score2{color:var(--team2)}
 .sb-colon{color:#7f93b6;font-weight:700}
@@ -178,7 +178,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 
 /* Live status */
 .blue{color:var(--blue)}.red{color:var(--red)}
-.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;direction:rtl}
+.live-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;direction:ltr}
 .live-team{padding:14px;border-radius:14px;background:#0d1a30;border:1px solid var(--line-soft)}
 .live-team.live-team1{border-top:3px solid var(--team1)}
 .live-team.live-team2{border-top:3px solid var(--team2)}
@@ -226,7 +226,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .win-trophy{font-size:66px;filter:drop-shadow(0 8px 14px rgba(0,0,0,.5));animation:trophy 1.7s ease-in-out infinite}
 @keyframes trophy{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-9px) rotate(4deg)}}
 .win-title{font-size:27px;font-weight:900;margin:8px 0 2px}
-.win-score{font-size:24px;color:var(--gold);font-weight:900;letter-spacing:3px;margin-bottom:18px;direction:rtl}
+.win-score{font-size:24px;color:var(--gold);font-weight:900;letter-spacing:3px;margin-bottom:18px;direction:ltr}
 .agg-t1{color:var(--team1)}.agg-t2{color:var(--team2)}
 .win-card .primary{padding:11px 26px}
 
@@ -319,13 +319,13 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 
 /* ---------- Round progress bar ---------- */
 .round-bar{max-width:640px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center;gap:9px}
-.round-dots{display:flex;gap:8px;direction:rtl}
+.round-dots{display:flex;gap:8px;direction:ltr}
 .rseg{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;
   font-size:12px;font-weight:900;color:var(--muted);background:#0d1a30;border:1px solid var(--line-soft);transition:.18s}
 .rseg.done{background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:#04150e;border-color:transparent}
 .rseg.now{background:#101f3b;color:#fff;border-color:var(--gold);box-shadow:0 0 0 2px rgba(255,203,77,.28)}
 .round-label{font-size:13px;font-weight:900;color:var(--text)}
-.round-agg{display:flex;align-items:center;justify-content:center;gap:12px;direction:rtl;
+.round-agg{display:flex;align-items:center;justify-content:center;gap:12px;direction:ltr;
   background:#0a1424;border:1px solid var(--line);border-radius:999px;padding:7px 16px;max-width:100%;flex-wrap:wrap}
 .agg-name{font-weight:800;font-size:13px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .agg-name.agg-t1{color:var(--team1)}.agg-name.agg-t2{color:var(--team2)}
@@ -338,7 +338,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .rest-fx.show{display:flex;animation:fade .3s ease}
 .rest-card{text-align:center;padding:26px 30px;border-radius:20px;border:1px solid var(--line);background:linear-gradient(180deg,#12213c,#0c1730);box-shadow:0 18px 60px rgba(0,0,0,.55);max-width:92%;min-width:min(420px,88vw)}
 .rest-round{font-size:15px;font-weight:900;color:var(--gold);letter-spacing:.3px}
-.rest-scoreline{display:flex;align-items:center;justify-content:center;gap:16px;direction:rtl;margin:16px 0 4px}
+.rest-scoreline{display:flex;align-items:center;justify-content:center;gap:16px;direction:ltr;margin:16px 0 4px}
 .rest-side{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;flex:1}
 .rest-side-name{font-size:13px;font-weight:800;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rest-side-score{font-size:48px;font-weight:900;line-height:1}

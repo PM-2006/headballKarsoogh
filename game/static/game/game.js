@@ -810,20 +810,18 @@ function drawFrame(frame){
   if(drawArenaBackground(ctx,W,H)) drawPitchMarkings(ctx,W,H,G);
   else{drawStadium(ctx,W,H,G);drawPitch(ctx,W,H,G);}
   drawGoal(ctx,false,W,G,GW,GH);drawGoal(ctx,true,W,G,GW,GH);
-  // Engine puts player 0 (Team 1) on the LEFT, but the scoreboard shows Team 1
-  // on the RIGHT — mirror the pitch horizontally so the field matches (only the
-  // players and ball need their x flipped and facing negated; goals/markings
-  // are symmetric). New animated sprite characters, tinted to each team's kit.
-  const mirrorPlayer=p=>({...p,x:W-p.x-PW,face:-p.face});
-  const ballX=W-frame.ball.x;
+  // Draw the pitch in the engine's NATURAL orientation — player 0 (Team 1) on
+  // the LEFT, player 1 (Team 2) on the RIGHT — so a "MOVE_LEFT" action really
+  // moves left on screen. The scoreboard/live/selection are laid out Team 1 on
+  // the left to match. New animated sprite characters, tinted to each team's kit.
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
-  drawPlayer(ctx,mirrorPlayer(frame.players[0]),"blue",PW,PH,G,d0.action,frame.time,teamColors[0]);
-  drawPlayer(ctx,mirrorPlayer(frame.players[1]),"red",PW,PH,G,d1.action,frame.time,teamColors[1]);
+  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,d0.action,frame.time,teamColors[0]);
+  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,d1.action,frame.time,teamColors[1]);
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
-  ctx.beginPath();ctx.ellipse(ballX,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
-  drawBall(ctx,ballX,frame.ball.y,BR);
+  ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
+  drawBall(ctx,frame.ball.x,frame.ball.y,BR);
   updateScore(frame.score[0],frame.score[1]);$("time").textContent=`${frame.time.toFixed(1)}s`;
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -1260,7 +1258,7 @@ function refreshOpponentMenus(){
     const draft=myStrategy?`<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری</option></optgroup>`:"";
     const full=draft+grpAll()+grpPresets();
     opts1=opts2=full;
-    lab1="🟩 تیم ۱ (سمت راست)"; lab2="🟦 تیم ۲ (سمت چپ)";
+    lab1="🟩 تیم ۱ (سمت چپ)"; lab2="🟦 تیم ۲ (سمت راست)";
     const first=allStrategies[0]?("any_"+allStrategies[0].id):"predictive";
     const second=allStrategies[1]?("any_"+allStrategies[1].id):(allStrategies[0]?("any_"+allStrategies[0].id):"adaptive");
     def1=first; def2=second;
@@ -1269,7 +1267,7 @@ function refreshOpponentMenus(){
     // the opponent may be anything, including official/admin bots.
     opts1=grpMine()+grpPresets();
     opts2=grpMine()+grpPublic()+grpPresets();
-    lab1="🟩 تیم من (سمت راست)"; lab2="🟦 حریف (سمت چپ)";
+    lab1="🟩 تیم من (سمت چپ)"; lab2="🟦 حریف (سمت راست)";
     def1=(myStrategy?"mybot":(savedStrategies[0]?("saved_"+savedStrategies[0].id):"predictive"));
     def2=(publicStrategies[0]?("pub_"+publicStrategies[0].id):"adaptive");
   }
