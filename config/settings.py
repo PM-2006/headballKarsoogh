@@ -4,7 +4,15 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = os.environ.get("DJANGO_DEBUG", "False").lower() == "true"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+    if h.strip()
+]
+# The container healthcheck reaches gunicorn over loopback, so these stay
+# allowed whatever DJANGO_ALLOWED_HOSTS is set to. Without them the check gets
+# a DisallowedHost 400 and the container is permanently marked unhealthy.
+ALLOWED_HOSTS += [h for h in ("127.0.0.1", "localhost") if h not in ALLOWED_HOSTS]
 
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
@@ -26,6 +34,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "django.middleware.gzip.GZipMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -64,6 +73,15 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.environ.get("DJANGO_DB_PATH", BASE_DIR / "db.sqlite3"),
+    }
+}
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.environ.get("DJANGO_CACHE_DIR", BASE_DIR / "data" / "cache"),
+        "TIMEOUT": None,
+        "OPTIONS": {"MAX_ENTRIES": 4000, "CULL_FREQUENCY": 4},
     }
 }
 

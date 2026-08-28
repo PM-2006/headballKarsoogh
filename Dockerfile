@@ -25,9 +25,11 @@ EXPOSE 8000
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
-# Batch tests (100 simulated matches) are CPU-bound, hence the raised timeout.
+# Batch tests (up to 50 simulated matches) are CPU-bound, hence the raised timeout.
+ENV WEB_CONCURRENCY=2
 CMD ["gunicorn", "config.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
-     "--workers", "3", \
+     "--worker-class", "gthread", \
+     "--threads", "4", \
      "--timeout", "120", \
      "--access-logfile", "-"]

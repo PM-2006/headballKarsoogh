@@ -230,11 +230,13 @@ def get_game_config() -> GameConfig:
     except Exception:
         return base
 
+MAX_BATCH_MATCHES = 50
+DEFAULT_BATCH_MATCHES = 50
 
 CONFIG = get_base_config()
 
 
-@dataclass
+@dataclass(slots=True)
 class Player:
     x: float
     y: float
@@ -246,7 +248,7 @@ class Player:
     jump_cd: float = 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class Ball:
     x: float
     y: float
@@ -254,7 +256,7 @@ class Ball:
     vy: float = 0.0
 
 
-@dataclass
+@dataclass(slots=True)
 class World:
     players: list[Player]
     ball: Ball
@@ -1154,7 +1156,7 @@ def batch_matches(
     blue_strategy: dict,
     red_strategy: dict,
     *,
-    matches: int = 100,
+    matches: int = DEFAULT_BATCH_MATCHES,
     seed: int = 1,
     config: GameConfig | None = None,
 ) -> dict:
@@ -1162,7 +1164,7 @@ def batch_matches(
     validate_strategy(red_strategy)
     if config is None:
         config = get_game_config()
-    matches = max(1, min(int(matches), 250))
+    matches = max(1, min(int(matches), MAX_BATCH_MATCHES))
 
     blue_wins = red_wins = draws = blue_goals = red_goals = 0
 
