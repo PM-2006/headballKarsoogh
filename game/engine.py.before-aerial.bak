@@ -78,13 +78,13 @@ class GameConfig:
     # Kicks & Actions
     kick_reach: float = 126.0
     kick_low_x: float = 850.0
-    kick_low_y: float = -280.0
+    kick_low_y: float = -170.0
     kick_low_cooldown: float = 0.40
     kick_high_x: float = 760.0
-    kick_high_y: float = -760.0
+    kick_high_y: float = -620.0
     kick_high_cooldown: float = 0.46
     kick_clear_x: float = 1000.0
-    kick_clear_y: float = -520.0
+    kick_clear_y: float = -360.0
     kick_clear_cooldown: float = 0.52
     kick_keep_ball_velocity: float = 0.38
     kick_player_velocity_transfer: float = 0.52
@@ -177,13 +177,13 @@ def get_base_config() -> GameConfig:
         # Kicks & Actions
         kick_reach=_env_float("GAME_KICK_REACH", 126.0),
         kick_low_x=_env_float("GAME_KICK_LOW_X", 850.0),
-        kick_low_y=_env_float("GAME_KICK_LOW_Y", -280.0),
+        kick_low_y=_env_float("GAME_KICK_LOW_Y", -170.0),
         kick_low_cooldown=_env_float("GAME_KICK_LOW_COOLDOWN", 0.40),
         kick_high_x=_env_float("GAME_KICK_HIGH_X", 760.0),
-        kick_high_y=_env_float("GAME_KICK_HIGH_Y", -760.0),
+        kick_high_y=_env_float("GAME_KICK_HIGH_Y", -620.0),
         kick_high_cooldown=_env_float("GAME_KICK_HIGH_COOLDOWN", 0.46),
         kick_clear_x=_env_float("GAME_KICK_CLEAR_X", 1000.0),
-        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -520.0),
+        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -360.0),
         kick_clear_cooldown=_env_float("GAME_KICK_CLEAR_COOLDOWN", 0.52),
         kick_keep_ball_velocity=_env_float("GAME_KICK_KEEP_BALL_VELOCITY", 0.38),
         kick_player_velocity_transfer=_env_float("GAME_KICK_PLAYER_VELOCITY_TRANSFER", 0.52),
@@ -564,12 +564,7 @@ def _apply_kicks(world: World, intents: list[Intent], config: GameConfig):
     else:
         _, impulse_x, impulse_y = impulses[0]
         ball.vx = ball.vx * config.kick_keep_ball_velocity + impulse_x
-
-        # Preserve existing UPWARD motion, but do not let a falling ball cancel
-        # the intended lift of a kick. This gives KICK_HIGH / KICK_CLEAR a
-        # consistent arcade arc even when the player strikes a descending ball.
-        upward_carry = min(ball.vy, 0.0) * config.kick_keep_ball_velocity
-        ball.vy = upward_carry + impulse_y
+        ball.vy = ball.vy * config.kick_keep_ball_velocity + impulse_y
 
     _limit_ball_speed(ball, config)
 
