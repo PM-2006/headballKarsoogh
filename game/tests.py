@@ -473,6 +473,45 @@ class SingleSessionTests(TestCase):
         client.logout()
         self.assertFalse(UserSession.objects.filter(user=self.user).exists())
 
+    def test_staff_may_hold_several_sessions(self):
+        from django.test import Client
+        from .models import UserSession
+
+        staff = User.objects.create_user(
+            username="staffuser", password=self.password, is_staff=True
+        )
+
+        first = Client()
+        first.login(username="staffuser", password=self.password)
+        second = Client()
+        second.login(username="staffuser", password=self.password)
+
+        # Neither admin session is kicked, but both are still tracked.
+        self.assertEqual(first.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(second.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=staff).count(), 2)
+
+    def test_demoting_staff_makes_their_old_sessions_reachable(self):
+        """Staff sessions are tracked, so losing the flag brings them under the rule."""
+        from django.test import Client
+        from .models import UserSession
+
+        user = User.objects.create_user(
+            username="demoted", password=self.password, is_staff=True
+        )
+        stale = Client()
+        stale.login(username="demoted", password=self.password)
+
+        user.is_staff = False
+        user.save(update_fields=["is_staff"])
+
+        fresh = Client()
+        fresh.login(username="demoted", password=self.password)
+
+        # The admin-era session is now gone, and only the new one is left mapped.
+        self.assertEqual(stale.get(reverse("game:index")).status_code, 302)
+        self.assertEqual(fresh.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=user).count(), 1)
 
 class GameActivationTests(TestCase):
     """The admin kill switch that closes the whole site to non-admins."""

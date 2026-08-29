@@ -212,12 +212,17 @@ class PlayerKit(models.Model):
 
 
 class UserSession(models.Model):
-    """Maps a user to the single login session they are allowed to hold at a time."""
+    """Maps each login session to the user holding it.
 
-    user = models.OneToOneField(
+    Ordinary users end up with exactly one row, because every login deletes their
+    other sessions first. Staff keep several: they are exempt from that delete, but
+    are still tracked so that demoting someone leaves no session unreachable.
+    """
+
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="active_session",
+        related_name="active_sessions",
         verbose_name=_("کاربر"),
     )
     session = models.OneToOneField(

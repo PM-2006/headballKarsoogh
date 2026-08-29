@@ -16,6 +16,7 @@ def enforce_single_session(sender, user, request, **kwargs) -> None:
         request.session.save()
     current_key = request.session.session_key
 
-    Session.objects.filter(usersession__user=user).exclude(session_key=current_key).delete()
+    if not (user.is_staff or user.is_superuser):
+        Session.objects.filter(usersession__user=user).exclude(session_key=current_key).delete()
 
-    UserSession.objects.update_or_create(user=user, defaults={"session_id": current_key})
+    UserSession.objects.update_or_create(session_id=current_key, defaults={"user": user})
