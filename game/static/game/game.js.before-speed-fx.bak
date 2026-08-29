@@ -201,7 +201,7 @@ let authExpiredHandled=false;
 function handleAuthExpired(){
   if(authExpiredHandled)return;
   authExpiredHandled=true;
-  showToast("نشست تمام شد.","err");
+  showToast("نشست تو به پایان رسیده است. در حال انتقال به صفحه ورود...","err");
   const next=encodeURIComponent(location.pathname+location.search);
   setTimeout(()=>{location.href=`/accounts/login/?next=${next}`;},1500);
 }
@@ -215,7 +215,7 @@ async function postJSON(url,payload,method="POST"){
   if(response.status===401){handleAuthExpired();throw new Error("نشست تو به پایان رسیده است. دوباره وارد شو.");}
   let data;
   try{data=await response.json();}
-  catch(e){throw new Error(response.ok?"پاسخ سرور خوانده نشد.":`خطای سرور (${response.status}).`);}
+  catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
   if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
   return data;
 }
@@ -228,17 +228,17 @@ async function getJSON(url){
 // Turn any raw error into a short, clear Persian message a student can act on.
 function humanizeError(err){
   const raw=((err&&err.message)||String(err||"")).trim();
-  if(!raw)return "خطای ناشناخته.";
+  if(!raw)return "یک خطای ناشناخته رخ داد. دوباره تلاش کن.";
   if(/[؀-ۿ]/.test(raw))return raw; // already Persian — show as-is
   const map=[
-    [/failed to fetch|networkerror|load failed|ارتباط/i,"ارتباط قطع شد."],
-    [/csrf/i,"صفحه را تازه کن."],
-    [/preset.*strategy|strategy.*preset/i,"اول یک ربات بساز."],
-    [/timeout|timed out/i,"سرور دیر جواب داد."],
-    [/json/i,"پاسخ سرور خوانده نشد."],
+    [/failed to fetch|networkerror|load failed|ارتباط/i,"ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و دوباره تلاش کن."],
+    [/csrf/i,"نشست تو منقضی شده. صفحه را تازه کن (F5) و دوباره امتحان کن."],
+    [/preset.*strategy|strategy.*preset/i,"اول باید یک ربات بسازی یا یک نمونه انتخاب کنی."],
+    [/timeout|timed out/i,"سرور دیر جواب داد. یک بار دیگر امتحان کن."],
+    [/json/i,"پاسخ سرور قابل خواندن نبود. دوباره تلاش کن."],
   ];
   for(const [re,msg] of map)if(re.test(raw))return msg;
-  return raw;
+  return "مشکلی پیش آمد: "+raw;
 }
 // Transient popup notification (auto-dismisses). Errors stay a bit longer.
 function showToast(text,kind="err"){
@@ -333,7 +333,7 @@ function editPrompt(){
   ta.focus();
   const end=ta.value.length;
   try{ ta.setSelectionRange(end,end); }catch(e){}
-  setFeedback("متن را عوض کن و دوباره تبدیل کن.");
+  setFeedback("متن را عوض کن و دوباره «✨ تبدیل استراتژی» را بزن تا مغز ربات به‌روز شود.");
 }
 
 function renderCompiledStrategy(strategy){
@@ -404,229 +404,26 @@ function deleteBot(){
   cancelEdit();
   const badge=$("botBadge");if(badge){badge.className="bot-badge off";badge.textContent="ساخته نشده";}
   refreshOpponentMenus();
-  showToast("پاک شد.","ok");
+  showToast("صفحه ربات پاکسازی شد.","ok");
 }
-// ---- AI Clarification conversation state ----
-let aiConversation = {
-  attempt: 0,
-  history: [],   // [{questions: [...], answers: [...]}]
-  text: "",      // original strategy text
-};
-function resetAiConversation(){
-  aiConversation = { attempt: 0, history: [], text: "" };
-  const panel = $("clarificationPanel");
-  if(panel) panel.remove();
-}
-
-function renderClarificationQuestions(questions) {
-  // Remove any existing panel
-  let panel = $("clarificationPanel");
-  if(panel) panel.remove();
-
-  const container = $("strategyText").parentElement;
-  panel = document.createElement("div");
-  panel.id = "clarificationPanel";
-  panel.className = "clarification-panel";
-
-  const roundNum = aiConversation.attempt;
-  const header = document.createElement("div");
-  header.className = "clarification-header";
-  header.innerHTML = `<span class="clarification-icon">🤔</span> <span>برای ساختن استراتژی‌ات، به چند تا جواب نیاز دارم:</span> <span class="clarification-round">مرحله ${roundNum} از ۲</span>`;
-  panel.appendChild(header);
-
-  const form = document.createElement("div");
-  form.className = "clarification-form";
-
-  questions.forEach((q, idx) => {
-    const qBlock = document.createElement("div");
-    qBlock.className = "clarification-question";
-
-    const label = document.createElement("div");
-    label.className = "clarification-label";
-    label.textContent = `${idx + 1}. ${q.question}`;
-    qBlock.appendChild(label);
-
-    if (q.options && q.options.length > 0) {
-      const optionsRow = document.createElement("div");
-      optionsRow.className = "clarification-options";
-      q.options.forEach(opt => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "clarification-option-btn";
-        btn.textContent = opt;
-        btn.onclick = () => {
-          // Deselect siblings, select this one
-          optionsRow.querySelectorAll(".clarification-option-btn").forEach(b => b.classList.remove("selected"));
-          btn.classList.add("selected");
-          // Also fill the text input
-          const input = qBlock.querySelector(".clarification-input");
-          if(input) input.value = opt;
-        };
-        optionsRow.appendChild(btn);
-      });
-      qBlock.appendChild(optionsRow);
-
-      // Also add a small text input for custom answer
-      const customRow = document.createElement("div");
-      customRow.className = "clarification-custom";
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "clarification-input";
-      input.placeholder = "یا جواب خودت رو بنویس...";
-      input.dataset.qidx = idx;
-      input.oninput = () => {
-        // Deselect option buttons when typing custom
-        optionsRow.querySelectorAll(".clarification-option-btn").forEach(b => b.classList.remove("selected"));
-      };
-      customRow.appendChild(input);
-      qBlock.appendChild(customRow);
-    } else {
-      // Free-text question
-      const input = document.createElement("input");
-      input.type = "text";
-      input.className = "clarification-input full-width";
-      input.placeholder = "جوابت رو بنویس...";
-      input.dataset.qidx = idx;
-      qBlock.appendChild(input);
-    }
-
-    form.appendChild(qBlock);
-  });
-
-  panel.appendChild(form);
-
-  const actions = document.createElement("div");
-  actions.className = "clarification-actions";
-
-  const submitBtn = document.createElement("button");
-  submitBtn.type = "button";
-  submitBtn.className = "primary clarification-submit";
-  submitBtn.textContent = "✅ ارسال جواب‌ها";
-  submitBtn.onclick = submitClarificationAnswers;
-  actions.appendChild(submitBtn);
-
-  const skipBtn = document.createElement("button");
-  skipBtn.type = "button";
-  skipBtn.className = "clarification-skip";
-  skipBtn.textContent = "⏭ رد شو، خودت تصمیم بگیر";
-  skipBtn.onclick = skipClarification;
-  actions.appendChild(skipBtn);
-
-  panel.appendChild(actions);
-
-  container.insertBefore(panel, $("strategyText").nextSibling);
-  panel.scrollIntoView({ behavior: "smooth", block: "center" });
-}
-
-function collectAnswers() {
-  const panel = $("clarificationPanel");
-  if (!panel) return [];
-  const inputs = panel.querySelectorAll(".clarification-input");
-  const answers = [];
-  inputs.forEach(inp => {
-    const val = (inp.value || "").trim();
-    // Check if an option button is selected
-    const qBlock = inp.closest(".clarification-question");
-    if (!val && qBlock) {
-      const selected = qBlock.querySelector(".clarification-option-btn.selected");
-      answers.push(selected ? selected.textContent : "");
-    } else {
-      answers.push(val);
-    }
-  });
-  return answers;
-}
-
-async function submitClarificationAnswers() {
-  const answers = collectAnswers();
-  const unanswered = answers.filter(a => !a).length;
-  if (unanswered > 0) {
-    showToast(`${unanswered} سوال بدون جواب مانده. لطفاً همه رو جواب بده.`, "err");
-    return;
-  }
-
-  // Get last round's questions from conversation
-  const lastRound = aiConversation.history[aiConversation.history.length - 1];
-  if (lastRound) {
-    lastRound.answers = answers;
-  }
-
-  // Remove clarification panel
-  const panel = $("clarificationPanel");
-  if (panel) panel.remove();
-
-  // Continue with next attempt
-  await compileWithAI(true);
-}
-
-async function skipClarification() {
-  // Fill any unanswered with empty, then force final attempt
-  const answers = collectAnswers();
-  const lastRound = aiConversation.history[aiConversation.history.length - 1];
-  if (lastRound) {
-    lastRound.answers = answers;
-  }
-
-  // Force attempt 3 (force decide mode)
-  aiConversation.attempt = 3;
-  const panel = $("clarificationPanel");
-  if (panel) panel.remove();
-  await compileWithAI(true);
-}
-
-async function compileWithAI(isContinuation = false){
-  const text = $("strategyText").value.trim();
+async function compileWithAI(){
+  const text=$("strategyText").value.trim();
   if(!text){setFeedback("اول استراتژی را بنویس.","err");return}
-
-  // If the text changed, reset conversation
-  if (!isContinuation || aiConversation.text !== text) {
-    resetAiConversation();
-    aiConversation.text = text;
-  }
-
-  aiConversation.attempt++;
-
   try{
     $("compileWithAI").disabled=true;
-    $("compileWithAI").textContent = aiConversation.attempt > 1 ? "در حال پردازش جواب‌ها..." : "در حال فهمیدن استراتژی...";
-
-    const result = await postJSON("api/compile-strategy/", {
-      text,
-      attempt: aiConversation.attempt,
-      conversation_history: aiConversation.history,
-    });
-
-    // AI is asking clarification questions
-    if (result.needs_clarification && result.questions && result.questions.length > 0) {
-      // Store this round's questions
-      aiConversation.history.push({
-        questions: result.questions,
-        answers: [],  // Will be filled when user submits
-      });
-
-      const feedbackMsg = (result.feedback || []).join(" ");
-      if (feedbackMsg) {
-        showToast("💬 " + feedbackMsg, "ok");
-      }
-
-      renderClarificationQuestions(result.questions);
-      return;
-    }
-
+    $("compileWithAI").textContent="در حال فهمیدن استراتژی...";
+    const result=await postJSON("api/compile-strategy/",{text});
     if(!result.valid){
       const msg=(result.feedback || []).join(" ");
       setFeedback("❌ "+(msg || "استراتژی قابل تبدیل نبود."),"err");
-      resetAiConversation();
       return;
     }
-
     renderCompiledStrategy(result.strategy);
     setCurrentPrompt(text);
-    setFeedback("بازی ساخته شد.","ok");
-    resetAiConversation();
+    const extra=(result.feedback || []).join(" ");
+    setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد."+(extra ? " "+extra : ""),"ok");
   }catch(err){
     setFeedback("❌ "+humanizeError(err),"err");
-    resetAiConversation();
   }finally{
     $("compileWithAI").disabled=false;
     $("compileWithAI").textContent="✨ تبدیل استراتژی";
@@ -637,11 +434,11 @@ async function buildBot(){
   if(!simpleRules.length){setFeedback("حداقل یک تصمیم بساز.","err");return}
   for(let i=0;i<simpleRules.length;i++){
     const r=simpleRules[i];
-    if(!r.conds.length){setFeedback(`تصمیم ${i+1} شرط ندارد.`,"err");return}
+    if(!r.conds.length){setFeedback(`❌ تصمیم ${i+1} هیچ شرطی ندارد. حداقل یک «اگر» لازم است.`,"err");return}
     for(const ci of r.conds){
       const def=simpleConditions[ci.key];
       if(def&&def.param&&!Number.isFinite(Number(ci.value))){
-        setFeedback(`در تصمیم ${i+1} یک عدد وارد کن.`,"err");return;
+        setFeedback(`❌ در تصمیم ${i+1} برای «${def.label.replace("…","___")}» یک عدد معتبر وارد کن.`,"err");return;
       }
     }
   }
@@ -649,7 +446,7 @@ async function buildBot(){
   try{
     await postJSON("api/validate/",{strategy});myStrategy=strategy;setJsonView(strategy);$("humanBrain").classList.remove("empty");
     $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${r.conds.map(condInstanceLabel).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
-    markBotReady();setFeedback("ربات ساخته شد.","ok");refreshOpponentMenus();
+    markBotReady();setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
   }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
 }
 function setFeedback(text,kind=""){
@@ -977,7 +774,7 @@ function drawFrame(frame){
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
   ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
-  drawBall(ctx,frame.ball,BR);
+  drawBall(ctx,frame.ball.x,frame.ball.y,BR);
   updateScore(frame.score[0],frame.score[1]);$("time").textContent=`${frame.time.toFixed(1)}s`;
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -1145,112 +942,16 @@ function drawGoal(ctx,right,W,G,GW,GH){
   // Rounded joint cap where front post meets the crossbar.
   ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(inner,topY,pw*0.56,0,Math.PI*2);ctx.fill();
 }
-function drawBall(ctx,ball,r){
-  const x=ball.x,y=ball.y;
-  const vx=isFiniteNumber(ball.vx)?ball.vx:0;
-  const vy=isFiniteNumber(ball.vy)?ball.vy:0;
-  const speed=Math.hypot(vx,vy);
-
-  // Physics caps the ball around 1450 px/s. Start the visual effect only after
-  // ~250 px/s so slow dribbles still look like a normal football.
-  const speedFx=Math.max(0,Math.min(1,(speed-250)/1050));
-  const angle=speed>1?Math.atan2(vy,vx):0;
-
-  // ---- Speed trail -------------------------------------------------------
-  // The canvas is fully redrawn each frame, so the trail is reconstructed from
-  // the current velocity vector instead of leaving permanent pixels behind.
-  if(speedFx>0.03){
-    const ux=vx/speed,uy=vy/speed;
-    const trailLength=18+speedFx*92;
-    const pieces=6;
-
-    ctx.save();
-    ctx.globalCompositeOperation="source-over";
-    for(let i=pieces;i>=1;i--){
-      const t=i/pieces;
-      const tx=x-ux*trailLength*t;
-      const ty=y-uy*trailLength*t;
-      const alpha=(1-t)*0.05+speedFx*(0.13*(1-t)+0.025);
-      const size=r*(0.35+0.48*(1-t));
-
-      ctx.fillStyle=`rgba(255,72,45,${alpha})`;
-      ctx.beginPath();
-      ctx.ellipse(
-        tx,ty,
-        size*(1+speedFx*.65),
-        Math.max(2,size*.45),
-        angle,
-        0,Math.PI*2
-      );
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // ---- Hot glow ----------------------------------------------------------
-  if(speedFx>0.12){
-    ctx.save();
-    const glow=ctx.createRadialGradient(x,y,r*.72,x,y,r*(1.35+speedFx*.75));
-    glow.addColorStop(0,"rgba(255,95,50,0)");
-    glow.addColorStop(.60,`rgba(255,95,50,${0.05+speedFx*.08})`);
-    glow.addColorStop(1,"rgba(255,45,35,0)");
-    ctx.fillStyle=glow;
-    ctx.beginPath();
-    ctx.arc(x,y,r*(1.35+speedFx*.75),0,Math.PI*2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // ---- Ball body ---------------------------------------------------------
-  ctx.save();
-  ctx.translate(x,y);
-  ctx.rotate(angle);
-
-  // Stretch in the direction of travel.
-  const stretchX=1+speedFx*.20;
-  const stretchY=1-speedFx*.09;
-  ctx.scale(stretchX,stretchY);
-
-  // Keep the panel rotation lively while the whole ball is oriented to travel.
-  ctx.rotate((x/r)*0.15);
-
+function drawBall(ctx,x,y,r){
+  ctx.save();ctx.translate(x,y);ctx.rotate((x/r)*0.15);
   const g=ctx.createRadialGradient(-r*.32,-r*.32,r*.2,0,0,r);
-  g.addColorStop(0,"#ffffff");
-  g.addColorStop(1,speedFx>.65?"#ffd8d0":"#e0e8f0");
-  ctx.fillStyle=g;
-  ctx.beginPath();
-  ctx.arc(0,0,r,0,Math.PI*2);
-  ctx.fill();
-
+  g.addColorStop(0,"#ffffff");g.addColorStop(1,"#e0e8f0");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
   // Classic panel: center pentagon + seams to the rim.
-  ctx.fillStyle="#1b2a3d";
-  drawPentagon(ctx,0,0,r*0.42,-Math.PI/2);
-  ctx.strokeStyle="#1b2a3d";
-  ctx.lineWidth=2;
-  for(let i=0;i<5;i++){
-    const a=-Math.PI/2+i*(2*Math.PI/5);
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a)*r*.42,Math.sin(a)*r*.42);
-    ctx.lineTo(Math.cos(a)*r*.96,Math.sin(a)*r*.96);
-    ctx.stroke();
-  }
-
-  // Border changes smoothly from navy to red/orange as speed rises.
-  const hot=Math.round(70+185*speedFx);
-  const green=Math.round(35+30*(1-speedFx));
-  ctx.strokeStyle=speedFx>.08?`rgb(${hot},${green},35)`:"#16233a";
-  ctx.lineWidth=3+speedFx*2.5;
-  ctx.beginPath();
-  ctx.arc(0,0,r,0,Math.PI*2);
-  ctx.stroke();
-
-  if(speedFx>.28){
-    ctx.fillStyle=`rgba(255,255,255,${0.16+speedFx*.20})`;
-    ctx.beginPath();
-    ctx.ellipse(-r*.30,-r*.36,r*.25,r*.11,-.4,0,Math.PI*2);
-    ctx.fill();
-  }
-
+  ctx.fillStyle="#1b2a3d";drawPentagon(ctx,0,0,r*0.42,-Math.PI/2);
+  ctx.strokeStyle="#1b2a3d";ctx.lineWidth=2;
+  for(let i=0;i<5;i++){const a=-Math.PI/2+i*(2*Math.PI/5);ctx.beginPath();ctx.moveTo(Math.cos(a)*r*0.42,Math.sin(a)*r*0.42);ctx.lineTo(Math.cos(a)*r*0.96,Math.sin(a)*r*0.96);ctx.stroke();}
+  ctx.strokeStyle="#16233a";ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
   ctx.restore();
 }
 function drawPentagon(ctx,cx,cy,rad,rot){
@@ -1652,7 +1353,7 @@ function loadBotIntoBuilder(id){
     return;
   }
   if(!bot.is_owner || !bot.strategy){
-    showToast("قابل ویرایش نیست.","err");
+    showToast("مغز ربات‌های دیگران قابل مشاهده نیست.","err");
     return;
   }
   if(bot.is_owner){
@@ -1804,8 +1505,8 @@ async function panelSave(){
     const res=await postJSON("api/game-config/",{values:collectPanelValues()});
     if(res.config)applyClientConfig(res.config);
     if(res.groups)renderPanel(res.groups);
-    showToast("ذخیره شد.","ok");
-    setPanelStatus("ذخیره شد.");
+    showToast("✅ تنظیمات برای همه ذخیره شد.","ok");
+    setPanelStatus("ذخیره شد ✓ — از این پس همهٔ مسابقه‌ها با این مقادیر اجرا می‌شوند.");
   }catch(err){showToast("❌ "+humanizeError(err),"err");setPanelStatus("خطا در ذخیره.");}
 }
 async function panelReset(){
@@ -1913,7 +1614,7 @@ async function saveKit(){
     const res=await postJSON("api/kit/",{colors:myKit});
     if(Array.isArray(res.colors))myKit=res.colors.slice();
     renderKitPicker();
-    showToast("ذخیره شد.","ok");
+    showToast("✅ رنگ‌های تیم ذخیره شد.","ok");
   }catch(err){showToast("❌ "+humanizeError(err),"err");}
 }
 
@@ -1950,7 +1651,7 @@ async function init(){
   if($("editPromptBtn")) $("editPromptBtn").onclick=editPrompt;
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
-  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
+  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
   $("deleteBot").onclick=deleteBot;
   if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
   if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;

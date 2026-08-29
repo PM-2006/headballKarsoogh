@@ -1051,8 +1051,6 @@ def _frame(world: World) -> dict:
         "ball": {
             "x": round(world.ball.x, 3),
             "y": round(world.ball.y, 3),
-            "vx": round(world.ball.vx, 3),
-            "vy": round(world.ball.vy, 3),
         },
         "debug": world.debug,
     }
