@@ -248,7 +248,7 @@ def compile_persian_strategy(
             model=model,
             messages=messages,
             response_format=StrategyCompilerResponse,
-            temperature=0.1,
+            temperature=0.0,
             max_tokens=3500,
         )
         parsed_result = _parse_pydantic_response(response)
