@@ -60,10 +60,9 @@ PRESETS = {
     "predictive": {
         "label": "Predictive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(3, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(4, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(2, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(3, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
@@ -73,10 +72,9 @@ PRESETS = {
         "label": "Defensive",
         "rules": [
             rule(1, [condition("can_kick", "==", True), condition("ball_distance_to_own_goal", "<", 500)], "KICK_CLEAR"),
-            rule(2, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(3, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(4, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(5, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(3, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(4, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
@@ -97,11 +95,10 @@ PRESETS = {
     "adaptive": {
         "label": "Adaptive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(3, [condition("remaining_time", "<", 10), condition("score_difference", ">", 0), condition("ball_in_enemy_half", "==", True)], "MOVE_TO_GOAL"),
-            rule(4, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(5, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(2, [condition("remaining_time", "<", 10), condition("score_difference", ">", 0), condition("ball_in_enemy_half", "==", True)], "MOVE_TO_GOAL"),
+            rule(3, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(4, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
