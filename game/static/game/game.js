@@ -201,7 +201,7 @@ let authExpiredHandled=false;
 function handleAuthExpired(){
   if(authExpiredHandled)return;
   authExpiredHandled=true;
-  showToast("نشست تو به پایان رسیده است. در حال انتقال به صفحه ورود...","err");
+  showToast("نشست تمام شد.","err");
   const next=encodeURIComponent(location.pathname+location.search);
   setTimeout(()=>{location.href=`/accounts/login/?next=${next}`;},1500);
 }
@@ -215,7 +215,7 @@ async function postJSON(url,payload,method="POST"){
   if(response.status===401){handleAuthExpired();throw new Error("نشست تو به پایان رسیده است. دوباره وارد شو.");}
   let data;
   try{data=await response.json();}
-  catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
+  catch(e){throw new Error(response.ok?"پاسخ سرور خوانده نشد.":`خطای سرور (${response.status}).`);}
   if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
   return data;
 }
@@ -228,17 +228,17 @@ async function getJSON(url){
 // Turn any raw error into a short, clear Persian message a student can act on.
 function humanizeError(err){
   const raw=((err&&err.message)||String(err||"")).trim();
-  if(!raw)return "یک خطای ناشناخته رخ داد. دوباره تلاش کن.";
+  if(!raw)return "خطای ناشناخته.";
   if(/[؀-ۿ]/.test(raw))return raw; // already Persian — show as-is
   const map=[
-    [/failed to fetch|networkerror|load failed|ارتباط/i,"ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و دوباره تلاش کن."],
-    [/csrf/i,"نشست تو منقضی شده. صفحه را تازه کن (F5) و دوباره امتحان کن."],
-    [/preset.*strategy|strategy.*preset/i,"اول باید یک ربات بسازی یا یک نمونه انتخاب کنی."],
-    [/timeout|timed out/i,"سرور دیر جواب داد. یک بار دیگر امتحان کن."],
-    [/json/i,"پاسخ سرور قابل خواندن نبود. دوباره تلاش کن."],
+    [/failed to fetch|networkerror|load failed|ارتباط/i,"ارتباط قطع شد."],
+    [/csrf/i,"صفحه را تازه کن."],
+    [/preset.*strategy|strategy.*preset/i,"اول یک ربات بساز."],
+    [/timeout|timed out/i,"سرور دیر جواب داد."],
+    [/json/i,"پاسخ سرور خوانده نشد."],
   ];
   for(const [re,msg] of map)if(re.test(raw))return msg;
-  return "مشکلی پیش آمد: "+raw;
+  return raw;
 }
 // Transient popup notification (auto-dismisses). Errors stay a bit longer.
 function showToast(text,kind="err"){
@@ -333,7 +333,7 @@ function editPrompt(){
   ta.focus();
   const end=ta.value.length;
   try{ ta.setSelectionRange(end,end); }catch(e){}
-  setFeedback("متن را عوض کن و دوباره «✨ تبدیل استراتژی» را بزن تا مغز ربات به‌روز شود.");
+  setFeedback("متن را عوض کن و دوباره تبدیل کن.");
 }
 
 function renderCompiledStrategy(strategy){
@@ -404,7 +404,7 @@ function deleteBot(){
   cancelEdit();
   const badge=$("botBadge");if(badge){badge.className="bot-badge off";badge.textContent="ساخته نشده";}
   refreshOpponentMenus();
-  showToast("صفحه ربات پاکسازی شد.","ok");
+  showToast("پاک شد.","ok");
 }
 // ---- AI Clarification conversation state ----
 let aiConversation = {
@@ -622,9 +622,7 @@ async function compileWithAI(isContinuation = false){
 
     renderCompiledStrategy(result.strategy);
     setCurrentPrompt(text);
-    const extra=(result.feedback || []).join(" ");
-    const autoDecideNote = aiConversation.attempt > 2 ? " (مقادیر مبهم با پیش‌فرض‌های معقول ساخته شد)" : "";
-    setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد." + autoDecideNote + (extra ? " "+extra : ""),"ok");
+    setFeedback("بازی ساخته شد.","ok");
     resetAiConversation();
   }catch(err){
     setFeedback("❌ "+humanizeError(err),"err");
@@ -639,11 +637,11 @@ async function buildBot(){
   if(!simpleRules.length){setFeedback("حداقل یک تصمیم بساز.","err");return}
   for(let i=0;i<simpleRules.length;i++){
     const r=simpleRules[i];
-    if(!r.conds.length){setFeedback(`❌ تصمیم ${i+1} هیچ شرطی ندارد. حداقل یک «اگر» لازم است.`,"err");return}
+    if(!r.conds.length){setFeedback(`تصمیم ${i+1} شرط ندارد.`,"err");return}
     for(const ci of r.conds){
       const def=simpleConditions[ci.key];
       if(def&&def.param&&!Number.isFinite(Number(ci.value))){
-        setFeedback(`❌ در تصمیم ${i+1} برای «${def.label.replace("…","___")}» یک عدد معتبر وارد کن.`,"err");return;
+        setFeedback(`در تصمیم ${i+1} یک عدد وارد کن.`,"err");return;
       }
     }
   }
@@ -651,7 +649,7 @@ async function buildBot(){
   try{
     await postJSON("api/validate/",{strategy});myStrategy=strategy;setJsonView(strategy);$("humanBrain").classList.remove("empty");
     $("humanBrain").innerHTML=simpleRules.map((r,i)=>`<div class="brain-rule"><b>${i+1}.</b> اگر ${r.conds.map(condInstanceLabel).join(" <b>و</b> ")}<br>→ <b>${simpleActions[r.action]}</b></div>`).join("")+`<div class="brain-rule"><b>در غیر این صورت:</b> صبر کن</div>`;
-    markBotReady();setFeedback("✅ مغز ربات ساخته شد.","ok");refreshOpponentMenus();
+    markBotReady();setFeedback("ربات ساخته شد.","ok");refreshOpponentMenus();
   }catch(err){setFeedback("❌ "+humanizeError(err),"err")}
 }
 function setFeedback(text,kind=""){
@@ -1558,7 +1556,7 @@ function loadBotIntoBuilder(id){
     return;
   }
   if(!bot.is_owner || !bot.strategy){
-    showToast("مغز ربات‌های دیگران قابل مشاهده نیست.","err");
+    showToast("قابل ویرایش نیست.","err");
     return;
   }
   if(bot.is_owner){
@@ -1710,8 +1708,8 @@ async function panelSave(){
     const res=await postJSON("api/game-config/",{values:collectPanelValues()});
     if(res.config)applyClientConfig(res.config);
     if(res.groups)renderPanel(res.groups);
-    showToast("✅ تنظیمات برای همه ذخیره شد.","ok");
-    setPanelStatus("ذخیره شد ✓ — از این پس همهٔ مسابقه‌ها با این مقادیر اجرا می‌شوند.");
+    showToast("ذخیره شد.","ok");
+    setPanelStatus("ذخیره شد.");
   }catch(err){showToast("❌ "+humanizeError(err),"err");setPanelStatus("خطا در ذخیره.");}
 }
 async function panelReset(){
@@ -1819,7 +1817,7 @@ async function saveKit(){
     const res=await postJSON("api/kit/",{colors:myKit});
     if(Array.isArray(res.colors))myKit=res.colors.slice();
     renderKitPicker();
-    showToast("✅ رنگ‌های تیم ذخیره شد.","ok");
+    showToast("ذخیره شد.","ok");
   }catch(err){showToast("❌ "+humanizeError(err),"err");}
 }
 
@@ -1856,7 +1854,7 @@ async function init(){
   if($("editPromptBtn")) $("editPromptBtn").onclick=editPrompt;
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
-  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز، بعد آزمایشش کن.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
+  $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
   $("deleteBot").onclick=deleteBot;
   if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
   if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;

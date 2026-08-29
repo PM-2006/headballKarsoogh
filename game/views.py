@@ -71,9 +71,7 @@ def api_login_required(view):
 # both slower; run gunicorn with one worker per vCPU to use every core.
 _BATCH_SLOT = threading.BoundedSemaphore(1)
 
-BATCH_BUSY_MESSAGE = (
-    "سرور در حال اجرای یک Batch Test دیگر است. چند لحظه دیگر دوباره تلاش کن."
-)
+BATCH_BUSY_MESSAGE = "سرور مشغول است. کمی بعد دوباره تلاش کن."
 
 
 def _result_key(kind, config, *parts):
@@ -465,11 +463,7 @@ def api_game_active(request):
     logger.info("game-active set to %s by %s", active, request.user.username)
     return JsonResponse({
         "active": active,
-        "message": (
-            "بازی برای همهٔ کاربران فعال شد."
-            if active
-            else "بازی غیرفعال شد. تا فعال‌سازی دوباره، فقط مدیران دسترسی دارند."
-        ),
+        "message": "بازی فعال شد." if active else "بازی غیرفعال شد.",
     })
 
 
