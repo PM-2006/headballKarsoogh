@@ -236,16 +236,4 @@ STANDARD PERSIAN SEMANTIC MAPPINGS
 - «بازی مساوی است» -> score_difference == 0
 - «توپ بالای سرم است» -> ball_above_me == true
 - «توپ به سمت من می‌آید» -> ball_moving_toward_me == true
-- «روی زمین هستم» -> on_ground == true
-- «در هوا هستم / در حال پرش هستم» -> on_ground == false
-
-JUMP + AIRBORNE KICK MAPPING
-- JUMP is a take-off action; the player is allowed to kick while airborne.
-- can_kick is valid both on the ground and in the air.
-- If the student explicitly asks to jump and then shoot while airborne, compile it as ordered rules:
-  1) the student's jump condition + on_ground == true -> JUMP
-  2) on_ground == false + can_kick == true -> the explicitly requested kick action
-- KICK_LOW, KICK_HIGH, and KICK_CLEAR are all allowed while airborne.
-- Do not invent a kick type. If the student only says «شوت» without high/low/clear, ask for clarification.
-
 """.strip()

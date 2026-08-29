@@ -44,77 +44,76 @@ def rule(priority, conditions, action):
 # KICK_CLEAR hits hardest but lofts the ball, handing possession back; the
 # defensive presets use it only inside their own danger zone for that reason.
 PRESETS = {
-    # Straight-ahead pressure: runs at the ball, lobs once it is upfield, and is
-    # the only preset that leaves the ground. Weakest of the six on purpose.
     "aggressive": {
         "label": "Aggressive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(3, [condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 70)], "JUMP"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 190)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(4, [condition("can_kick", "==", True)], "KICK_LOW"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
-    # Reads the bounce and gets to the landing spot first, then drives the ball
-    # flat. No wasted motion -- and no jumping.
     "predictive": {
         "label": "Predictive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(3, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(4, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 180)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(4, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(5, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(6, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
-    # Hammers the ball away only when it is genuinely near its own goal, and
-    # plays flat everywhere else. Contests every ball rather than sitting back.
     "defensive": {
         "label": "Defensive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_distance_to_own_goal", "<", 500)], "KICK_CLEAR"),
-            rule(2, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(3, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(4, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(5, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 175)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_distance_to_own_goal", "<", 500)], "KICK_CLEAR"),
+            rule(4, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(5, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(6, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(7, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
-    # Boots the ball out of its own half, then launches it long from the other
-    # side, chasing the landing spot the whole way.
     "counter": {
         "label": "Counter Attack",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_own_half", "==", True)], "KICK_CLEAR"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_HIGH"),
-            rule(3, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(4, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 190)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_in_own_half", "==", True)], "KICK_CLEAR"),
+            rule(4, [condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(5, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(6, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
-    # Plays it straight for most of the match, then chases the scoreline in the
-    # last ten seconds: sit on a lead, or throw everything forward when behind.
     "adaptive": {
         "label": "Adaptive",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_LOW"),
-            rule(3, [condition("remaining_time", "<", 10), condition("score_difference", ">", 0), condition("ball_in_enemy_half", "==", True)], "MOVE_TO_GOAL"),
-            rule(4, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(5, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 180)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_in_enemy_half", "==", True)], "KICK_HIGH"),
+            rule(4, [condition("can_kick", "==", True)], "KICK_LOW"),
+            rule(5, [condition("remaining_time", "<", 10), condition("score_difference", ">", 0), condition("ball_in_enemy_half", "==", True)], "MOVE_TO_GOAL"),
+            rule(6, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(7, [condition("remaining_time", "<", 10), condition("score_difference", "<", 0), condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },
-    # Clears anything that reaches its danger zone, launches it long from
-    # elsewhere, and drops onto its line once the ball is parked deep upfield.
     "goalie": {
         "label": "Goal Keeper",
         "rules": [
-            rule(1, [condition("can_kick", "==", True), condition("ball_distance_to_own_goal", "<", 600)], "KICK_CLEAR"),
-            rule(2, [condition("can_kick", "==", True)], "KICK_HIGH"),
-            rule(3, [condition("opponent_distance_to_ball", "<", "distance_to_ball", "sensor"), condition("ball_in_enemy_half", "==", True), condition("ball_distance_to_own_goal", ">", 1100)], "MOVE_TO_GOAL"),
-            rule(4, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
-            rule(5, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
+            rule(1, [condition("on_ground", "==", True), condition("ball_above_me", "==", True), condition("distance_to_ball", "<", 185)], "JUMP"),
+            rule(2, [condition("on_ground", "==", False), condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(3, [condition("can_kick", "==", True), condition("ball_distance_to_own_goal", "<", 600)], "KICK_CLEAR"),
+            rule(4, [condition("can_kick", "==", True)], "KICK_HIGH"),
+            rule(5, [condition("opponent_distance_to_ball", "<", "distance_to_ball", "sensor"), condition("ball_in_enemy_half", "==", True), condition("ball_distance_to_own_goal", ">", 1100)], "MOVE_TO_GOAL"),
+            rule(6, [condition("predicted_ball_x", "<", "my_x", "sensor")], "MOVE_LEFT"),
+            rule(7, [condition("predicted_ball_x", ">=", "my_x", "sensor")], "MOVE_RIGHT"),
         ],
         "default_action": "MOVE_TO_BALL",
     },

@@ -8,7 +8,7 @@ import random
 from .validators import validate_strategy
 
 
-PHYSICS_VERSION = "v3.2-jump-air-kicks"
+PHYSICS_VERSION = "v3-headball-fast-arcade"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -422,18 +422,8 @@ def _condition_true(cond: dict, state: dict) -> bool:
 
 def _choose_action(strategy: dict, state: dict) -> tuple[int | str, str]:
     for item in sorted(strategy["rules"], key=lambda row: row["priority"]):
-        if not all(_condition_true(cond, state) for cond in item["conditions"]):
-            continue
-
-        action = item["action"]
-
-        # JUMP means "take off now". Once the player is already airborne,
-        # skip JUMP and allow the next matching rule (for example a kick).
-        if action == "JUMP" and not state["on_ground"]:
-            continue
-
-        return item["priority"], action
-
+        if all(_condition_true(cond, state) for cond in item["conditions"]):
+            return item["priority"], item["action"]
     return "default", strategy.get("default_action", "IDLE")
 
 
