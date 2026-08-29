@@ -4,6 +4,7 @@ from . import views
 app_name = "game"
 urlpatterns = [
     path("", views.index, name="index"),
+    path("healthz/", views.healthz, name="healthz"),
     path("api/vocabulary/", views.api_vocabulary, name="api_vocabulary"),
     path("api/validate/", views.api_validate_strategy, name="api_validate"),
     path("api/compile-strategy/", views.api_compile_strategy, name="api_compile_strategy"),

@@ -194,6 +194,17 @@ function quickPreset(name){
   if(name==="late")simpleRules=[mkRule(["time_left_lt","losing"],"MOVE_TO_BALL"),mkRule(["time_left_lt","winning"],"MOVE_TO_GOAL"),mkRule(["can_kick"],"KICK_LOW")];
   renderSimpleRules();
 }
+// A session can end while the page is still open -- it expires, or signing in
+// elsewhere invalidates this one. The API answers 401 for that, so send the
+// student back to the login page instead of leaving them clicking a dead UI.
+let authExpiredHandled=false;
+function handleAuthExpired(){
+  if(authExpiredHandled)return;
+  authExpiredHandled=true;
+  showToast("نشست تو به پایان رسیده است. در حال انتقال به صفحه ورود...","err");
+  const next=encodeURIComponent(location.pathname+location.search);
+  setTimeout(()=>{location.href=`/accounts/login/?next=${next}`;},1500);
+}
 async function postJSON(url,payload,method="POST"){
   let response;
   try{
@@ -201,11 +212,18 @@ async function postJSON(url,payload,method="POST"){
     if(method!=="GET"&&method!=="HEAD") opts.body=JSON.stringify(payload||{});
     response=await fetch(url,opts);
   }catch(e){throw new Error("ارتباط با سرور برقرار نشد. مطمئن شو سرور روشن است و اینترنت وصل است، بعد دوباره تلاش کن.");}
+  if(response.status===401){handleAuthExpired();throw new Error("نشست تو به پایان رسیده است. دوباره وارد شو.");}
   let data;
   try{data=await response.json();}
   catch(e){throw new Error(response.ok?"پاسخ سرور قابل خواندن نبود. یک بار دیگر امتحان کن.":`سرور با خطا پاسخ داد (کد ${response.status}).`);}
   if(!response.ok)throw new Error(data.error||`خطای سرور (کد ${response.status}).`);
   return data;
+}
+// Same 401 handling for the plain GETs that do not go through postJSON.
+async function getJSON(url){
+  const response=await fetch(url);
+  if(response.status===401){handleAuthExpired();throw new Error("نشست تو به پایان رسیده است. دوباره وارد شو.");}
+  return response.json();
 }
 // Turn any raw error into a short, clear Persian message a student can act on.
 function humanizeError(err){
@@ -362,7 +380,7 @@ async function viewBot(id){
   if(!strategy){
     // Fall back to fetching the single bot's brain on demand.
     try{
-      const res=await fetch(`api/strategies/${id}/`).then(r=>r.json());
+      const res=await getJSON(`api/strategies/${id}/`);
       strategy=res && res.strategy && res.strategy.strategy;
     }catch(e){}
   }
@@ -394,10 +412,7 @@ async function compileWithAI(){
   try{
     $("compileWithAI").disabled=true;
     $("compileWithAI").textContent="در حال فهمیدن استراتژی...";
-    $("llmMeta").textContent="";
     const result=await postJSON("api/compile-strategy/",{text});
-    const usage=result.usage || {};
-    $("llmMeta").textContent=`مدل: ${result.model || "DeepSeek V4 Flash"} — Token: ${usage.total_tokens || 0} (ورودی ${usage.prompt_tokens || 0} / خروجی ${usage.completion_tokens || 0})`;
     if(!result.valid){
       const msg=(result.feedback || []).join(" ");
       setFeedback("❌ "+(msg || "استراتژی قابل تبدیل نبود."),"err");
@@ -1221,7 +1236,7 @@ function refreshOpponentMenus(){
 
 async function loadStrategiesFromServer(){
   try{
-    const res=await fetch("api/strategies/").then(r=>r.json());
+    const res=await getJSON("api/strategies/");
     isAdmin=!!res.is_admin;
     currentUsername=res.username || "";
     savedStrategies=res.my_strategies || [];
@@ -1411,7 +1426,7 @@ function setPanelStatus(t){const el=$("panelStatus");if(el)el.textContent=t;}
 async function ensurePanelLoaded(){
   if(panelLoaded||!$("panelGroups"))return;
   try{
-    const data=await fetch("api/game-config/").then(r=>r.json());
+    const data=await getJSON("api/game-config/");
     if(data.error){setPanelStatus("❌ "+data.error);return;}
     renderPanel(data.groups);panelLoaded=true;
     setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
@@ -1502,7 +1517,7 @@ async function panelTest(){
 let activeKitSlot=0;
 async function fetchKit(){
   try{
-    const data=await fetch("api/kit/").then(r=>r.json());
+    const data=await getJSON("api/kit/");
     if(Array.isArray(data.palette))kitPalette=data.palette;
     if(Array.isArray(data.colors)&&data.colors.length===3)myKit=data.colors.slice();
     renderKitPicker();
@@ -1583,7 +1598,7 @@ function fillGuideNumbers(){
 
 async function init(){
   readInjectedConfig();
-  vocabulary=await fetch("api/vocabulary/").then(r=>r.json());
+  vocabulary=await getJSON("api/vocabulary/");
   if(vocabulary&&vocabulary.config){
     Object.assign(gameConfig,vocabulary.config);
     updateCanvasDimensions();

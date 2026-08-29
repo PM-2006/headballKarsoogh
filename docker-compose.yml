@@ -25,7 +25,7 @@ services:
     mem_limit: ${MEM_LIMIT:-1200m}
     cpus: ${CPU_LIMIT:-2}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/vocabulary/')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/')"]
       interval: 30s
       timeout: 5s
       retries: 3

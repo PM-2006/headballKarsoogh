@@ -1,6 +1,8 @@
 from __future__ import annotations
+import functools
 import hashlib
 import json
+import logging
 import threading
 from django.contrib.auth.decorators import login_required
 from django.core.cache import cache
@@ -33,6 +35,34 @@ from .services.llm import (
     LLMServiceError,
     compile_persian_strategy,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def api_login_required(view):
+    """@login_required for JSON endpoints: answers 401 instead of redirecting.
+
+    The stock decorator sends an unauthenticated caller a 302 to the HTML login
+    page. fetch() follows redirects transparently, so the browser ends up
+    handing response.json() a login page carrying status 200 -- the request
+    looks successful and the parse fails, which surfaced to students as
+    "the server response could not be read" when all that had happened was that
+    their session ended. A 401 with a JSON body lets the client say so plainly.
+    """
+
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return JsonResponse(
+                {
+                    "error": "نشست شما به پایان رسیده است. دوباره وارد شو.",
+                    "auth_required": True,
+                },
+                status=401,
+            )
+        return view(request, *args, **kwargs)
+
+    return wrapper
 
 # Only one batch at a time per worker process. A batch is a pure-CPU loop, so
 # running two in one process just splits a single core between them and makes
@@ -104,6 +134,18 @@ def _resolve_strategy(payload, key, user=None):
         raise StrategyValidationError(f"{key} must contain either 'preset', 'strategy_id', or 'strategy'.")
     return validate_strategy(strategy)
 
+@require_GET
+def healthz(request):
+    """Unauthenticated liveness probe for the container healthcheck.
+
+    The check used to call /api/vocabulary/. Once that endpoint required a
+    session it answered with a redirect to the login page, so the probe was
+    really only asserting that the login page renders -- it would have reported
+    a healthy container with a completely broken API.
+    """
+    return JsonResponse({"status": "ok"})
+
+
 @login_required
 @ensure_csrf_cookie
 def index(request):
@@ -120,12 +162,12 @@ def index(request):
         },
     )
 
-@login_required
+@api_login_required
 @require_GET
 def api_vocabulary(request):
     return JsonResponse(vocabulary())
 
-@login_required
+@api_login_required
 @require_POST
 def api_validate_strategy(request):
     try:
@@ -135,7 +177,7 @@ def api_validate_strategy(request):
     except StrategyValidationError as exc:
         return JsonResponse({"valid": False, "error": str(exc)}, status=400)
 
-@login_required
+@api_login_required
 @require_http_methods(["GET", "POST"])
 def api_strategies(request):
     if request.method == "GET":
@@ -210,7 +252,7 @@ def api_strategies(request):
         return JsonResponse({"error": f"خطا در ذخیره‌سازی: {exc}"}, status=500)
 
 
-@login_required
+@api_login_required
 @require_http_methods(["GET", "PUT", "POST", "DELETE"])
 def api_strategy_detail(request, pk: int):
     try:
@@ -282,7 +324,7 @@ def api_strategy_detail(request, pk: int):
         return JsonResponse({"error": f"خطا در ویرایش استراتژی: {exc}"}, status=500)
 
 
-@login_required
+@api_login_required
 @require_POST
 def api_simulate(request):
     try:
@@ -306,7 +348,7 @@ def api_simulate(request):
     except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
-@login_required
+@api_login_required
 @require_POST
 def api_batch(request):
     try:
@@ -337,7 +379,7 @@ def api_batch(request):
     return JsonResponse(result)
 
 
-@login_required
+@api_login_required
 @require_http_methods(["GET", "POST"])
 def api_kit(request):
     """Get the current user's team-kit colours + the palette, or save new ones."""
@@ -366,7 +408,7 @@ def _forbidden():
     return JsonResponse({"error": "دسترسی فقط برای مدیر ارشد مجاز است."}, status=403)
 
 
-@login_required
+@api_login_required
 @require_http_methods(["GET", "POST"])
 def api_game_config(request):
     """Superuser-only: read the tunable config spec (GET) or save overrides (POST)."""
@@ -395,7 +437,7 @@ def api_game_config(request):
         return JsonResponse({"error": f"خطا در ذخیره تنظیمات: {exc}"}, status=500)
 
 
-@login_required
+@api_login_required
 @require_POST
 def api_game_config_reset(request):
     """Superuser-only: clear all overrides, back to code/env defaults."""
@@ -413,12 +455,24 @@ def api_game_config_reset(request):
     })
 
 
-@login_required
+@api_login_required
 @require_POST
 def api_compile_strategy(request):
     try:
         payload = _json_body(request)
         result = compile_persian_strategy(payload.get("text", ""))
+        # The model name and token counts are operational detail. They are worth
+        # keeping for cost tracking but are not the student's business, and
+        # anything returned here is readable from the browser's network tab, so
+        # they get logged rather than serialised into the response.
+        model = result.pop("model", None)
+        usage = result.pop("usage", None)
+        logger.info(
+            "compile-strategy user=%s model=%s usage=%s",
+            request.user.username,
+            model,
+            usage,
+        )
         return JsonResponse(result)
     except StrategyValidationError as exc:
         return JsonResponse({"valid": False, "error": str(exc)}, status=400)
