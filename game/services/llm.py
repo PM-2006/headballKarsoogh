@@ -20,6 +20,7 @@ from openai import (
 from pydantic import ValidationError
 
 from game.prompts.strategy_compiler import (
+    ClarificationQuestion,
     StrategyCompilerResponse,
     build_strategy_compiler_prompt,
 )
@@ -179,10 +180,22 @@ def _parse_pydantic_response(response: Any) -> StrategyCompilerResponse:
         raise
 
 
-def compile_persian_strategy(text: str) -> dict[str, Any]:
+def compile_persian_strategy(
+    text: str,
+    attempt: int = 1,
+    conversation_history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """
     Compile a Persian natural language football strategy into an executable Strategy dictionary
     using Pydantic structured schemas and the official OpenAI SDK.
+
+    Supports a multi-round clarification flow:
+    - attempt=1: first try, AI may ask up to 5 clarification questions
+    - attempt=2: second try with answers, AI may ask 5 more questions
+    - attempt>=3: final try, AI must decide with reasonable defaults
+
+    conversation_history is a list of {"questions": [...], "answers": [...]} dicts
+    from previous rounds.
     """
     text = (text or "").strip()
     if not text:
@@ -190,14 +203,41 @@ def compile_persian_strategy(text: str) -> dict[str, Any]:
     if len(text) > 5000:
         raise StrategyValidationError("متن استراتژی بیش از حد مجاز (۵۰۰۰ کاراکتر) است.")
 
+    attempt = max(1, min(attempt, 10))  # Clamp to sane range
+    conversation_history = conversation_history or []
+
     api_key, base_url, model = _get_llm_config()
     client = _client(api_key, base_url)
 
-    system_prompt = build_strategy_compiler_prompt()
+    system_prompt = build_strategy_compiler_prompt(attempt=attempt)
     user_prompt = (
-        "متن زیر فقط استراتژی فوتبال دانش‌آموز است. آن را مطابق با ساختار مشخص‌شده کامپایل کن:\n\n"
+        f"متن زیر فقط استراتژی فوتبال دانش‌آموز است. این تلاش شماره {attempt} است."
+        " آن را مطابق با ساختار مشخص‌شده کامپایل کن:\n\n"
         + text
     )
+
+    # Build messages list with conversation history
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    # Append previous Q&A rounds as assistant/user message pairs
+    for round_data in conversation_history:
+        questions = round_data.get("questions", [])
+        answers = round_data.get("answers", [])
+        if questions:
+            q_text = "سوال‌های من برای روشن‌تر شدن استراتژی:\n"
+            for i, q in enumerate(questions, 1):
+                q_label = q.get("question", q) if isinstance(q, dict) else str(q)
+                q_text += f"{i}. {q_label}\n"
+            messages.append({"role": "assistant", "content": q_text})
+        if answers:
+            a_text = "جواب‌های دانش‌آموز:\n"
+            for i, a in enumerate(answers, 1):
+                a_text += f"{i}. {a}\n"
+            messages.append({"role": "user", "content": a_text})
+
 
     response = None
     parsed_result = None
@@ -206,10 +246,7 @@ def compile_persian_strategy(text: str) -> dict[str, Any]:
     try:
         response = client.beta.chat.completions.parse(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
+            messages=messages,
             response_format=StrategyCompilerResponse,
             temperature=0.1,
             max_tokens=3500,
@@ -218,18 +255,17 @@ def compile_persian_strategy(text: str) -> dict[str, Any]:
     except Exception:
         # Step 2: Fallback for proxies or models that don't support beta.chat.completions.parse
         try:
+            # Append schema hint to the last user message for the fallback path
+            fallback_messages = list(messages)
+            last_msg = fallback_messages[-1]
+            fallback_messages[-1] = {
+                "role": last_msg["role"],
+                "content": last_msg["content"]
+                    + "\n\nپاسخ باید دقیقاً یک JSON معتبر منطبق بر اسکیمای StrategyCompilerResponse باشد.",
+            }
             response = client.chat.completions.create(
                 model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {
-                        "role": "user",
-                        "content": (
-                            user_prompt
-                            + "\n\nپاسخ باید دقیقاً یک JSON معتبر منطبق بر اسکیمای StrategyCompilerResponse باشد."
-                        ),
-                    },
-                ],
+                messages=fallback_messages,
                 temperature=0.0,
                 max_tokens=3500,
             )
@@ -275,10 +311,31 @@ def compile_persian_strategy(text: str) -> dict[str, Any]:
     usage_summary = _usage_summary(response)
     model_name = getattr(response, "model", None) or model
 
+    # If the AI is asking clarification questions (and hasn't exceeded max rounds)
+    if parsed_result.needs_clarification and parsed_result.questions and attempt <= 2:
+        return {
+            "valid": False,
+            "needs_clarification": True,
+            "questions": [
+                {
+                    "question": q.question,
+                    "options": q.options,
+                }
+                for q in parsed_result.questions[:5]
+            ],
+            "feedback": parsed_result.feedback,
+            "strategy": None,
+            "attempt": attempt,
+            "model": model_name,
+            "usage": usage_summary,
+        }
+
     # If the student's strategy could not be compiled cleanly
     if not parsed_result.valid or parsed_result.strategy is None:
         return {
             "valid": False,
+            "needs_clarification": False,
+            "questions": [],
             "feedback": parsed_result.feedback
             or ["این استراتژی هنوز به شرط‌های دقیق و قابل اجرا تبدیل نمی‌شود."],
             "strategy": None,
@@ -300,6 +357,8 @@ def compile_persian_strategy(text: str) -> dict[str, Any]:
 
     return {
         "valid": True,
+        "needs_clarification": False,
+        "questions": [],
         "feedback": parsed_result.feedback,
         "strategy": strategy_dict,
         "model": model_name,

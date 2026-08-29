@@ -496,21 +496,31 @@ def api_game_config_reset(request):
 def api_compile_strategy(request):
     try:
         payload = _json_body(request)
-        result = compile_persian_strategy(payload.get("text", ""))
+        text = payload.get("text", "")
+        attempt = int(payload.get("attempt", 1))
+        conversation_history = payload.get("conversation_history") or []
+
+        result = compile_persian_strategy(
+            text,
+            attempt=attempt,
+            conversation_history=conversation_history,
+        )
         # The model name and token counts are operational detail. They are worth
         # keeping for cost tracking but are not the student's business, and
         # anything returned here is readable from the browser's network tab, so
         # they get logged rather than serialised into the response.
         model = result.pop("model", None)
         usage = result.pop("usage", None)
+        result.pop("attempt", None)  # Internal tracking, not for the client
         logger.info(
-            "compile-strategy user=%s model=%s usage=%s",
+            "compile-strategy user=%s model=%s attempt=%s usage=%s",
             request.user.username,
             model,
+            attempt,
             usage,
         )
         return JsonResponse(result)
-    except StrategyValidationError as exc:
+    except (StrategyValidationError, ValueError, TypeError) as exc:
         return JsonResponse({"valid": False, "error": str(exc)}, status=400)
     except LLMConfigurationError as exc:
         return JsonResponse({"valid": False, "error": str(exc)}, status=503)

@@ -406,24 +406,229 @@ function deleteBot(){
   refreshOpponentMenus();
   showToast("صفحه ربات پاکسازی شد.","ok");
 }
-async function compileWithAI(){
-  const text=$("strategyText").value.trim();
+// ---- AI Clarification conversation state ----
+let aiConversation = {
+  attempt: 0,
+  history: [],   // [{questions: [...], answers: [...]}]
+  text: "",      // original strategy text
+};
+function resetAiConversation(){
+  aiConversation = { attempt: 0, history: [], text: "" };
+  const panel = $("clarificationPanel");
+  if(panel) panel.remove();
+}
+
+function renderClarificationQuestions(questions) {
+  // Remove any existing panel
+  let panel = $("clarificationPanel");
+  if(panel) panel.remove();
+
+  const container = $("strategyText").parentElement;
+  panel = document.createElement("div");
+  panel.id = "clarificationPanel";
+  panel.className = "clarification-panel";
+
+  const roundNum = aiConversation.attempt;
+  const header = document.createElement("div");
+  header.className = "clarification-header";
+  header.innerHTML = `<span class="clarification-icon">🤔</span> <span>برای ساختن استراتژی‌ات، به چند تا جواب نیاز دارم:</span> <span class="clarification-round">مرحله ${roundNum} از ۲</span>`;
+  panel.appendChild(header);
+
+  const form = document.createElement("div");
+  form.className = "clarification-form";
+
+  questions.forEach((q, idx) => {
+    const qBlock = document.createElement("div");
+    qBlock.className = "clarification-question";
+
+    const label = document.createElement("div");
+    label.className = "clarification-label";
+    label.textContent = `${idx + 1}. ${q.question}`;
+    qBlock.appendChild(label);
+
+    if (q.options && q.options.length > 0) {
+      const optionsRow = document.createElement("div");
+      optionsRow.className = "clarification-options";
+      q.options.forEach(opt => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "clarification-option-btn";
+        btn.textContent = opt;
+        btn.onclick = () => {
+          // Deselect siblings, select this one
+          optionsRow.querySelectorAll(".clarification-option-btn").forEach(b => b.classList.remove("selected"));
+          btn.classList.add("selected");
+          // Also fill the text input
+          const input = qBlock.querySelector(".clarification-input");
+          if(input) input.value = opt;
+        };
+        optionsRow.appendChild(btn);
+      });
+      qBlock.appendChild(optionsRow);
+
+      // Also add a small text input for custom answer
+      const customRow = document.createElement("div");
+      customRow.className = "clarification-custom";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "clarification-input";
+      input.placeholder = "یا جواب خودت رو بنویس...";
+      input.dataset.qidx = idx;
+      input.oninput = () => {
+        // Deselect option buttons when typing custom
+        optionsRow.querySelectorAll(".clarification-option-btn").forEach(b => b.classList.remove("selected"));
+      };
+      customRow.appendChild(input);
+      qBlock.appendChild(customRow);
+    } else {
+      // Free-text question
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "clarification-input full-width";
+      input.placeholder = "جوابت رو بنویس...";
+      input.dataset.qidx = idx;
+      qBlock.appendChild(input);
+    }
+
+    form.appendChild(qBlock);
+  });
+
+  panel.appendChild(form);
+
+  const actions = document.createElement("div");
+  actions.className = "clarification-actions";
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "button";
+  submitBtn.className = "primary clarification-submit";
+  submitBtn.textContent = "✅ ارسال جواب‌ها";
+  submitBtn.onclick = submitClarificationAnswers;
+  actions.appendChild(submitBtn);
+
+  const skipBtn = document.createElement("button");
+  skipBtn.type = "button";
+  skipBtn.className = "clarification-skip";
+  skipBtn.textContent = "⏭ رد شو، خودت تصمیم بگیر";
+  skipBtn.onclick = skipClarification;
+  actions.appendChild(skipBtn);
+
+  panel.appendChild(actions);
+
+  container.insertBefore(panel, $("strategyText").nextSibling);
+  panel.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function collectAnswers() {
+  const panel = $("clarificationPanel");
+  if (!panel) return [];
+  const inputs = panel.querySelectorAll(".clarification-input");
+  const answers = [];
+  inputs.forEach(inp => {
+    const val = (inp.value || "").trim();
+    // Check if an option button is selected
+    const qBlock = inp.closest(".clarification-question");
+    if (!val && qBlock) {
+      const selected = qBlock.querySelector(".clarification-option-btn.selected");
+      answers.push(selected ? selected.textContent : "");
+    } else {
+      answers.push(val);
+    }
+  });
+  return answers;
+}
+
+async function submitClarificationAnswers() {
+  const answers = collectAnswers();
+  const unanswered = answers.filter(a => !a).length;
+  if (unanswered > 0) {
+    showToast(`${unanswered} سوال بدون جواب مانده. لطفاً همه رو جواب بده.`, "err");
+    return;
+  }
+
+  // Get last round's questions from conversation
+  const lastRound = aiConversation.history[aiConversation.history.length - 1];
+  if (lastRound) {
+    lastRound.answers = answers;
+  }
+
+  // Remove clarification panel
+  const panel = $("clarificationPanel");
+  if (panel) panel.remove();
+
+  // Continue with next attempt
+  await compileWithAI(true);
+}
+
+async function skipClarification() {
+  // Fill any unanswered with empty, then force final attempt
+  const answers = collectAnswers();
+  const lastRound = aiConversation.history[aiConversation.history.length - 1];
+  if (lastRound) {
+    lastRound.answers = answers;
+  }
+
+  // Force attempt 3 (force decide mode)
+  aiConversation.attempt = 3;
+  const panel = $("clarificationPanel");
+  if (panel) panel.remove();
+  await compileWithAI(true);
+}
+
+async function compileWithAI(isContinuation = false){
+  const text = $("strategyText").value.trim();
   if(!text){setFeedback("اول استراتژی را بنویس.","err");return}
+
+  // If the text changed, reset conversation
+  if (!isContinuation || aiConversation.text !== text) {
+    resetAiConversation();
+    aiConversation.text = text;
+  }
+
+  aiConversation.attempt++;
+
   try{
     $("compileWithAI").disabled=true;
-    $("compileWithAI").textContent="در حال فهمیدن استراتژی...";
-    const result=await postJSON("api/compile-strategy/",{text});
+    $("compileWithAI").textContent = aiConversation.attempt > 1 ? "در حال پردازش جواب‌ها..." : "در حال فهمیدن استراتژی...";
+
+    const result = await postJSON("api/compile-strategy/", {
+      text,
+      attempt: aiConversation.attempt,
+      conversation_history: aiConversation.history,
+    });
+
+    // AI is asking clarification questions
+    if (result.needs_clarification && result.questions && result.questions.length > 0) {
+      // Store this round's questions
+      aiConversation.history.push({
+        questions: result.questions,
+        answers: [],  // Will be filled when user submits
+      });
+
+      const feedbackMsg = (result.feedback || []).join(" ");
+      if (feedbackMsg) {
+        showToast("💬 " + feedbackMsg, "ok");
+      }
+
+      renderClarificationQuestions(result.questions);
+      return;
+    }
+
     if(!result.valid){
       const msg=(result.feedback || []).join(" ");
       setFeedback("❌ "+(msg || "استراتژی قابل تبدیل نبود."),"err");
+      resetAiConversation();
       return;
     }
+
     renderCompiledStrategy(result.strategy);
     setCurrentPrompt(text);
     const extra=(result.feedback || []).join(" ");
-    setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد."+(extra ? " "+extra : ""),"ok");
+    const autoDecideNote = aiConversation.attempt > 2 ? " (مقادیر مبهم با پیش‌فرض‌های معقول ساخته شد)" : "";
+    setFeedback("✅ استراتژی توسط مدل ساخته و توسط Validator بازی تأیید شد." + autoDecideNote + (extra ? " "+extra : ""),"ok");
+    resetAiConversation();
   }catch(err){
     setFeedback("❌ "+humanizeError(err),"err");
+    resetAiConversation();
   }finally{
     $("compileWithAI").disabled=false;
     $("compileWithAI").textContent="✨ تبدیل استراتژی";
