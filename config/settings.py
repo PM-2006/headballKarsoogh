@@ -89,7 +89,11 @@ CACHES = {
         "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
         "LOCATION": os.environ.get("DJANGO_CACHE_DIR", BASE_DIR / "data" / "cache"),
         "TIMEOUT": None,
-        "OPTIONS": {"MAX_ENTRIES": 4000, "CULL_FREQUENCY": 4},
+        # Every cache write globs this directory to decide whether to cull, which
+        # costs ~1.6ms at 4k entries and ~8.8ms at 20k -- negligible against the
+        # 155ms a cached replay saves, let alone the 7.4s a cached batch saves.
+        # 20k full replays is ~7GB worst case, well inside the disk we have.
+        "OPTIONS": {"MAX_ENTRIES": 20000, "CULL_FREQUENCY": 4},
     }
 }
 
