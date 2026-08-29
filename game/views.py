@@ -183,10 +183,10 @@ def api_validate_strategy(request):
 @require_http_methods(["GET", "POST"])
 def api_strategies(request):
     if request.method == "GET":
-        is_admin = bool(request.user.is_staff or request.user.is_superuser)
+        is_admin = bool(request.user.is_superuser)
         my_strategies = request.user.saved_strategies.select_related("user__kit").all()
         public_strategies = SavedStrategy.objects.filter(
-            Q(is_public=True) | Q(user__is_staff=True) | Q(user__is_superuser=True)
+            Q(user__is_superuser=True) | Q(is_public=True, user__is_staff=False)
         ).exclude(user=request.user).select_related("user__kit")
 
         resp = {
@@ -231,7 +231,7 @@ def api_strategies(request):
         validated_strategy = validate_strategy(raw_strategy)
         ai_prompt = payload.get("ai_prompt", "").strip()
         description = payload.get("description", "").strip()
-        is_public = bool(payload.get("is_public", False)) and (request.user.is_staff or request.user.is_superuser)
+        is_public = bool(payload.get("is_public", False)) and request.user.is_superuser
 
         saved = SavedStrategy.objects.create(
             user=request.user,

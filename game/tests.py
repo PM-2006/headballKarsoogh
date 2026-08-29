@@ -241,6 +241,39 @@ class SavedStrategyTests(TestCase):
         self.assertEqual(len(data["public_strategies"]), 1)
         self.assertEqual(data["public_strategies"][0]["name"], "Official Boss Bot")
 
+    def test_staff_bots_are_not_listed_as_public(self):
+        from .models import SavedStrategy
+        staff = User.objects.create_user(
+            username="staffer", password="pass123456user", is_staff=True
+        )
+        staff_bot = SavedStrategy.objects.create(
+            user=staff,
+            name="Staff Practice Bot",
+            strategy_data=self.sample_strategy,
+        )
+        # Older saves forced is_public=True on staff bots; those rows
+        # must still stay out of the public gallery.
+        SavedStrategy.objects.filter(pk=staff_bot.pk).update(is_public=True)
+        SavedStrategy.objects.create(
+            user=self.admin,
+            name="Official Boss Bot",
+            strategy_data=self.sample_strategy,
+        )
+
+        self.client.login(username="student1", password="pass123456user")
+        data = self.client.get(reverse("game:api_strategies")).json()
+        public_names = {b["name"] for b in data["public_strategies"]}
+        self.assertNotIn("Staff Practice Bot", public_names)
+        self.assertIn("Official Boss Bot", public_names)
+
+        self.client.logout()
+        self.client.login(username="staffer", password="pass123456user")
+        staff_data = self.client.get(reverse("game:api_strategies")).json()
+        my_names = {b["name"] for b in staff_data["my_strategies"]}
+        staff_public = {b["name"] for b in staff_data["public_strategies"]}
+        self.assertIn("Staff Practice Bot", my_names)
+        self.assertNotIn("Staff Practice Bot", staff_public)
+
     def test_permissions_user_cannot_edit_or_delete_others_strategy(self):
         from .models import SavedStrategy
         strat = SavedStrategy.objects.create(

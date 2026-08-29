@@ -69,10 +69,11 @@ class SavedStrategy(models.Model):
 
     @property
     def is_admin_strategy(self) -> bool:
-        """Returns True if created by staff/superuser or explicitly marked public."""
+        if self.user and self.user.is_staff and not self.user.is_superuser:
+            return False
         if self.is_public:
             return True
-        if self.user and (self.user.is_staff or self.user.is_superuser):
+        if self.user and self.user.is_superuser:
             return True
         return False
 
@@ -88,8 +89,8 @@ class SavedStrategy(models.Model):
             raise ValidationError({"strategy_data": f"ساختار استراتژی معتبر نیست: {exc}"}) from exc
 
     def save(self, *args, **kwargs) -> None:
-        # If user is admin/superuser, mark public by default if not set
-        if self.user and (self.user.is_staff or self.user.is_superuser):
+        # Superuser bots are official opponents. Staff bots stay private.
+        if self.user and self.user.is_superuser:
             self.is_public = True
 
         # Ensure label inside strategy_data matches name if not explicitly set
