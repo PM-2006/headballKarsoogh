@@ -242,6 +242,65 @@ def set_game_enabled(enabled: bool, user=None) -> bool:
     return obj.game_enabled
 
 
+SESSION_LIMIT_CACHE_KEY = "session_limit"
+SESSION_LIMIT_CACHE_TTL = 30
+MIN_SESSION_LIMIT = 1
+MAX_SESSION_LIMIT = 20
+
+
+def clamp_session_limit(value: Any) -> int:
+    """Coerce anything into a usable session ceiling.
+
+    Falls back to the strictest value rather than the most permissive one: a
+    garbled number should not quietly hand every student unlimited logins.
+    """
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return MIN_SESSION_LIMIT
+    return max(MIN_SESSION_LIMIT, min(MAX_SESSION_LIMIT, num))
+
+
+def get_session_limit() -> int:
+    """How many concurrent sessions an ordinary user may hold.
+
+    Read on every login, so the answer is cached like ``is_game_enabled``.
+    Defaults to 1 on any error, which is the behaviour that predates the setting.
+    """
+    from django.core.cache import cache
+
+    cached = cache.get(SESSION_LIMIT_CACHE_KEY)
+    if cached is not None:
+        return int(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        limit = MIN_SESSION_LIMIT if obj is None else clamp_session_limit(obj.session_limit)
+    except Exception:
+        return MIN_SESSION_LIMIT
+    cache.set(SESSION_LIMIT_CACHE_KEY, limit, SESSION_LIMIT_CACHE_TTL)
+    return limit
+
+
+def set_session_limit(value: Any, user=None) -> int:
+    """Store a new ceiling, and drop the cached answer immediately.
+
+    Nobody is logged out here: the new limit takes effect at each user's next
+    login, when their session list is pruned.
+    """
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.session_limit = clamp_session_limit(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(SESSION_LIMIT_CACHE_KEY, obj.session_limit, SESSION_LIMIT_CACHE_TTL)
+    return obj.session_limit
+
+
 def load_overrides() -> dict:
     """DB overrides, sanitized. Empty on any error (e.g. table not migrated yet)."""
     try:

@@ -457,6 +457,9 @@ class SingleSessionTests(TestCase):
     """Only the most recent login for a user stays valid."""
 
     def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
         self.password = "pass123456user"
         self.user = User.objects.create_user(username="oneuser", password=self.password)
 
@@ -545,6 +548,155 @@ class SingleSessionTests(TestCase):
         self.assertEqual(stale.get(reverse("game:index")).status_code, 302)
         self.assertEqual(fresh.get(reverse("game:index")).status_code, 200)
         self.assertEqual(UserSession.objects.filter(user=user).count(), 1)
+
+class SessionLimitTests(TestCase):
+    """The admin-configurable ceiling on concurrent sessions per user."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.password = "pass123456user"
+        self.user = User.objects.create_user(username="player", password=self.password)
+        self.admin = User.objects.create_superuser("boss", password="pw12345678")
+
+    def _login(self):
+        from django.test import Client
+
+        client = Client()
+        client.login(username="player", password=self.password)
+        return client
+
+    def _set_limit(self, value):
+        from .gameconfig import set_session_limit
+
+        return set_session_limit(value, user=self.admin)
+
+    def test_default_limit_is_one(self):
+        from .gameconfig import get_session_limit
+
+        self.assertEqual(get_session_limit(), 1)
+
+    def test_limit_of_three_keeps_three_sessions(self):
+        from .models import UserSession
+
+        self._set_limit(3)
+        clients = [self._login() for _ in range(3)]
+
+        for client in clients:
+            self.assertEqual(client.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 3)
+
+    def test_oldest_session_is_evicted_past_the_limit(self):
+        from .models import UserSession
+
+        self._set_limit(2)
+        oldest, middle = self._login(), self._login()
+        newest = self._login()
+
+        self.assertEqual(oldest.get(reverse("game:index")).status_code, 302)
+        self.assertEqual(middle.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(newest.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 2)
+
+    def test_lowering_the_limit_is_enforced_on_the_next_login(self):
+        from .models import UserSession
+
+        self._set_limit(3)
+        first, second = self._login(), self._login()
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 2)
+
+        # Nobody is kicked at the moment the limit drops...
+        self._set_limit(1)
+        self.assertEqual(first.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(second.get(reverse("game:index")).status_code, 200)
+
+        # ...but the next login prunes back down to the new ceiling.
+        third = self._login()
+        self.assertEqual(first.get(reverse("game:index")).status_code, 302)
+        self.assertEqual(second.get(reverse("game:index")).status_code, 302)
+        self.assertEqual(third.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=self.user).count(), 1)
+
+    def test_staff_stay_exempt_from_the_limit(self):
+        from django.test import Client
+        from .models import UserSession
+
+        self._set_limit(1)
+        staff = User.objects.create_user(
+            username="staffuser", password=self.password, is_staff=True
+        )
+        clients = []
+        for _ in range(3):
+            client = Client()
+            client.login(username="staffuser", password=self.password)
+            clients.append(client)
+
+        for client in clients:
+            self.assertEqual(client.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(UserSession.objects.filter(user=staff).count(), 3)
+
+    def test_other_users_are_untouched_by_a_prune(self):
+        from django.test import Client
+
+        self._set_limit(1)
+        other = User.objects.create_user(username="bystander", password=self.password)
+        other_client = Client()
+        other_client.login(username="bystander", password=self.password)
+
+        self._login()
+        self._login()
+
+        self.assertEqual(other_client.get(reverse("game:index")).status_code, 200)
+        self.assertEqual(int(other_client.session["_auth_user_id"]), other.pk)
+
+    def test_limit_is_clamped_to_the_allowed_range(self):
+        from .gameconfig import MAX_SESSION_LIMIT
+
+        self.assertEqual(self._set_limit(0), 1)
+        self.assertEqual(self._set_limit(-5), 1)
+        self.assertEqual(self._set_limit(9999), MAX_SESSION_LIMIT)
+        self.assertEqual(self._set_limit("junk"), 1)
+
+    def test_endpoint_is_superuser_only(self):
+        from .gameconfig import get_session_limit
+
+        self.client.login(username="player", password=self.password)
+        self.assertEqual(self.client.get("/api/session-limit/").status_code, 403)
+        resp = self.client.post(
+            "/api/session-limit/",
+            data=json.dumps({"limit": 5}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(get_session_limit(), 1)
+
+    def test_superuser_reads_and_writes_the_limit(self):
+        from .gameconfig import get_session_limit
+
+        self.client.login(username="boss", password="pw12345678")
+        read = self.client.get("/api/session-limit/")
+        self.assertEqual(read.status_code, 200)
+        self.assertEqual(json.loads(read.content)["limit"], 1)
+
+        write = self.client.post(
+            "/api/session-limit/",
+            data=json.dumps({"limit": 4}),
+            content_type="application/json",
+        )
+        self.assertEqual(write.status_code, 200)
+        self.assertEqual(json.loads(write.content)["limit"], 4)
+        self.assertEqual(get_session_limit(), 4)
+
+    def test_missing_limit_is_rejected(self):
+        self.client.login(username="boss", password="pw12345678")
+        resp = self.client.post(
+            "/api/session-limit/",
+            data=json.dumps({}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
 
 class GameActivationTests(TestCase):
     """The admin kill switch that closes the whole site to non-admins."""

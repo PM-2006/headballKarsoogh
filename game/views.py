@@ -22,9 +22,13 @@ from .engine import (
     simulate_match,
 )
 from .gameconfig import (
+    MAX_SESSION_LIMIT,
+    MIN_SESSION_LIMIT,
     config_with_overrides,
+    get_session_limit,
     is_game_enabled,
     set_game_enabled,
+    set_session_limit,
     reset_overrides,
     save_overrides,
     spec as config_spec,
@@ -464,6 +468,43 @@ def api_game_active(request):
     return JsonResponse({
         "active": active,
         "message": "بازی فعال شد." if active else "بازی غیرفعال شد.",
+    })
+
+
+@api_login_required
+@require_http_methods(["GET", "POST"])
+def api_session_limit(request):
+    """Superuser-only: read (GET) or set (POST) the concurrent-session ceiling.
+
+    Separate from api_game_config for the same reason as api_game_active: that
+    endpoint runs every value through save_overrides(), which only understands
+    the engine's bounded physics floats.
+    """
+    if not request.user.is_superuser:
+        return _forbidden()
+
+    if request.method == "GET":
+        return JsonResponse({
+            "limit": get_session_limit(),
+            "min": MIN_SESSION_LIMIT,
+            "max": MAX_SESSION_LIMIT,
+        })
+
+    try:
+        payload = _json_body(request)
+    except StrategyValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    if "limit" not in payload:
+        return JsonResponse({"error": "مقدار limit ارسال نشده است."}, status=400)
+
+    limit = set_session_limit(payload["limit"], user=request.user)
+    logger.info("session-limit set to %s by %s", limit, request.user.username)
+    return JsonResponse({
+        "limit": limit,
+        "min": MIN_SESSION_LIMIT,
+        "max": MAX_SESSION_LIMIT,
+        "message": f"حداکثر نشست همزمان روی {limit} تنظیم شد.",
     })
 
 

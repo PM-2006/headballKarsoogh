@@ -159,6 +159,16 @@ class GameConfigOverride(models.Model):
             "اگر غیرفعال شود، هیچ کاربری جز مدیران به بازی دسترسی نخواهد داشت."
         ),
     )
+    # Also outside ``overrides``, for the same reason: it is a whole number of
+    # sessions, not a bounded physics float.
+    session_limit = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name=_("حداکثر نشست همزمان"),
+        help_text=_(
+            "تعداد نشست‌هایی که هر کاربر عادی می‌تواند همزمان باز داشته باشد. "
+            "با ورود جدید، قدیمی‌ترین نشست‌های اضافه بسته می‌شوند. مدیران مستثنا هستند."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -215,9 +225,10 @@ class PlayerKit(models.Model):
 class UserSession(models.Model):
     """Maps each login session to the user holding it.
 
-    Ordinary users end up with exactly one row, because every login deletes their
-    other sessions first. Staff keep several: they are exempt from that delete, but
-    are still tracked so that demoting someone leaves no session unreachable.
+    Ordinary users end up with at most ``GameConfigOverride.session_limit`` rows,
+    because every login prunes their oldest sessions back down to that ceiling.
+    Staff keep as many as they like: they are exempt from that prune, but are
+    still tracked so that demoting someone leaves no session unreachable.
     """
 
     user = models.ForeignKey(

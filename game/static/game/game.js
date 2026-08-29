@@ -1728,7 +1728,7 @@ async function ensurePanelLoaded(){
     const data=await getJSON("api/game-config/");
     if(data.error){setPanelStatus("❌ "+data.error);return;}
     renderPanel(data.groups);panelLoaded=true;
-    refreshGameActive();
+    refreshGameActive();refreshSessionLimit();
     setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
   }catch(e){setPanelStatus("❌ خطا در بارگذاری تنظیمات.");}
 }
@@ -1797,6 +1797,34 @@ async function toggleGameActive(){
     showToast(res.message||"انجام شد.",gameActive?"ok":"err");
   }catch(err){showToast(humanizeError(err),"err");}
   finally{paintGameActive();}
+}
+// How many browsers one student may stay signed in from. Saved on its own
+// endpoint rather than with the physics values, and applied at each user's next
+// login -- lowering it does not kick anybody out on the spot.
+let sessionLimit=null;
+async function refreshSessionLimit(){
+  const input=$("sessionLimit");if(!input)return;
+  try{
+    const d=await getJSON("api/session-limit/");
+    sessionLimit=d.limit;
+    if(d.min!=null)input.min=d.min;
+    if(d.max!=null)input.max=d.max;
+    input.value=d.limit;input.disabled=false;
+  }catch(e){input.disabled=true;}
+}
+async function saveSessionLimit(){
+  const input=$("sessionLimit");if(!input)return;
+  const value=Number(input.value);
+  if(!Number.isFinite(value)){input.value=sessionLimit;return;}
+  input.disabled=true;
+  try{
+    const res=await postJSON("api/session-limit/",{limit:value});
+    sessionLimit=res.limit;input.value=res.limit;
+    showToast(res.message||"ذخیره شد.","ok");
+  }catch(err){
+    if(sessionLimit!=null)input.value=sessionLimit;
+    showToast("❌ "+humanizeError(err),"err");
+  }finally{input.disabled=false;}
 }
 async function panelSave(){
   try{
@@ -1942,6 +1970,7 @@ async function init(){
   if($("panelReset")) $("panelReset").onclick=panelReset;
   if($("panelTest")) $("panelTest").onclick=panelTest;
   if($("gameActiveToggle")) $("gameActiveToggle").onclick=toggleGameActive;
+  if($("sessionLimit")) $("sessionLimit").onchange=saveSessionLimit;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();

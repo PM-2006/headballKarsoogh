@@ -213,6 +213,10 @@
       </div>
       <div class="panel-actions">
         <button id="gameActiveToggle" class="game-toggle" disabled>در حال بارگذاری…</button>
+        <label class="session-limit" title="مدیران مشمول این محدودیت نیستند.">
+          <span>حداکثر نشست همزمان</span>
+          <input id="sessionLimit" type="number" min="1" max="20" step="1" value="1" disabled>
+        </label>
         <button id="panelTest" class="success">🎬 آزمایش با این مقادیر</button>
         <button id="panelSave" class="primary">💾 ذخیره برای همه</button>
         <button id="panelReset" class="btn-danger">↩ بازگردانی پیش‌فرض</button>
