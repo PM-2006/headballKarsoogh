@@ -149,6 +149,15 @@ class GameConfigOverride(models.Model):
         verbose_name=_("مقادیر بازنویسی‌شده"),
         help_text=_("نگاشت نام فیلد تنظیمات بازی به مقدار عددی."),
     )
+    # Not part of ``overrides``: that dict is sanitised into bounded floats
+    # keyed by GameConfig field names, and this is neither.
+    game_enabled = models.BooleanField(
+        default=True,
+        verbose_name=_("بازی فعال است"),
+        help_text=_(
+            "اگر غیرفعال شود، هیچ کاربری جز مدیران به بازی دسترسی نخواهد داشت."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

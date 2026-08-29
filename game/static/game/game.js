@@ -1429,6 +1429,7 @@ async function ensurePanelLoaded(){
     const data=await getJSON("api/game-config/");
     if(data.error){setPanelStatus("❌ "+data.error);return;}
     renderPanel(data.groups);panelLoaded=true;
+    refreshGameActive();
     setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
   }catch(e){setPanelStatus("❌ خطا در بارگذاری تنظیمات.");}
 }
@@ -1469,6 +1470,34 @@ function applyClientConfig(map){
   Object.assign(gameConfig,map);
   updateCanvasDimensions();
   drawIdleFrame();
+}
+// Admin kill switch. Closing the game locks every non-admin out of the whole
+// site, so the button always shows the current state and confirms before
+// closing -- it is not a change you want to make with a stray click.
+let gameActive=null;
+function paintGameActive(){
+  const btn=$("gameActiveToggle");if(!btn)return;
+  if(gameActive===null){btn.textContent="در حال بارگذاری…";btn.disabled=true;btn.className="game-toggle";return}
+  btn.disabled=false;
+  btn.className="game-toggle "+(gameActive?"is-on":"is-off");
+  btn.textContent=gameActive?"🟢 بازی فعال است — غیرفعالش کن":"🔴 بازی غیرفعال است — فعالش کن";
+}
+async function refreshGameActive(){
+  if(!$("gameActiveToggle"))return;
+  try{const d=await getJSON("api/game-active/");gameActive=!!d.active;}
+  catch(e){gameActive=null;}
+  paintGameActive();
+}
+async function toggleGameActive(){
+  const next=!gameActive;
+  if(!next&&!confirm("با غیرفعال کردن بازی، همهٔ کاربران به‌جز مدیران از سایت خارج می‌شوند. مطمئنی؟"))return;
+  const btn=$("gameActiveToggle");if(btn)btn.disabled=true;
+  try{
+    const res=await postJSON("api/game-active/",{active:next});
+    gameActive=!!res.active;
+    showToast(res.message||"انجام شد.",gameActive?"ok":"err");
+  }catch(err){showToast(humanizeError(err),"err");}
+  finally{paintGameActive();}
 }
 async function panelSave(){
   try{
@@ -1613,6 +1642,7 @@ async function init(){
   if($("panelSave")) $("panelSave").onclick=panelSave;
   if($("panelReset")) $("panelReset").onclick=panelReset;
   if($("panelTest")) $("panelTest").onclick=panelTest;
+  if($("gameActiveToggle")) $("gameActiveToggle").onclick=toggleGameActive;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();

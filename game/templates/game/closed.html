@@ -1,0 +1,19 @@
+{% load static %}<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>بازی غیرفعال است</title>
+<link rel="stylesheet" href="{% static 'game/styles.css' %}">
+</head>
+<body>
+<div class="closed-wrap">
+  <div class="card closed-card">
+    <div class="closed-ico">⏸</div>
+    <h1>بازی فعلاً غیرفعال است</h1>
+    <p class="muted">{{ message }}</p>
+    <a class="closed-link" href="{% url 'login' %}">رفتن به صفحهٔ ورود</a>
+  </div>
+</div>
+</body>
+</html>

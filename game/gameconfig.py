@@ -199,6 +199,49 @@ def sanitize(raw: dict) -> dict:
     return out
 
 
+GAME_ENABLED_CACHE_KEY = "game_enabled"
+# Short TTL as a safety net: the singleton is editable from the Django admin
+# too, so an explicit invalidation on toggle is not the only way it changes.
+GAME_ENABLED_CACHE_TTL = 30
+
+
+def is_game_enabled() -> bool:
+    """Whether non-admins may use the game at all.
+
+    Consulted on every request, so the answer is cached rather than costing a
+    query each time. Defaults to open on any error: a database hiccup should
+    not silently lock every student out.
+    """
+    from django.core.cache import cache
+
+    cached = cache.get(GAME_ENABLED_CACHE_KEY)
+    if cached is not None:
+        return bool(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        enabled = True if obj is None else bool(obj.game_enabled)
+    except Exception:
+        return True
+    cache.set(GAME_ENABLED_CACHE_KEY, enabled, GAME_ENABLED_CACHE_TTL)
+    return enabled
+
+
+def set_game_enabled(enabled: bool, user=None) -> bool:
+    """Open or close the game, and drop the cached answer immediately."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.game_enabled = bool(enabled)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(GAME_ENABLED_CACHE_KEY, obj.game_enabled, GAME_ENABLED_CACHE_TTL)
+    return obj.game_enabled
+
+
 def load_overrides() -> dict:
     """DB overrides, sanitized. Empty on any error (e.g. table not migrated yet)."""
     try:

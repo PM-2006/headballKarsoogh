@@ -10,3 +10,11 @@ staticfiles/
 .idea/
 .vscode/
 data/
+
+# SSH keys for the deploy workflow. The private half must never be
+# committed -- it belongs in the DEPLOY_SSH_KEY repository secret.
+deploy_key
+deploy_key.pub
+*.pem
+id_ed25519*
+id_rsa*

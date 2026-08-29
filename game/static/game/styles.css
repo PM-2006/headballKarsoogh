@@ -433,3 +433,16 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .modal-body{padding:14px 18px 4px;overflow:auto}
 .modal-body .brain{max-height:none}
 .modal-foot{padding:14px 18px;border-top:1px solid var(--line-soft);display:flex;justify-content:flex-end}
+
+/* Admin kill switch in the settings panel, and the page students land on
+   while the game is closed. */
+.game-toggle{font-weight:700}
+.game-toggle.is-on{background:#1f7a3f;border-color:#1f7a3f;color:#fff}
+.game-toggle.is-off{background:#a12a2a;border-color:#a12a2a;color:#fff}
+.game-toggle[disabled]{opacity:.6;cursor:default}
+.closed-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.closed-card{max-width:460px;text-align:center;padding:32px}
+.closed-ico{font-size:46px;margin-bottom:10px}
+.closed-card h1{font-size:20px;margin:0 0 10px}
+.closed-link{display:inline-block;margin-top:18px;padding:9px 18px;border-radius:8px;
+  background:var(--accent,#2d6cdf);color:#fff;text-decoration:none;font-size:13px}

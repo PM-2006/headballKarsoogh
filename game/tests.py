@@ -472,3 +472,96 @@ class SingleSessionTests(TestCase):
 
         client.logout()
         self.assertFalse(UserSession.objects.filter(user=self.user).exists())
+
+
+class GameActivationTests(TestCase):
+    """The admin kill switch that closes the whole site to non-admins."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        # The flag is cached outside the database, so it does not get rolled
+        # back with the test transaction. Without this the suite is
+        # order-dependent: a test that closes the game leaks that state.
+        cache.clear()
+        User = get_user_model()
+        self.student = User.objects.create_user("student", password="pw12345678")
+        self.admin = User.objects.create_superuser("boss", password="pw12345678")
+
+    def _set_enabled(self, value):
+        from .gameconfig import set_game_enabled
+
+        set_game_enabled(value, user=self.admin)
+
+    def test_enabled_by_default(self):
+        from .gameconfig import is_game_enabled
+
+        self.assertTrue(is_game_enabled())
+
+    def test_student_locked_out_when_disabled(self):
+        self._set_enabled(False)
+        self.client.login(username="student", password="pw12345678")
+
+        api = self.client.get("/api/vocabulary/")
+        self.assertEqual(api.status_code, 403)
+        self.assertIn("application/json", api.headers["Content-Type"])
+        self.assertIn("error", json.loads(api.content))
+
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 403)
+        self.assertIn(b"text/html", page.headers["Content-Type"].encode())
+
+    def test_admin_bypasses_the_lock(self):
+        self._set_enabled(False)
+        self.client.login(username="boss", password="pw12345678")
+        self.assertEqual(self.client.get("/").status_code, 200)
+        self.assertEqual(self.client.get("/api/vocabulary/").status_code, 200)
+
+    def test_login_and_healthz_stay_reachable_when_disabled(self):
+        # Locking these would strand the admin outside and make the container
+        # healthcheck fail the moment the game is switched off.
+        self._set_enabled(False)
+        self.assertEqual(self.client.get("/healthz/").status_code, 200)
+        self.assertEqual(self.client.get("/accounts/login/").status_code, 200)
+
+    def test_students_work_again_once_re_enabled(self):
+        self._set_enabled(False)
+        self.client.login(username="student", password="pw12345678")
+        self.assertEqual(self.client.get("/api/vocabulary/").status_code, 403)
+        self._set_enabled(True)
+        self.assertEqual(self.client.get("/api/vocabulary/").status_code, 200)
+
+    def test_toggle_endpoint_is_superuser_only(self):
+        self.client.login(username="student", password="pw12345678")
+        resp = self.client.post(
+            "/api/game-active/",
+            data=json.dumps({"active": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 403)
+
+        from .gameconfig import is_game_enabled
+
+        self.assertTrue(is_game_enabled(), "a student must not be able to close the game")
+
+    def test_superuser_can_toggle_through_the_api(self):
+        from .gameconfig import is_game_enabled
+
+        self.client.login(username="boss", password="pw12345678")
+        off = self.client.post(
+            "/api/game-active/",
+            data=json.dumps({"active": False}),
+            content_type="application/json",
+        )
+        self.assertEqual(off.status_code, 200)
+        self.assertFalse(json.loads(off.content)["active"])
+        self.assertFalse(is_game_enabled())
+
+        on = self.client.post(
+            "/api/game-active/",
+            data=json.dumps({"active": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(on.status_code, 200)
+        self.assertTrue(json.loads(on.content)["active"])
+        self.assertTrue(is_game_enabled())

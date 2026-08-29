@@ -23,6 +23,8 @@ from .engine import (
 )
 from .gameconfig import (
     config_with_overrides,
+    is_game_enabled,
+    set_game_enabled,
     reset_overrides,
     save_overrides,
     spec as config_spec,
@@ -435,6 +437,40 @@ def api_game_config(request):
         return JsonResponse({"error": str(exc)}, status=400)
     except Exception as exc:  # noqa: BLE001 - surface a friendly message
         return JsonResponse({"error": f"خطا در ذخیره تنظیمات: {exc}"}, status=500)
+
+
+@api_login_required
+@require_http_methods(["GET", "POST"])
+def api_game_active(request):
+    """Superuser-only: read (GET) or set (POST) whether the game is open.
+
+    Kept separate from api_game_config, which is about numeric tuning and runs
+    every value through save_overrides().
+    """
+    if not request.user.is_superuser:
+        return _forbidden()
+
+    if request.method == "GET":
+        return JsonResponse({"active": is_game_enabled()})
+
+    try:
+        payload = _json_body(request)
+    except StrategyValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    if "active" not in payload:
+        return JsonResponse({"error": "مقدار active ارسال نشده است."}, status=400)
+
+    active = set_game_enabled(bool(payload["active"]), user=request.user)
+    logger.info("game-active set to %s by %s", active, request.user.username)
+    return JsonResponse({
+        "active": active,
+        "message": (
+            "بازی برای همهٔ کاربران فعال شد."
+            if active
+            else "بازی غیرفعال شد. تا فعال‌سازی دوباره، فقط مدیران دسترسی دارند."
+        ),
+    })
 
 
 @api_login_required
