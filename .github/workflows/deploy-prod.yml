@@ -1,0 +1,143 @@
+# Deploys the image that "Docker Build and Push" just published.
+#
+# Chained with workflow_run rather than added as a job to the build workflow so
+# the two concerns stay separate: a build can succeed and be inspected without
+# necessarily shipping, and this can be re-run on its own after a failed deploy
+# without rebuilding the image.
+#
+# Required repository secrets:
+#   DEPLOY_HOST         host or IP of the server            (e.g. 37.32.36.242)
+#   DEPLOY_USER         SSH user with passwordless sudo     (e.g. ubuntu)
+#   DEPLOY_SSH_KEY      private half of a key whose public half is in that
+#                       user's ~/.ssh/authorized_keys. Generate a dedicated one,
+#                       do not reuse a personal key:
+#                         ssh-keygen -t ed25519 -C github-deploy -f deploy_key
+#
+# Optional:
+#   DEPLOY_KNOWN_HOSTS  pinned output of `ssh-keyscan -H <host>`. Set this if
+#                       you can: without it the first connection trusts whatever
+#                       key answers, so a hijacked DNS/IP could collect the
+#                       session. With it, a swapped host key fails the deploy.
+#   vars.DEPLOY_PATH    directory holding docker-compose.yml (default ~/headball)
+#
+# This only runs `docker compose pull && up -d` against the compose file already
+# on the server. It deliberately does not copy docker-compose.yml or .env from
+# the repo: the server's copy carries host-specific settings (its published
+# port, WEB_CONCURRENCY) that the repo's does not know about.
+
+name: Deploy to Production
+
+on:
+  workflow_run:
+    workflows: ["Docker Build and Push"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# Never let two deploys interleave on the same box. A queued one supersedes an
+# older pending deploy, but an in-flight deploy is allowed to finish rather than
+# being cancelled midway through recreating the container.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # workflow_run fires for failed builds too, so gate on the conclusion.
+    # Manual runs skip that check.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # Lets you require a reviewer before anything touches production:
+    # Settings -> Environments -> production -> Required reviewers.
+    environment: production
+
+    steps:
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_SSH_KEY:-}" ] || [ -z "${DEPLOY_HOST:-}" ]; then
+            echo "::error::DEPLOY_SSH_KEY and DEPLOY_HOST must be set as repository secrets."
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          # Secrets go through env, never interpolated into the script body,
+          # so a key containing shell metacharacters cannot alter this script.
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "${DEPLOY_KNOWN_HOSTS:-}" ]; then
+            printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+            echo "Host key pinned from DEPLOY_KNOWN_HOSTS."
+          else
+            ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            echo "::warning::DEPLOY_KNOWN_HOSTS not set; trusting the key this host offered now."
+          fi
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pull image and restart service
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '~/headball' }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_deploy -o BatchMode=yes -o ConnectTimeout=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "DEPLOY_PATH='$DEPLOY_PATH' bash -seo pipefail" <<'REMOTE'
+          cd "${DEPLOY_PATH/#\~/$HOME}"
+
+          echo "::group::Pulling image"
+          sudo -n docker compose pull
+          echo "::endgroup::"
+
+          echo "::group::Recreating container"
+          sudo -n docker compose up -d
+          echo "::endgroup::"
+
+          # Ask compose for the container id rather than hardcoding a name,
+          # which is derived from the directory and would break if it moved.
+          CID=$(sudo -n docker compose ps -q web)
+          if [ -z "$CID" ]; then
+            echo "No container for service 'web' after up -d."
+            exit 1
+          fi
+
+          echo "Waiting for the healthcheck to pass..."
+          for i in $(seq 1 40); do
+            STATUS=$(sudo -n docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}nohealthcheck{{end}}' "$CID")
+            case "$STATUS" in
+              healthy|nohealthcheck)
+                echo "Container is $STATUS after ${i} check(s)."
+                # Untagged layers left behind by the pull. Only dangling ones,
+                # so nothing still referenced by a tag is touched.
+                sudo -n docker image prune -f >/dev/null 2>&1 || true
+                exit 0
+                ;;
+              unhealthy)
+                echo "Container reported unhealthy."
+                sudo -n docker compose logs --tail 60 web || true
+                exit 1
+                ;;
+            esac
+            sleep 5
+          done
+
+          echo "Timed out waiting for the container to become healthy."
+          sudo -n docker compose logs --tail 60 web || true
+          exit 1
+          REMOTE
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "::error::Deploy failed. The previous container may have been replaced already."
+          echo "To roll back, SSH to the host and pin the last good image, e.g.:"
+          echo "  cd ~/headball && TAG=sha-<previous-commit-sha> sudo docker compose up -d"
