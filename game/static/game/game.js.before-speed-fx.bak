@@ -774,7 +774,7 @@ function drawFrame(frame){
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
   ctx.beginPath();ctx.ellipse(frame.ball.x,G+4,BR*(1-0.35*hi),Math.max(2,6*(1-0.3*hi)),0,0,Math.PI*2);ctx.fill();
-  drawBall(ctx,frame.ball,BR);
+  drawBall(ctx,frame.ball.x,frame.ball.y,BR);
   updateScore(frame.score[0],frame.score[1]);$("time").textContent=`${frame.time.toFixed(1)}s`;
   $("blueRule").textContent=ruleLabel(d0.rule);$("blueAction").textContent=actLabel(d0.action);
   $("redRule").textContent=ruleLabel(d1.rule);$("redAction").textContent=actLabel(d1.action);
@@ -942,112 +942,16 @@ function drawGoal(ctx,right,W,G,GW,GH){
   // Rounded joint cap where front post meets the crossbar.
   ctx.fillStyle="#ffffff";ctx.beginPath();ctx.arc(inner,topY,pw*0.56,0,Math.PI*2);ctx.fill();
 }
-function drawBall(ctx,ball,r){
-  const x=ball.x,y=ball.y;
-  const vx=isFiniteNumber(ball.vx)?ball.vx:0;
-  const vy=isFiniteNumber(ball.vy)?ball.vy:0;
-  const speed=Math.hypot(vx,vy);
-
-  // Physics caps the ball around 1450 px/s. Start the visual effect only after
-  // ~250 px/s so slow dribbles still look like a normal football.
-  const speedFx=Math.max(0,Math.min(1,(speed-250)/1050));
-  const angle=speed>1?Math.atan2(vy,vx):0;
-
-  // ---- Speed trail -------------------------------------------------------
-  // The canvas is fully redrawn each frame, so the trail is reconstructed from
-  // the current velocity vector instead of leaving permanent pixels behind.
-  if(speedFx>0.03){
-    const ux=vx/speed,uy=vy/speed;
-    const trailLength=18+speedFx*92;
-    const pieces=6;
-
-    ctx.save();
-    ctx.globalCompositeOperation="source-over";
-    for(let i=pieces;i>=1;i--){
-      const t=i/pieces;
-      const tx=x-ux*trailLength*t;
-      const ty=y-uy*trailLength*t;
-      const alpha=(1-t)*0.05+speedFx*(0.13*(1-t)+0.025);
-      const size=r*(0.35+0.48*(1-t));
-
-      ctx.fillStyle=`rgba(255,72,45,${alpha})`;
-      ctx.beginPath();
-      ctx.ellipse(
-        tx,ty,
-        size*(1+speedFx*.65),
-        Math.max(2,size*.45),
-        angle,
-        0,Math.PI*2
-      );
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
-  // ---- Hot glow ----------------------------------------------------------
-  if(speedFx>0.12){
-    ctx.save();
-    const glow=ctx.createRadialGradient(x,y,r*.72,x,y,r*(1.35+speedFx*.75));
-    glow.addColorStop(0,"rgba(255,95,50,0)");
-    glow.addColorStop(.60,`rgba(255,95,50,${0.05+speedFx*.08})`);
-    glow.addColorStop(1,"rgba(255,45,35,0)");
-    ctx.fillStyle=glow;
-    ctx.beginPath();
-    ctx.arc(x,y,r*(1.35+speedFx*.75),0,Math.PI*2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // ---- Ball body ---------------------------------------------------------
-  ctx.save();
-  ctx.translate(x,y);
-  ctx.rotate(angle);
-
-  // Stretch in the direction of travel.
-  const stretchX=1+speedFx*.20;
-  const stretchY=1-speedFx*.09;
-  ctx.scale(stretchX,stretchY);
-
-  // Keep the panel rotation lively while the whole ball is oriented to travel.
-  ctx.rotate((x/r)*0.15);
-
+function drawBall(ctx,x,y,r){
+  ctx.save();ctx.translate(x,y);ctx.rotate((x/r)*0.15);
   const g=ctx.createRadialGradient(-r*.32,-r*.32,r*.2,0,0,r);
-  g.addColorStop(0,"#ffffff");
-  g.addColorStop(1,speedFx>.65?"#ffd8d0":"#e0e8f0");
-  ctx.fillStyle=g;
-  ctx.beginPath();
-  ctx.arc(0,0,r,0,Math.PI*2);
-  ctx.fill();
-
+  g.addColorStop(0,"#ffffff");g.addColorStop(1,"#e0e8f0");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();
   // Classic panel: center pentagon + seams to the rim.
-  ctx.fillStyle="#1b2a3d";
-  drawPentagon(ctx,0,0,r*0.42,-Math.PI/2);
-  ctx.strokeStyle="#1b2a3d";
-  ctx.lineWidth=2;
-  for(let i=0;i<5;i++){
-    const a=-Math.PI/2+i*(2*Math.PI/5);
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(a)*r*.42,Math.sin(a)*r*.42);
-    ctx.lineTo(Math.cos(a)*r*.96,Math.sin(a)*r*.96);
-    ctx.stroke();
-  }
-
-  // Border changes smoothly from navy to red/orange as speed rises.
-  const hot=Math.round(70+185*speedFx);
-  const green=Math.round(35+30*(1-speedFx));
-  ctx.strokeStyle=speedFx>.08?`rgb(${hot},${green},35)`:"#16233a";
-  ctx.lineWidth=3+speedFx*2.5;
-  ctx.beginPath();
-  ctx.arc(0,0,r,0,Math.PI*2);
-  ctx.stroke();
-
-  if(speedFx>.28){
-    ctx.fillStyle=`rgba(255,255,255,${0.16+speedFx*.20})`;
-    ctx.beginPath();
-    ctx.ellipse(-r*.30,-r*.36,r*.25,r*.11,-.4,0,Math.PI*2);
-    ctx.fill();
-  }
-
+  ctx.fillStyle="#1b2a3d";drawPentagon(ctx,0,0,r*0.42,-Math.PI/2);
+  ctx.strokeStyle="#1b2a3d";ctx.lineWidth=2;
+  for(let i=0;i<5;i++){const a=-Math.PI/2+i*(2*Math.PI/5);ctx.beginPath();ctx.moveTo(Math.cos(a)*r*0.42,Math.sin(a)*r*0.42);ctx.lineTo(Math.cos(a)*r*0.96,Math.sin(a)*r*0.96);ctx.stroke();}
+  ctx.strokeStyle="#16233a";ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
   ctx.restore();
 }
 function drawPentagon(ctx,cx,cy,rad,rot){
