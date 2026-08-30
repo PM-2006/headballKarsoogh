@@ -47,6 +47,23 @@
         <div class="llm-title">✨ ساخت با هوش مصنوعی</div>
         <p class="muted">استراتژی را با زبان خودت بنویس. هوش مصنوعی فقط منطق تو را به قوانین بازی تبدیل می‌کند و اجازه ندارد آن را بهتر کند.</p>
         <textarea id="strategyText" rows="7" maxlength="5000" placeholder="مثلاً: اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ."></textarea>
+        <div class="strictness-box">
+          <div class="strictness-header">
+            <span class="strictness-title">🎯 میزان سخت‌گیری و کمال استراتژی:</span>
+            <span id="strictnessBadge" class="strictness-badge level-2">سطح ۲: آسان‌گیر</span>
+          </div>
+          <div class="strictness-control">
+            <input type="range" id="strictnessSlider" min="1" max="5" value="2" step="1" aria-label="میزان سخت‌گیری استراتژی">
+            <div class="strictness-steps">
+              <span class="step-label" data-level="1">۱. خیلی آسان</span>
+              <span class="step-label active" data-level="2">۲. آسان‌گیر</span>
+              <span class="step-label" data-level="3">۳. متعادل</span>
+              <span class="step-label" data-level="4">۴. سخت‌گیر</span>
+              <span class="step-label" data-level="5">۵. مسابقه‌ای</span>
+            </div>
+          </div>
+          <div id="strictnessDesc" class="strictness-desc">استراتژی‌های ساده را می‌پذیرد؛ فقط در صورت وجود ابهام مستقیم در کلمات خودت سوال می‌پرسد.</div>
+        </div>
         <div class="actions">
           <button id="fillAiSample">نمونه متن</button>
           <button id="compileWithAI" class="primary">✨ تبدیل استراتژی</button>
@@ -216,6 +233,16 @@
         <label class="session-limit" title="مدیران مشمول این محدودیت نیستند.">
           <span>حداکثر نشست همزمان</span>
           <input id="sessionLimit" type="number" min="1" max="20" step="1" value="1" disabled>
+        </label>
+        <label class="session-limit" title="سطح پیش‌فرض سخت‌گیری هوش مصنوعی در ساخت استراتژی">
+          <span>سخت‌گیری هوش مصنوعی</span>
+          <select id="adminStrictness" disabled>
+            <option value="1">سطح ۱: خیلی آسان‌گیر</option>
+            <option value="2" selected>سطح ۲: آسان‌گیر</option>
+            <option value="3">سطح ۳: متعادل</option>
+            <option value="4">سطح ۴: سخت‌گیر</option>
+            <option value="5">سطح ۵: مسابقه‌ای</option>
+          </select>
         </label>
         <button id="panelTest" class="success">🎬 آزمایش با این مقادیر</button>
         <button id="panelSave" class="primary">💾 ذخیره برای همه</button>

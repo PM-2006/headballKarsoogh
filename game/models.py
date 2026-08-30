@@ -169,6 +169,13 @@ class GameConfigOverride(models.Model):
             "با ورود جدید، قدیمی‌ترین نشست‌های اضافه بسته می‌شوند. مدیران مستثنا هستند."
         ),
     )
+    strategy_strictness = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name=_("سخت‌گیری پیش‌فرض استراتژی"),
+        help_text=_(
+            "سطح پیش‌فرض سخت‌گیری هوش مصنوعی در تبدیل متن به استراتژی (از ۱ تا ۵)."
+        ),
+    )
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

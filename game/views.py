@@ -24,11 +24,15 @@ from .engine import (
 from .gameconfig import (
     MAX_SESSION_LIMIT,
     MIN_SESSION_LIMIT,
+    MAX_STRATEGY_STRICTNESS,
+    MIN_STRATEGY_STRICTNESS,
     config_with_overrides,
     get_session_limit,
+    get_strategy_strictness,
     is_game_enabled,
     set_game_enabled,
     set_session_limit,
+    set_strategy_strictness,
     reset_overrides,
     save_overrides,
     spec as config_spec,
@@ -509,6 +513,38 @@ def api_session_limit(request):
 
 
 @api_login_required
+@require_http_methods(["GET", "POST"])
+def api_strategy_strictness(request):
+    """Superuser-only: read (GET) or set (POST) the default strategy strictness."""
+    if not request.user.is_superuser:
+        return _forbidden()
+
+    if request.method == "GET":
+        return JsonResponse({
+            "strictness": get_strategy_strictness(),
+            "min": MIN_STRATEGY_STRICTNESS,
+            "max": MAX_STRATEGY_STRICTNESS,
+        })
+
+    try:
+        payload = _json_body(request)
+    except StrategyValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    if "strictness" not in payload:
+        return JsonResponse({"error": "مقدار strictness ارسال نشده است."}, status=400)
+
+    strictness = set_strategy_strictness(payload["strictness"], user=request.user)
+    logger.info("strategy-strictness set to %s by %s", strictness, request.user.username)
+    return JsonResponse({
+        "strictness": strictness,
+        "min": MIN_STRATEGY_STRICTNESS,
+        "max": MAX_STRATEGY_STRICTNESS,
+        "message": f"سخت‌گیری هوش مصنوعی روی سطح {strictness} ذخیره شد.",
+    })
+
+
+@api_login_required
 @require_POST
 def api_game_config_reset(request):
     """Superuser-only: clear all overrides, back to code/env defaults."""
@@ -533,12 +569,15 @@ def api_compile_strategy(request):
         payload = _json_body(request)
         text = payload.get("text", "")
         attempt = int(payload.get("attempt", 1))
+        strictness_val = payload.get("strictness")
+        strictness = int(strictness_val) if strictness_val is not None else get_strategy_strictness()
         conversation_history = payload.get("conversation_history") or []
 
         result = compile_persian_strategy(
             text,
             attempt=attempt,
             conversation_history=conversation_history,
+            strictness=strictness,
         )
         # The model name and token counts are operational detail. They are worth
         # keeping for cost tracking but are not the student's business, and
@@ -548,10 +587,11 @@ def api_compile_strategy(request):
         usage = result.pop("usage", None)
         result.pop("attempt", None)  # Internal tracking, not for the client
         logger.info(
-            "compile-strategy user=%s model=%s attempt=%s usage=%s",
+            "compile-strategy user=%s model=%s attempt=%s strictness=%s usage=%s",
             request.user.username,
             model,
             attempt,
+            strictness,
             usage,
         )
         return JsonResponse(result)

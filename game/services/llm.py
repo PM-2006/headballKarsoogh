@@ -184,18 +184,16 @@ def compile_persian_strategy(
     text: str,
     attempt: int = 1,
     conversation_history: list[dict[str, Any]] | None = None,
+    strictness: int = 2,
 ) -> dict[str, Any]:
     """
     Compile a Persian natural language football strategy into an executable Strategy dictionary
     using Pydantic structured schemas and the official OpenAI SDK.
 
-    Supports a multi-round clarification flow:
-    - attempt=1: first try, AI may ask up to 5 clarification questions
-    - attempt=2: second try with answers, AI may ask 5 more questions
+    Supports a multi-round clarification flow with configurable strictness (1 to 5):
+    - attempt=1: first try, AI may ask clarification questions based on strictness
+    - attempt=2: second try with answers, AI may ask follow-up questions
     - attempt>=3: final try, AI must decide with reasonable defaults
-
-    conversation_history is a list of {"questions": [...], "answers": [...]} dicts
-    from previous rounds.
     """
     text = (text or "").strip()
     if not text:
@@ -204,12 +202,13 @@ def compile_persian_strategy(
         raise StrategyValidationError("متن استراتژی بیش از حد مجاز (۵۰۰۰ کاراکتر) است.")
 
     attempt = max(1, min(attempt, 10))  # Clamp to sane range
+    strictness = max(1, min(5, int(strictness or 2)))
     conversation_history = conversation_history or []
 
     api_key, base_url, model = _get_llm_config()
     client = _client(api_key, base_url)
 
-    system_prompt = build_strategy_compiler_prompt(attempt=attempt)
+    system_prompt = build_strategy_compiler_prompt(attempt=attempt, strictness=strictness)
     user_prompt = (
         f"متن زیر فقط استراتژی فوتبال دانش‌آموز است. این تلاش شماره {attempt} است."
         " آن را مطابق با ساختار مشخص‌شده کامپایل کن:\n\n"

@@ -406,6 +406,72 @@ function deleteBot(){
   refreshOpponentMenus();
   showToast("پاک شد.","ok");
 }
+// ---- AI Strategy Strictness Configuration (5 Levels) ----
+const STRICTNESS_LEVELS = {
+  1: {
+    title: "سطح ۱: خیلی آسان‌گیر",
+    badgeClass: "level-1",
+    desc: "پذیرش مستقیم هر دستوری (حتی تک‌کلمه‌ای). هیچ سوالی پرسیده نمی‌شود و کمبودها با ایستادن (IDLE) پر می‌شوند.",
+  },
+  2: {
+    title: "سطح ۲: آسان‌گیر (پیش‌فرض)",
+    badgeClass: "level-2",
+    desc: "استراتژی‌های ساده را می‌پذیرد؛ فقط در صورت وجود ابهام مستقیم در کلمات خودت سوال می‌پرسد.",
+  },
+  3: {
+    title: "سطح ۳: متعادل و استاندارد",
+    badgeClass: "level-3",
+    desc: "پوشش حرکت به سمت توپ و اقدام ضربه/پرش الزامی است؛ در صورت غیبت یکی، سیستم سوال می‌پرسد.",
+  },
+  4: {
+    title: "سطح ۴: سخت‌گیر و پیشرفته",
+    badgeClass: "level-4",
+    desc: "پوشش فازهای حمله، دفاع و توپ‌های هوایی بالای سر الزامی است و سیستم تو را برای رفع نواقص راهنمایی می‌کند.",
+  },
+  5: {
+    title: "سطح ۵: کامل و مسابقه‌ای",
+    badgeClass: "level-5",
+    desc: "طراحی یک استراتژی جامع شامل حمله، دفاع، ضربات سر، و تاکتیک بر اساس زمان یا امتیاز الزامی است.",
+  },
+};
+let currentStrictness = 2;
+
+function setStrictness(level) {
+  currentStrictness = Math.max(1, Math.min(5, Number(level) || 2));
+  const slider = $("strictnessSlider");
+  if (slider) slider.value = currentStrictness;
+
+  const info = STRICTNESS_LEVELS[currentStrictness] || STRICTNESS_LEVELS[2];
+  const badge = $("strictnessBadge");
+  if (badge) {
+    badge.className = `strictness-badge ${info.badgeClass}`;
+    badge.textContent = info.title;
+  }
+  const desc = $("strictnessDesc");
+  if (desc) {
+    desc.textContent = info.desc;
+  }
+
+  document.querySelectorAll(".strictness-steps .step-label").forEach(el => {
+    if (Number(el.dataset.level) === currentStrictness) {
+      el.classList.add("active");
+    } else {
+      el.classList.remove("active");
+    }
+  });
+}
+
+function initStrictnessControl() {
+  const slider = $("strictnessSlider");
+  if (slider) {
+    slider.oninput = () => setStrictness(slider.value);
+  }
+  document.querySelectorAll(".strictness-steps .step-label").forEach(el => {
+    el.onclick = () => setStrictness(el.dataset.level);
+  });
+  setStrictness(2);
+}
+
 // ---- AI Clarification conversation state ----
 let aiConversation = {
   attempt: 0,
@@ -594,6 +660,7 @@ async function compileWithAI(isContinuation = false){
       text,
       attempt: aiConversation.attempt,
       conversation_history: aiConversation.history,
+      strictness: currentStrictness,
     });
 
     // AI is asking clarification questions
@@ -1728,7 +1795,7 @@ async function ensurePanelLoaded(){
     const data=await getJSON("api/game-config/");
     if(data.error){setPanelStatus("❌ "+data.error);return;}
     renderPanel(data.groups);panelLoaded=true;
-    refreshGameActive();refreshSessionLimit();
+    refreshGameActive();refreshSessionLimit();refreshAdminStrictness();
     setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
   }catch(e){setPanelStatus("❌ خطا در بارگذاری تنظیمات.");}
 }
@@ -1825,6 +1892,30 @@ async function saveSessionLimit(){
     if(sessionLimit!=null)input.value=sessionLimit;
     showToast("❌ "+humanizeError(err),"err");
   }finally{input.disabled=false;}
+}
+let adminStrictnessValue=null;
+async function refreshAdminStrictness(){
+  const sel=$("adminStrictness");if(!sel)return;
+  try{
+    const d=await getJSON("api/strategy-strictness/");
+    adminStrictnessValue=d.strictness;
+    sel.value=String(d.strictness);
+    sel.disabled=false;
+  }catch(e){sel.disabled=true;}
+}
+async function saveAdminStrictness(){
+  const sel=$("adminStrictness");if(!sel)return;
+  const value=Number(sel.value);
+  if(!Number.isFinite(value)){sel.value=adminStrictnessValue;return;}
+  sel.disabled=true;
+  try{
+    const res=await postJSON("api/strategy-strictness/",{strictness:value});
+    adminStrictnessValue=res.strictness;sel.value=String(res.strictness);
+    showToast(res.message||"ذخیره شد.","ok");
+  }catch(err){
+    if(adminStrictnessValue!=null)sel.value=String(adminStrictnessValue);
+    showToast("❌ "+humanizeError(err),"err");
+  }finally{sel.disabled=false;}
 }
 async function panelSave(){
   try{
@@ -1959,6 +2050,9 @@ async function init(){
     Object.assign(gameConfig,vocabulary.config);
     updateCanvasDimensions();
   }
+  if(vocabulary&&vocabulary.default_strictness){
+    setStrictness(vocabulary.default_strictness);
+  }
   await loadStrategiesFromServer();
   if($("simpleRules")) quickPreset("smart");
   fillGuideNumbers();
@@ -1971,12 +2065,14 @@ async function init(){
   if($("panelTest")) $("panelTest").onclick=panelTest;
   if($("gameActiveToggle")) $("gameActiveToggle").onclick=toggleGameActive;
   if($("sessionLimit")) $("sessionLimit").onchange=saveSessionLimit;
+  if($("adminStrictness")) $("adminStrictness").onchange=saveAdminStrictness;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();
   if($("addRule")) $("addRule").onclick=()=>addSimple();
   if($("buildBot")) $("buildBot").onclick=buildBot;
   if($("editPromptBtn")) $("editPromptBtn").onclick=editPrompt;
+  initStrictnessControl();
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
   $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};

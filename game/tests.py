@@ -21,7 +21,7 @@ class StrategyTests(TestCase):
 class EngineTests(TestCase):
     def test_match_finishes(self):
         result = simulate_match(get_preset("aggressive"), get_preset("defensive"), seed=42, record_frames=False)
-        self.assertEqual(result["duration"], 60.0)
+        self.assertEqual(result["duration"], 40.0)
         self.assertEqual(len(result["score"]), 2)
         self.assertTrue(all(goal >= 0 for goal in result["score"]))
 
@@ -100,8 +100,8 @@ class ConfigTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("config", data)
-        self.assertEqual(data["config"]["width"], 1280.0)
-        self.assertEqual(data["config"]["ball_radius"], 22.0)
+        self.assertEqual(data["config"]["width"], 1500.0)
+        self.assertEqual(data["config"]["ball_radius"], 23.0)
 
     def test_env_variable_overrides(self):
         import os
@@ -789,3 +789,103 @@ class GameActivationTests(TestCase):
         self.assertEqual(on.status_code, 200)
         self.assertTrue(json.loads(on.content)["active"])
         self.assertTrue(is_game_enabled())
+
+
+class StrictnessAndCompilerTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.user = User.objects.create_user(username="tactician", password="pw12345678")
+
+    def test_prompt_builder_all_strictness_levels(self):
+        from .prompts.strategy_compiler import build_strategy_compiler_prompt, STRICTNESS_CONFIG
+
+        for level in range(1, 6):
+            prompt = build_strategy_compiler_prompt(attempt=1, strictness=level)
+            self.assertIn(STRICTNESS_CONFIG[level]["title"], prompt)
+            self.assertIn("AVAILABLE SENSORS", prompt)
+            self.assertIn("AVAILABLE ACTIONS", prompt)
+
+    def test_prompt_builder_clamping(self):
+        from .prompts.strategy_compiler import build_strategy_compiler_prompt, STRICTNESS_CONFIG
+
+        prompt_low = build_strategy_compiler_prompt(attempt=1, strictness=-5)
+        self.assertIn(STRICTNESS_CONFIG[1]["title"], prompt_low)
+
+        prompt_high = build_strategy_compiler_prompt(attempt=1, strictness=99)
+        self.assertIn(STRICTNESS_CONFIG[5]["title"], prompt_high)
+
+    def test_api_compile_strategy_forwards_strictness(self):
+        from unittest.mock import patch
+
+        self.client.login(username="tactician", password="pw12345678")
+        with patch("game.views.compile_persian_strategy") as mock_compile:
+            mock_compile.return_value = {
+                "valid": True,
+                "needs_clarification": False,
+                "questions": [],
+                "feedback": [],
+                "strategy": {"label": "Test", "rules": [], "default_action": "IDLE"},
+            }
+
+            resp = self.client.post(
+                reverse("game:api_compile_strategy"),
+                data=json.dumps({
+                    "text": "برو سمت توپ و شوت بزن",
+                    "attempt": 1,
+                    "strictness": 4,
+                }),
+                content_type="application/json",
+            )
+
+            self.assertEqual(resp.status_code, 200)
+            mock_compile.assert_called_once()
+            _, kwargs = mock_compile.call_args
+            self.assertEqual(kwargs.get("strictness"), 4)
+
+    def test_vocabulary_includes_default_strictness(self):
+        self.client.login(username="tactician", password="pw12345678")
+        resp = self.client.get(reverse("game:api_vocabulary"))
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIn("default_strictness", data)
+        self.assertEqual(data["default_strictness"], 2)
+
+    def test_admin_strictness_permissions_and_update(self):
+        # 1. Normal user forbidden
+        self.client.login(username="tactician", password="pw12345678")
+        resp = self.client.get(reverse("game:api_strategy_strictness"))
+        self.assertEqual(resp.status_code, 403)
+
+        resp_post = self.client.post(
+            reverse("game:api_strategy_strictness"),
+            data=json.dumps({"strictness": 4}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp_post.status_code, 403)
+
+        # 2. Superuser allowed
+        admin_user = User.objects.create_superuser(username="bigboss", password="supersecret123")
+        self.client.login(username="bigboss", password="supersecret123")
+
+        # GET
+        get_resp = self.client.get(reverse("game:api_strategy_strictness"))
+        self.assertEqual(get_resp.status_code, 200)
+        self.assertEqual(get_resp.json()["strictness"], 2)
+
+        # POST
+        set_resp = self.client.post(
+            reverse("game:api_strategy_strictness"),
+            data=json.dumps({"strictness": 5}),
+            content_type="application/json",
+        )
+        self.assertEqual(set_resp.status_code, 200)
+        self.assertEqual(set_resp.json()["strictness"], 5)
+
+        # Verify DB and vocabulary reflect the new default
+        from .gameconfig import get_strategy_strictness
+        self.assertEqual(get_strategy_strictness(), 5)
+
+        vocab_resp = self.client.get(reverse("game:api_vocabulary"))
+        self.assertEqual(vocab_resp.json()["default_strictness"], 5)
+

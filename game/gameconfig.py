@@ -301,6 +301,64 @@ def set_session_limit(value: Any, user=None) -> int:
     return obj.session_limit
 
 
+STRATEGY_STRICTNESS_CACHE_KEY = "strategy_strictness"
+STRATEGY_STRICTNESS_CACHE_TTL = 30
+MIN_STRATEGY_STRICTNESS = 1
+MAX_STRATEGY_STRICTNESS = 5
+DEFAULT_STRATEGY_STRICTNESS = 2
+
+
+def clamp_strategy_strictness(value: Any) -> int:
+    """Coerce anything into a valid strictness level between 1 and 5."""
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_STRATEGY_STRICTNESS
+    return max(MIN_STRATEGY_STRICTNESS, min(MAX_STRATEGY_STRICTNESS, num))
+
+
+def get_strategy_strictness() -> int:
+    """Read the default strategy strictness level (1 to 5)."""
+    from django.core.cache import cache
+
+    cached = cache.get(STRATEGY_STRICTNESS_CACHE_KEY)
+    if cached is not None:
+        return int(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        strictness = (
+            DEFAULT_STRATEGY_STRICTNESS
+            if obj is None
+            else clamp_strategy_strictness(obj.strategy_strictness)
+        )
+    except Exception:
+        return DEFAULT_STRATEGY_STRICTNESS
+    cache.set(
+        STRATEGY_STRICTNESS_CACHE_KEY, strictness, STRATEGY_STRICTNESS_CACHE_TTL
+    )
+    return strictness
+
+
+def set_strategy_strictness(value: Any, user=None) -> int:
+    """Store a new default strategy strictness level."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.strategy_strictness = clamp_strategy_strictness(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(
+        STRATEGY_STRICTNESS_CACHE_KEY,
+        obj.strategy_strictness,
+        STRATEGY_STRICTNESS_CACHE_TTL,
+    )
+    return obj.strategy_strictness
+
+
 def load_overrides() -> dict:
     """DB overrides, sanitized. Empty on any error (e.g. table not migrated yet)."""
     try:
