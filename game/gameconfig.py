@@ -359,6 +359,53 @@ def set_strategy_strictness(value: Any, user=None) -> int:
     return obj.strategy_strictness
 
 
+SHOW_STRICTNESS_TO_USER_CACHE_KEY = "show_strictness_to_user"
+SHOW_STRICTNESS_TO_USER_CACHE_TTL = 30
+DEFAULT_SHOW_STRICTNESS_TO_USER = True
+
+
+def get_show_strictness_to_user() -> bool:
+    """Check if the strictness slider should be displayed to students."""
+    from django.core.cache import cache
+
+    cached = cache.get(SHOW_STRICTNESS_TO_USER_CACHE_KEY)
+    if cached is not None:
+        return bool(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        show = (
+            DEFAULT_SHOW_STRICTNESS_TO_USER
+            if obj is None
+            else bool(obj.show_strictness_to_user)
+        )
+    except Exception:
+        return DEFAULT_SHOW_STRICTNESS_TO_USER
+    cache.set(
+        SHOW_STRICTNESS_TO_USER_CACHE_KEY, show, SHOW_STRICTNESS_TO_USER_CACHE_TTL
+    )
+    return show
+
+
+def set_show_strictness_to_user(value: Any, user=None) -> bool:
+    """Store whether to show the strictness selector to users."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.show_strictness_to_user = bool(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(
+        SHOW_STRICTNESS_TO_USER_CACHE_KEY,
+        obj.show_strictness_to_user,
+        SHOW_STRICTNESS_TO_USER_CACHE_TTL,
+    )
+    return obj.show_strictness_to_user
+
+
 def load_overrides() -> dict:
     """DB overrides, sanitized. Empty on any error (e.g. table not migrated yet)."""
     try:

@@ -126,7 +126,7 @@ def get_preset(name: str) -> dict:
 
 def vocabulary() -> dict:
     from .engine import get_game_config
-    from .gameconfig import get_strategy_strictness
+    from .gameconfig import get_show_strictness_to_user, get_strategy_strictness
     return {
         "sensors": SENSORS,
         "operators": list(OPERATORS),
@@ -134,4 +134,5 @@ def vocabulary() -> dict:
         "presets": {key: value["label"] for key, value in PRESETS.items()},
         "config": get_game_config().to_dict(),
         "default_strictness": get_strategy_strictness(),
+        "show_strictness_to_user": get_show_strictness_to_user(),
     }

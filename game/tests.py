@@ -1086,9 +1086,52 @@ class StrictnessAndCompilerTests(TestCase):
         self.assertEqual(set_resp.json()["strictness"], 5)
 
         # Verify DB and vocabulary reflect the new default
-        from .gameconfig import get_strategy_strictness
+        from .gameconfig import get_strategy_strictness, get_show_strictness_to_user
         self.assertEqual(get_strategy_strictness(), 5)
 
         vocab_resp = self.client.get(reverse("game:api_vocabulary"))
         self.assertEqual(vocab_resp.json()["default_strictness"], 5)
+        self.assertTrue(vocab_resp.json()["show_strictness_to_user"])
+
+    def test_show_strictness_to_user_toggle_and_enforcement(self):
+        admin_user = User.objects.create_superuser(username="superadmin", password="pw12345678")
+        self.client.login(username="superadmin", password="pw12345678")
+
+        # 1. Admin turns off show_to_user
+        resp = self.client.post(
+            reverse("game:api_strategy_strictness"),
+            data=json.dumps({"show_to_user": False, "strictness": 3}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["show_to_user"])
+        self.assertEqual(resp.json()["strictness"], 3)
+
+        # Vocabulary should reflect show_strictness_to_user=False
+        vocab = self.client.get(reverse("game:api_vocabulary")).json()
+        self.assertFalse(vocab["show_strictness_to_user"])
+        self.assertEqual(vocab["default_strictness"], 3)
+
+        # 2. When show_to_user is False, student requests with strictness=1 are overridden to 3
+        self.client.login(username="tactician", password="pw12345678")
+        with patch("game.views.compile_persian_strategy") as mock_compile:
+            mock_compile.return_value = {
+                "valid": True,
+                "strategy": {"label": "Test", "rules": [], "default_action": "IDLE"},
+            }
+
+            resp = self.client.post(
+                reverse("game:api_compile_strategy"),
+                data=json.dumps({
+                    "text": "بپر",
+                    "attempt": 1,
+                    "strictness": 1,  # Student tries to use level 1
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, 200)
+            mock_compile.assert_called_once()
+            _, kwargs = mock_compile.call_args
+            # Should be forced to admin's level 3!
+            self.assertEqual(kwargs.get("strictness"), 3)
 

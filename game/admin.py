@@ -16,6 +16,7 @@ class GameConfigOverrideAdmin(admin.ModelAdmin):
         "game_enabled",
         "session_limit",
         "strategy_strictness",
+        "show_strictness_to_user",
         "updated_by",
         "updated_at",
     )

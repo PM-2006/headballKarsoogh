@@ -28,10 +28,12 @@ from .gameconfig import (
     MIN_STRATEGY_STRICTNESS,
     config_with_overrides,
     get_session_limit,
+    get_show_strictness_to_user,
     get_strategy_strictness,
     is_game_enabled,
     set_game_enabled,
     set_session_limit,
+    set_show_strictness_to_user,
     set_strategy_strictness,
     reset_overrides,
     save_overrides,
@@ -515,13 +517,14 @@ def api_session_limit(request):
 @api_login_required
 @require_http_methods(["GET", "POST"])
 def api_strategy_strictness(request):
-    """Superuser-only: read (GET) or set (POST) the default strategy strictness."""
+    """Superuser-only: read (GET) or set (POST) the default strategy strictness and user visibility."""
     if not request.user.is_superuser:
         return _forbidden()
 
     if request.method == "GET":
         return JsonResponse({
             "strictness": get_strategy_strictness(),
+            "show_to_user": get_show_strictness_to_user(),
             "min": MIN_STRATEGY_STRICTNESS,
             "max": MAX_STRATEGY_STRICTNESS,
         })
@@ -531,16 +534,23 @@ def api_strategy_strictness(request):
     except StrategyValidationError as exc:
         return JsonResponse({"error": str(exc)}, status=400)
 
-    if "strictness" not in payload:
-        return JsonResponse({"error": "مقدار strictness ارسال نشده است."}, status=400)
+    strictness = get_strategy_strictness()
+    show_to_user = get_show_strictness_to_user()
 
-    strictness = set_strategy_strictness(payload["strictness"], user=request.user)
-    logger.info("strategy-strictness set to %s by %s", strictness, request.user.username)
+    if "strictness" in payload:
+        strictness = set_strategy_strictness(payload["strictness"], user=request.user)
+        logger.info("strategy-strictness set to %s by %s", strictness, request.user.username)
+
+    if "show_to_user" in payload:
+        show_to_user = set_show_strictness_to_user(payload["show_to_user"], user=request.user)
+        logger.info("show-strictness-to-user set to %s by %s", show_to_user, request.user.username)
+
     return JsonResponse({
         "strictness": strictness,
+        "show_to_user": show_to_user,
         "min": MIN_STRATEGY_STRICTNESS,
         "max": MAX_STRATEGY_STRICTNESS,
-        "message": f"سخت‌گیری هوش مصنوعی روی سطح {strictness} ذخیره شد.",
+        "message": "تنظیمات سخت‌گیری هوش مصنوعی به‌روزرسانی شد.",
     })
 
 
@@ -569,8 +579,14 @@ def api_compile_strategy(request):
         payload = _json_body(request)
         text = payload.get("text", "")
         attempt = int(payload.get("attempt", 1))
-        strictness_val = payload.get("strictness")
-        strictness = int(strictness_val) if strictness_val is not None else get_strategy_strictness()
+
+        show_to_user = get_show_strictness_to_user()
+        if not show_to_user:
+            strictness = get_strategy_strictness()
+        else:
+            strictness_val = payload.get("strictness")
+            strictness = int(strictness_val) if strictness_val is not None else get_strategy_strictness()
+
         conversation_history = payload.get("conversation_history") or []
 
         result = compile_persian_strategy(

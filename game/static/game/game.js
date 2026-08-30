@@ -1894,14 +1894,27 @@ async function saveSessionLimit(){
   }finally{input.disabled=false;}
 }
 let adminStrictnessValue=null;
+let showStrictnessValue=true;
 async function refreshAdminStrictness(){
-  const sel=$("adminStrictness");if(!sel)return;
+  const sel=$("adminStrictness");
+  const tog=$("showStrictnessToggle");
+  if(!sel&&!tog)return;
   try{
     const d=await getJSON("api/strategy-strictness/");
     adminStrictnessValue=d.strictness;
-    sel.value=String(d.strictness);
-    sel.disabled=false;
-  }catch(e){sel.disabled=true;}
+    showStrictnessValue=d.show_to_user!==false;
+    if(sel){
+      sel.value=String(d.strictness);
+      sel.disabled=false;
+    }
+    if(tog){
+      tog.checked=showStrictnessValue;
+      tog.disabled=false;
+    }
+  }catch(e){
+    if(sel)sel.disabled=true;
+    if(tog)tog.disabled=true;
+  }
 }
 async function saveAdminStrictness(){
   const sel=$("adminStrictness");if(!sel)return;
@@ -1916,6 +1929,22 @@ async function saveAdminStrictness(){
     if(adminStrictnessValue!=null)sel.value=String(adminStrictnessValue);
     showToast("❌ "+humanizeError(err),"err");
   }finally{sel.disabled=false;}
+}
+async function saveShowStrictnessToggle(){
+  const tog=$("showStrictnessToggle");if(!tog)return;
+  const checked=tog.checked;
+  tog.disabled=true;
+  try{
+    const res=await postJSON("api/strategy-strictness/",{show_to_user:checked});
+    showStrictnessValue=res.show_to_user!==false;
+    tog.checked=showStrictnessValue;
+    const strictBox=document.querySelector(".strictness-box");
+    if(strictBox) strictBox.style.display=showStrictnessValue?"":"none";
+    showToast(showStrictnessValue?"نمایش اسلایدر به کاربر فعال شد.":"اسلایدر از دید کاربر مخفی شد.","ok");
+  }catch(err){
+    tog.checked=showStrictnessValue;
+    showToast("❌ "+humanizeError(err),"err");
+  }finally{tog.disabled=false;}
 }
 async function panelSave(){
   try{
@@ -2050,8 +2079,14 @@ async function init(){
     Object.assign(gameConfig,vocabulary.config);
     updateCanvasDimensions();
   }
-  if(vocabulary&&vocabulary.default_strictness){
-    setStrictness(vocabulary.default_strictness);
+  if(vocabulary){
+    if(vocabulary.default_strictness){
+      setStrictness(vocabulary.default_strictness);
+    }
+    const strictBox=document.querySelector(".strictness-box");
+    if(strictBox){
+      strictBox.style.display=(vocabulary.show_strictness_to_user===false)?"none":"";
+    }
   }
   await loadStrategiesFromServer();
   if($("simpleRules")) quickPreset("smart");
@@ -2066,6 +2101,7 @@ async function init(){
   if($("gameActiveToggle")) $("gameActiveToggle").onclick=toggleGameActive;
   if($("sessionLimit")) $("sessionLimit").onchange=saveSessionLimit;
   if($("adminStrictness")) $("adminStrictness").onchange=saveAdminStrictness;
+  if($("showStrictnessToggle")) $("showStrictnessToggle").onchange=saveShowStrictnessToggle;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
   if($("restNext")) $("restNext").onclick=advanceRound;
   fetchKit();
