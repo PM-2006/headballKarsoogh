@@ -659,6 +659,7 @@ function setFeedback(text,kind=""){
 // ---------- Basketball-style match: N rounds with substitution rests ----------
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
+let matchToken=0;             // bumped on every run/reset; stale simulate replies are dropped
 
 const FA_DIGITS="۰۱۲۳۴۵۶۷۸۹";
 function toFa(n){ return String(n).replace(/[0-9]/g,d=>FA_DIGITS[d]); }
@@ -700,6 +701,7 @@ function renderRoundBar(){
 }
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
+  matchToken++;
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
   setPlaybackControls(false);
   hideRest();
@@ -717,14 +719,17 @@ async function playRound(){
   if($("liveName1"))$("liveName1").textContent=n1;
   if($("liveName2"))$("liveName2").textContent=n2;
   paintTeamDots(); updateScore(0,0); renderRoundBar();
+  const token=matchToken;
   try{
     $("playMatch").disabled=true;
     const result=await postJSON("api/simulate/",{
       blue:strategyPayload(s1),red:strategyPayload(s2),
       seed:tournament.baseSeed+tournament.round
     });
+    if(token!==matchToken) return;   // reset while we waited — this replay is stale
     playFrames(result.frames,result.record_fps,onRoundEnd);
   }catch(err){
+    if(token!==matchToken) return;
     setArenaMsg("❌ "+humanizeError(err),"err");
     tournament.playing=false;$("playMatch").disabled=false;
   }
@@ -844,6 +849,26 @@ function togglePause(){
   const btn=$("pauseMatch");
   if(!btn||btn.disabled) return;
   setPaused(!playbackPaused);
+}
+// Abort whatever the arena is doing and put it back to its pre-match state.
+// Open to every kind of user — students and admins alike.
+function resetMatch(){
+  const inProgress=!!(tournament&&tournament.playing);
+  if(inProgress&&!confirm("مسابقهٔ در حال اجرا متوقف می‌شود و نتیجهٔ راندها پاک می‌شود. مطمئنی؟")) return;
+  matchToken++;                                   // drop any simulate reply still in flight
+  if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
+  hideRest();                                     // rest overlay + its countdown
+  resetFx();                                      // goal flash, winner card, confetti
+  tournament=null;
+  const bar=$("roundBar"); if(bar) bar.style.display="none";
+  const dots=$("roundDots"); if(dots) dots.innerHTML="";
+  const agg=$("roundAgg"); if(agg) agg.innerHTML="";
+  setPlaybackControls(false);                     // disables pause and clears "▶ ادامه"
+  const play=$("playMatch"); if(play) play.disabled=false;
+  setArenaMsg("");
+  updateScore(0,0);
+  drawIdleFrame();
+  showToast(inProgress?"مسابقه بازنشانی شد. هر وقت خواستی دوباره اجرا کن.":"زمین بازی آمادهٔ مسابقهٔ تازه است.","ok");
 }
 
 function playFrames(frames,fps,onEnd){
@@ -1987,6 +2012,7 @@ async function init(){
   document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
   $("playMatch").onclick=runMatch;
   if($("pauseMatch")) $("pauseMatch").onclick=togglePause;
+  if($("resetMatch")) $("resetMatch").onclick=resetMatch;
   // Space toggles pause, but only while watching the arena and never while the
   // user is typing into a field.
   document.addEventListener("keydown",(e)=>{

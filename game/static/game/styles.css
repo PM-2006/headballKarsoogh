@@ -153,14 +153,16 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .tb-team1 span{color:var(--team1)}.tb-team2 span{color:var(--team2)}
 .tb-seed{grid-column:1 / -1}
 .tb-run{grid-column:1 / -1;width:100%;justify-content:center;font-size:16px;padding:15px;margin-top:2px}
-/* Run + pause share the full-width action row under the two selects. */
-.tb-actions{grid-column:1 / -1;display:flex;gap:9px;align-items:stretch;margin-top:2px}
-.tb-actions .tb-run{width:auto;flex:1 1 auto;margin-top:0}
-.tb-pause{flex:0 0 auto;min-width:132px;font-size:15px;font-weight:800;padding:15px 18px;
+/* Run + pause + reset share the full-width action row under the two selects.
+   They wrap instead of overflowing once the toolbar gets narrow. */
+.tb-actions{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:9px;align-items:stretch;margin-top:2px}
+.tb-actions .tb-run{width:auto;flex:1 1 230px;margin-top:0}
+.tb-pause,.tb-reset{flex:0 1 150px;min-width:118px;font-size:15px;font-weight:800;padding:15px 18px;
   justify-content:center;background:var(--panel-2);border:1px solid var(--line);color:var(--text)}
 .tb-pause:not(:disabled):hover{border-color:var(--gold);color:var(--gold)}
 .tb-pause.resumed{border-color:var(--accent);color:var(--accent)}
 .tb-pause:disabled{opacity:.4;cursor:not-allowed}
+.tb-reset:not(:disabled):hover{border-color:var(--team2);color:var(--team2)}
 
 /* Scorebug — broadcast style; RTL so Team 1 sits on the RIGHT */
 .scorebug{margin:6px auto 14px;max-width:660px;text-align:center}
