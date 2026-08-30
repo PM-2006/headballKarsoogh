@@ -361,7 +361,7 @@ def set_strategy_strictness(value: Any, user=None) -> int:
 
 SHOW_STRICTNESS_TO_USER_CACHE_KEY = "show_strictness_to_user"
 SHOW_STRICTNESS_TO_USER_CACHE_TTL = 30
-DEFAULT_SHOW_STRICTNESS_TO_USER = True
+DEFAULT_SHOW_STRICTNESS_TO_USER = False
 
 
 def get_show_strictness_to_user() -> bool:

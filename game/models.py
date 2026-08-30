@@ -177,7 +177,7 @@ class GameConfigOverride(models.Model):
         ),
     )
     show_strictness_to_user = models.BooleanField(
-        default=True,
+        default=False,
         verbose_name=_("امکان انتخاب سطح توسط کاربر"),
         help_text=_(
             "اگر فعال باشد، بخش انتخاب سطح سخت‌گیری برای دانش‌آموزان نمایش داده می‌شود؛ "

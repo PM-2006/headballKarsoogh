@@ -1020,6 +1020,8 @@ class StrictnessAndCompilerTests(TestCase):
 
     def test_api_compile_strategy_forwards_strictness(self):
         from unittest.mock import patch
+        from .gameconfig import set_show_strictness_to_user
+        set_show_strictness_to_user(True)
 
         self.client.login(username="tactician", password="pw12345678")
         with patch("game.views.compile_persian_strategy") as mock_compile:
@@ -1091,13 +1093,26 @@ class StrictnessAndCompilerTests(TestCase):
 
         vocab_resp = self.client.get(reverse("game:api_vocabulary"))
         self.assertEqual(vocab_resp.json()["default_strictness"], 5)
-        self.assertTrue(vocab_resp.json()["show_strictness_to_user"])
+        self.assertFalse(vocab_resp.json()["show_strictness_to_user"])
 
     def test_show_strictness_to_user_toggle_and_enforcement(self):
         admin_user = User.objects.create_superuser(username="superadmin", password="pw12345678")
         self.client.login(username="superadmin", password="pw12345678")
 
-        # 1. Admin turns off show_to_user
+        # 1. Default should be False (off by default)
+        vocab_initial = self.client.get(reverse("game:api_vocabulary")).json()
+        self.assertFalse(vocab_initial["show_strictness_to_user"])
+
+        # 2. Admin can turn it ON (True)
+        resp_on = self.client.post(
+            reverse("game:api_strategy_strictness"),
+            data=json.dumps({"show_to_user": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp_on.status_code, 200)
+        self.assertTrue(resp_on.json()["show_to_user"])
+
+        # 3. Admin turns it back OFF (False) and sets strictness=3
         resp = self.client.post(
             reverse("game:api_strategy_strictness"),
             data=json.dumps({"show_to_user": False, "strictness": 3}),

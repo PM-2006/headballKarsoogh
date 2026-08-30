@@ -1967,7 +1967,7 @@ async function saveSessionLimit(){
   }finally{input.disabled=false;}
 }
 let adminStrictnessValue=null;
-let showStrictnessValue=true;
+let showStrictnessValue=false;
 async function refreshAdminStrictness(){
   const sel=$("adminStrictness");
   const tog=$("showStrictnessToggle");
@@ -1975,7 +1975,7 @@ async function refreshAdminStrictness(){
   try{
     const d=await getJSON("api/strategy-strictness/");
     adminStrictnessValue=d.strictness;
-    showStrictnessValue=d.show_to_user!==false;
+    showStrictnessValue=Boolean(d.show_to_user);
     if(sel){
       sel.value=String(d.strictness);
       sel.disabled=false;
@@ -2158,7 +2158,7 @@ async function init(){
     }
     const strictBox=document.querySelector(".strictness-box");
     if(strictBox){
-      strictBox.style.display=(vocabulary.show_strictness_to_user===false)?"none":"";
+      strictBox.style.display=vocabulary.show_strictness_to_user?"":"none";
     }
   }
   await loadStrategiesFromServer();
