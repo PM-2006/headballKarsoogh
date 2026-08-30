@@ -8,7 +8,7 @@ import random
 from .validators import validate_strategy
 
 
-PHYSICS_VERSION = "v3.2-jump-air-kicks"
+PHYSICS_VERSION = "v3.3-directional-clear"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -84,7 +84,7 @@ class GameConfig:
     kick_high_y: float = -760.0
     kick_high_cooldown: float = 0.46
     kick_clear_x: float = 1000.0
-    kick_clear_y: float = -520.0
+    kick_clear_y: float = -900.0
     kick_clear_cooldown: float = 0.52
     kick_keep_ball_velocity: float = 0.38
     kick_player_velocity_transfer: float = 0.52
@@ -183,7 +183,7 @@ def get_base_config() -> GameConfig:
         kick_high_y=_env_float("GAME_KICK_HIGH_Y", -760.0),
         kick_high_cooldown=_env_float("GAME_KICK_HIGH_COOLDOWN", 0.46),
         kick_clear_x=_env_float("GAME_KICK_CLEAR_X", 1000.0),
-        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -520.0),
+        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -900.0),
         kick_clear_cooldown=_env_float("GAME_KICK_CLEAR_COOLDOWN", 0.52),
         kick_keep_ball_velocity=_env_float("GAME_KICK_KEEP_BALL_VELOCITY", 0.38),
         kick_player_velocity_transfer=_env_float("GAME_KICK_PLAYER_VELOCITY_TRANSFER", 0.52),
@@ -521,7 +521,23 @@ def _apply_kicks(world: World, intents: list[Intent], config: GameConfig):
             continue
 
         kick_x, kick_y, cooldown = params
-        direction = 1 if team == 0 else -1
+        if intent.kick == "KICK_CLEAR":
+            # A clearance is an emergency escape, not a shot at goal. Send the
+            # ball upward and away on whichever side of the player's body it
+            # currently is, so a ball behind the player can still be cleared.
+            player_x, _ = _player_center(player, config)
+            ball_offset_x = world.ball.x - player_x
+            if abs(ball_offset_x) > 1e-6:
+                direction = 1 if ball_offset_x > 0.0 else -1
+            else:
+                direction = (
+                    player.face
+                    if player.face in (-1, 1)
+                    else (1 if team == 0 else -1)
+                )
+        else:
+            # Normal low/high shots continue to target the opponent's goal.
+            direction = 1 if team == 0 else -1
         impulses.append(
             (
                 team,

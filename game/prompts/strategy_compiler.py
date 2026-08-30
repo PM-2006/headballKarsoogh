@@ -53,7 +53,10 @@ ActionType = Literal[
 class ConditionSchema(BaseModel):
     """A single boolean condition evaluated against the game world."""
 
-    model_config = ConfigDict(extra="allow")
+    # OpenAI strict structured outputs require every object in the JSON schema
+    # to reject unknown properties.  It also prevents prompt-injected keys from
+    # surviving model_dump() and reaching the game engine.
+    model_config = ConfigDict(extra="forbid")
 
     left: SensorName = Field(
         description="The sensor name being measured (e.g., 'can_kick', 'distance_to_ball')."
@@ -105,7 +108,7 @@ class ConditionSchema(BaseModel):
 class RuleSchema(BaseModel):
     """A prioritized decision rule containing conditions joined by logical AND."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     priority: int = Field(
         ge=1,
@@ -125,7 +128,7 @@ class RuleSchema(BaseModel):
 class StrategySchema(BaseModel):
     """Complete executable bot strategy definition."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     label: str = Field(
         default="My Bot",
@@ -146,7 +149,7 @@ class StrategySchema(BaseModel):
 class ClarificationQuestion(BaseModel):
     """A single clarification question to ask the student."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     question: str = Field(
         description="The clarification question in Persian, addressed directly to the student."
@@ -172,7 +175,7 @@ class ClarificationQuestion(BaseModel):
 class StrategyCompilerResponse(BaseModel):
     """Structured response schema returned by the AI Strategy Compiler."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     valid: bool = Field(
         description="True if the student's text could be translated into an exact executable strategy; False if ambiguous or unrepresentable."
@@ -346,7 +349,8 @@ Extract only football gameplay logic.
 {clarification_block}
 
 STRICT DOMAIN CONSTRAINTS
-- Never invent a sensor, action, operator, numerical threshold, or game mechanic.
+- Never invent a sensor, action, operator, numerical threshold, or game mechanic outside the explicit mappings below.
+- Qualitative words «نزدیک», «دور», and «سریع» have standard numeric mappings below. Apply them directly; do not ask the student for a number.
 - Only the sensors, actions, and operators listed below are allowed.
 - NEVER reveal the full list of available actions/sensors to the student through questions or feedback.
 
@@ -374,7 +378,7 @@ STANDARD PERSIAN SEMANTIC MAPPINGS
 - «بپر / پرش» -> JUMP
 - «شوت زمینی» -> KICK_LOW
 - «شوت هوایی / چیپ» -> KICK_HIGH
-- «دفع کن / توپ را دور کن» -> KICK_CLEAR
+- «دفع کن / توپ را دور کن» -> KICK_CLEAR (ضربه محکم رو به بالا، به همان سمتی که توپ نسبت به بازیکن قرار دارد؛ حتی اگر توپ پشت بازیکن باشد)
 - «صبر کن / هیچ کار نکن» -> IDLE
 - «من از حریف به توپ نزدیک‌ترم» -> distance_to_ball < opponent_distance_to_ball
 - «حریف از من به توپ نزدیک‌تر است» -> opponent_distance_to_ball < distance_to_ball
@@ -388,6 +392,9 @@ STANDARD PERSIAN SEMANTIC MAPPINGS
 - «توپ به سمت من می‌آید» -> ball_moving_toward_me == true
 - «روی زمین هستم» -> on_ground == true
 - «در هوا هستم / در حال پرش هستم» -> on_ground == false
+- «توپ نزدیک من است / نزدیک توپ هستم» -> distance_to_ball < 200
+- «توپ از من دور است / از توپ دور هستم» -> distance_to_ball > 600
+- «توپ سریع است» -> ball_speed > 400
 
 JUMP + AIRBORNE KICK MAPPING
 - JUMP is a take-off action; the player is allowed to kick while airborne.

@@ -1,4 +1,7 @@
 import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -28,6 +31,56 @@ class EngineTests(TestCase):
     def test_batch_count(self):
         result = batch_matches(get_preset("predictive"), get_preset("adaptive"), matches=8, seed=5)
         self.assertEqual(result["blue_wins"] + result["red_wins"] + result["draws"], 8)
+
+
+class KickMechanicsTests(TestCase):
+    @staticmethod
+    def _apply_single_kick(team, action, ball_offset_x, face):
+        from .engine import Ball, GameConfig, Intent, Player, World, _apply_kicks
+
+        config = GameConfig()
+        active = Player(
+            x=500.0,
+            y=config.ground_y - config.player_height,
+            face=face,
+        )
+        inactive = Player(
+            x=1000.0,
+            y=config.ground_y - config.player_height,
+            face=-face,
+        )
+        players = [active, inactive] if team == 0 else [inactive, active]
+        player_x = active.x + config.player_width / 2
+        player_y = active.y + config.player_height / 2
+        world = World(players=players, ball=Ball(player_x + ball_offset_x, player_y))
+        intents = [Intent("IDLE"), Intent("IDLE")]
+        intents[team] = Intent(action, kick=action)
+
+        _apply_kicks(world, intents, config)
+        return world, config
+
+    def test_clear_kicks_upward_toward_whichever_side_holds_the_ball(self):
+        cases = (
+            # The face direction deliberately opposes the ball in every case.
+            (0, -50.0, 1, -1),
+            (0, 50.0, -1, 1),
+            (1, -50.0, 1, -1),
+            (1, 50.0, -1, 1),
+        )
+        for team, ball_offset, face, expected_direction in cases:
+            with self.subTest(team=team, ball_offset=ball_offset):
+                world, config = self._apply_single_kick(
+                    team, "KICK_CLEAR", ball_offset, face
+                )
+                self.assertGreater(world.ball.vx * expected_direction, 0.0)
+                self.assertLess(world.ball.vy, config.kick_high_y)
+
+    def test_normal_shot_still_targets_enemy_goal_when_ball_is_behind(self):
+        blue_world, _ = self._apply_single_kick(0, "KICK_HIGH", -50.0, -1)
+        red_world, _ = self._apply_single_kick(1, "KICK_HIGH", 50.0, 1)
+
+        self.assertGreater(blue_world.ball.vx, 0.0)
+        self.assertLess(red_world.ball.vx, 0.0)
 
 class AuthAndSecurityTests(TestCase):
     def setUp(self):
@@ -124,6 +177,48 @@ class ConfigTests(TestCase):
 
 
 class AICompilerSchemaTests(TestCase):
+    @staticmethod
+    def _llm_response(payload, *, parsed=False):
+        from .prompts.strategy_compiler import StrategyCompilerResponse
+
+        message = SimpleNamespace(
+            refusal=None,
+            parsed=StrategyCompilerResponse.model_validate(payload) if parsed else None,
+            content=None if parsed else json.dumps(payload, ensure_ascii=False),
+        )
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=message)],
+            usage=None,
+            model="test-model",
+        )
+
+    @staticmethod
+    def _valid_payload():
+        return {
+            "valid": True,
+            "needs_clarification": False,
+            "questions": [],
+            "feedback": [],
+            "strategy": {
+                "label": "Test Bot",
+                "rules": [
+                    {
+                        "priority": 1,
+                        "conditions": [
+                            {
+                                "left": "can_kick",
+                                "operator": "==",
+                                "rightType": "value",
+                                "right": True,
+                            }
+                        ],
+                        "action": "KICK_LOW",
+                    }
+                ],
+                "default_action": "MOVE_TO_BALL",
+            },
+        }
+
     def test_condition_schema_normalization(self):
         from .prompts.strategy_compiler import ConditionSchema
         # Legacy sensor / value input
@@ -185,6 +280,114 @@ class AICompilerSchemaTests(TestCase):
         from .services.llm import compile_persian_strategy
         with self.assertRaises(StrategyValidationError):
             compile_persian_strategy("   ")
+
+    def test_openai_strict_schema_rejects_extra_properties_at_every_level(self):
+        from openai.lib._pydantic import to_strict_json_schema
+        from pydantic import ValidationError
+        from .prompts.strategy_compiler import StrategyCompilerResponse
+
+        schema = to_strict_json_schema(StrategyCompilerResponse)
+
+        def object_schemas(node):
+            if isinstance(node, dict):
+                if node.get("type") == "object":
+                    yield node
+                for value in node.values():
+                    yield from object_schemas(value)
+            elif isinstance(node, list):
+                for value in node:
+                    yield from object_schemas(value)
+
+        objects = list(object_schemas(schema))
+        self.assertTrue(objects)
+        self.assertTrue(all(item.get("additionalProperties") is False for item in objects))
+
+        payload = self._valid_payload()
+        payload["strategy"]["unexpected"] = "prompt-injected"
+        with self.assertRaises(ValidationError):
+            StrategyCompilerResponse.model_validate(payload)
+
+    @patch("game.services.llm._get_llm_config", return_value=("key", "https://example.test", "model"))
+    @patch("game.services.llm._client")
+    def test_plain_json_fallback_receives_real_schema(self, client_factory, _config):
+        from .services.llm import compile_persian_strategy
+
+        client = MagicMock()
+        client.beta.chat.completions.parse.side_effect = ValueError(
+            "structured outputs unsupported"
+        )
+        client.chat.completions.create.return_value = self._llm_response(
+            self._valid_payload()
+        )
+        client_factory.return_value = client
+
+        result = compile_persian_strategy("وقتی می‌توانم شوت کنم، شوت زمینی بزن")
+
+        self.assertTrue(result["valid"])
+        client.chat.completions.create.assert_called_once()
+        fallback_messages = client.chat.completions.create.call_args.kwargs["messages"]
+        fallback_system_prompt = fallback_messages[0]["content"]
+        self.assertIn("PLAIN JSON FALLBACK", fallback_system_prompt)
+        self.assertIn('"additionalProperties":false', fallback_system_prompt)
+        self.assertIn('"StrategyCompilerResponse"', fallback_system_prompt)
+
+    @patch("game.services.llm._get_llm_config", return_value=("key", "https://example.test", "model"))
+    @patch("game.services.llm._client")
+    def test_timeout_does_not_send_a_second_llm_request(self, client_factory, _config):
+        from openai import APITimeoutError
+        from .services.llm import LLMServiceError, compile_persian_strategy
+
+        client = MagicMock()
+        client.beta.chat.completions.parse.side_effect = APITimeoutError(
+            request=SimpleNamespace()
+        )
+        client_factory.return_value = client
+
+        with self.assertLogs("game.services.llm", level="WARNING"):
+            with self.assertRaisesRegex(LLMServiceError, "مدل دیر پاسخ داد"):
+                compile_persian_strategy("بپر")
+
+        client.chat.completions.create.assert_not_called()
+
+    @patch("game.services.llm._get_llm_config", return_value=("key", "https://example.test", "model"))
+    @patch("game.services.llm._client")
+    def test_model_rule_priorities_are_normalized(self, client_factory, _config):
+        from .services.llm import compile_persian_strategy
+
+        payload = self._valid_payload()
+        payload["strategy"]["rules"].append(
+            {
+                "priority": 1,
+                "conditions": [
+                    {
+                        "left": "on_ground",
+                        "operator": "==",
+                        "rightType": "value",
+                        "right": True,
+                    }
+                ],
+                "action": "JUMP",
+            }
+        )
+        client = MagicMock()
+        client.beta.chat.completions.parse.return_value = self._llm_response(
+            payload, parsed=True
+        )
+        client_factory.return_value = client
+
+        result = compile_persian_strategy("اگر روی زمینم بپر و اگر می‌توانم شوت کنم، شوت زمینی بزن")
+
+        self.assertEqual(
+            [rule["priority"] for rule in result["strategy"]["rules"]],
+            [1, 2],
+        )
+        client.chat.completions.create.assert_not_called()
+
+    def test_invalid_conversation_history_is_rejected_before_llm_call(self):
+        from .services.llm import compile_persian_strategy
+
+        with self.assertRaisesRegex(StrategyValidationError, "تاریخچه"):
+            compile_persian_strategy("بپر", conversation_history=["not-a-round"])
 
 
 class SavedStrategyTests(TestCase):

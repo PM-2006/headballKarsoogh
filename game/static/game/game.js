@@ -136,7 +136,7 @@ function condInstanceLabel(ci){
 }
 const simpleActions = {
   MOVE_TO_BALL:"به سمت توپ برو",MOVE_TO_GOAL:"برگرد سمت دروازه",MOVE_TO_CENTER:"به مرکز زمین برو",
-  JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_CLEAR:"توپ را محکم دفع کن",IDLE:"صبر کن"
+  JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_CLEAR:"توپ را محکم به بالا دفع کن",IDLE:"صبر کن"
 };
 let simpleRules = [];
 
@@ -1001,7 +1001,7 @@ const ACT_FA={
   MOVE_TO_BALL:{t:"به سمت توپ",i:"🏃"},MOVE_TO_GOAL:{t:"دفاع از دروازه",i:"🛡️"},
   MOVE_TO_CENTER:{t:"به مرکز زمین",i:"🎯"},JUMP:{t:"پرش",i:"⬆️"},
   KICK_LOW:{t:"شوت زمینی",i:"⚡"},KICK_HIGH:{t:"شوت هوایی",i:"🚀"},
-  KICK_CLEAR:{t:"دفع توپ",i:"🥊"},IDLE:{t:"منتظر",i:"⏸️"}
+  KICK_CLEAR:{t:"دفع رو به بالا",i:"🥊"},IDLE:{t:"منتظر",i:"⏸️"}
 };
 function actLabel(code){const a=ACT_FA[code];return a?`${a.i} ${a.t}`:(code||"—")}
 function ruleLabel(rule){if(rule==null)return "—";if(rule==="default")return "پیش‌فرض";return "شماره "+rule}
