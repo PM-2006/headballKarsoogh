@@ -33,16 +33,16 @@ def rule(priority, conditions, action):
 # thirds of the time while losing to a genuinely well-built student bot.
 #
 # Two engine facts drive the tuning, and both are worth knowing before editing:
-#   * Every kick fires toward the enemy goal regardless of which way a player
-#     faces, so winning the ball converts almost directly into goals. Chasing
-#     the ball beats holding position -- presets that camp near their own goal
-#     were the ones that used to lose every match, or draw 0-0 with each other.
+#   * KICK_LOW and KICK_HIGH fire toward the enemy goal regardless of which way
+#     a player faces. KICK_CLEAR is the exception: it launches the ball upward
+#     toward whichever side of the player's body the ball is currently on, so
+#     it can also rescue a ball that has fallen behind the player.
 #   * JUMP costs more than it gains: holding everything else constant, deleting
 #     a bot's jump rule was worth roughly 25 percentage points. A loose jump
 #     gate is therefore a handicap, not a style, which is why only "aggressive"
 #     jumps here and only for a ball right on its head.
-# KICK_CLEAR hits hardest but lofts the ball, handing possession back; the
-# defensive presets use it only inside their own danger zone for that reason.
+# KICK_CLEAR hits hardest and launches the ball steeply upward, handing
+# possession back; defensive presets use it only in their own danger zone.
 PRESETS = {
     "aggressive": {
         "label": "Aggressive",

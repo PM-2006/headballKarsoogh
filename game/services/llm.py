@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -25,6 +26,8 @@ from game.prompts.strategy_compiler import (
     build_strategy_compiler_prompt,
 )
 from game.validators import StrategyValidationError, validate_strategy
+
+logger = logging.getLogger(__name__)
 
 
 class LLMConfigurationError(RuntimeError):
@@ -180,6 +183,110 @@ def _parse_pydantic_response(response: Any) -> StrategyCompilerResponse:
         raise
 
 
+def _plain_json_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Add the real response schema for providers without Structured Outputs."""
+    schema = json.dumps(
+        StrategyCompilerResponse.model_json_schema(),
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    fallback_instruction = (
+        "\n\nPLAIN JSON FALLBACK\n"
+        "Return exactly one JSON object and no markdown or prose. "
+        "Do not add keys that are absent from this JSON Schema. "
+        "The response must validate against this schema:\n"
+        f"{schema}"
+    )
+    fallback_messages = [dict(message) for message in messages]
+    fallback_messages[0]["content"] += fallback_instruction
+    return fallback_messages
+
+
+def _can_fallback_to_plain_json(exc: Exception) -> bool:
+    """True only when the structured-output mechanism itself may be unsupported."""
+    if isinstance(
+        exc,
+        (
+            AuthenticationError,
+            PermissionDeniedError,
+            RateLimitError,
+            APITimeoutError,
+            InternalServerError,
+            APIConnectionError,
+            LengthFinishReasonError,
+        ),
+    ):
+        return False
+    if isinstance(exc, APIStatusError):
+        # OpenAI-compatible proxies commonly use one of these statuses when
+        # response_format=json_schema or the beta parse route is unsupported.
+        return getattr(exc, "status_code", 0) in (400, 404, 415, 422)
+    return isinstance(exc, (LLMServiceError, ValidationError, TypeError, ValueError))
+
+
+def _service_error(exc: Exception) -> LLMServiceError:
+    """Map provider/SDK details to short, actionable messages for students."""
+    if isinstance(exc, LLMServiceError):
+        return exc
+    if isinstance(exc, AuthenticationError):
+        message = "سرویس ساخت ربات درست تنظیم نشده است. لطفاً به مربی اطلاع بده."
+    elif isinstance(exc, PermissionDeniedError):
+        message = "دسترسی سرویس ساخت ربات یا اعتبار آن کافی نیست. لطفاً به مربی اطلاع بده."
+    elif isinstance(exc, RateLimitError):
+        message = "درخواست‌ها زیاد شده‌اند. چند لحظه صبر کن و دوباره دکمهٔ تبدیل را بزن."
+    elif isinstance(exc, APITimeoutError):
+        message = "مدل دیر پاسخ داد. دوباره دکمهٔ تبدیل را بزن؛ متن استراتژی‌ات حفظ شده است."
+    elif isinstance(exc, InternalServerError):
+        message = "سرویس ساخت ربات موقتاً مشکل دارد. کمی بعد دوباره تلاش کن."
+    elif isinstance(exc, LengthFinishReasonError):
+        message = "استراتژی یا پاسخ آن خیلی طولانی شد. متن را کمی کوتاه‌تر کن و دوباره تلاش کن."
+    elif isinstance(exc, APIConnectionError):
+        message = "ارتباط با سرویس ساخت ربات برقرار نشد. کمی بعد دوباره تلاش کن."
+    elif isinstance(exc, ValidationError):
+        message = "پاسخ مدل کامل نبود. دوباره تلاش کن یا استراتژی را کمی ساده‌تر بنویس."
+    elif isinstance(exc, APIStatusError):
+        status_code = getattr(exc, "status_code", 0)
+        if status_code == 402:
+            message = "اعتبار سرویس ساخت ربات تمام شده است. لطفاً به مربی اطلاع بده."
+        elif status_code >= 500:
+            message = "سرویس ساخت ربات موقتاً مشکل دارد. کمی بعد دوباره تلاش کن."
+        else:
+            message = "سرویس ساخت ربات این درخواست را نپذیرفت. دوباره تلاش کن یا به مربی اطلاع بده."
+    else:
+        message = "ساخت ربات انجام نشد. دوباره تلاش کن؛ اگر تکرار شد به مربی اطلاع بده."
+    return LLMServiceError(message)
+
+
+def _normalize_conversation_history(
+    conversation_history: list[dict[str, Any]] | None,
+) -> list[dict[str, list[Any]]]:
+    """Validate and bound browser-supplied clarification history."""
+    if conversation_history is None:
+        return []
+    if not isinstance(conversation_history, list):
+        raise StrategyValidationError("تاریخچهٔ پاسخ‌ها نامعتبر است.")
+
+    normalized: list[dict[str, list[Any]]] = []
+    for round_data in conversation_history[:2]:
+        if not isinstance(round_data, dict):
+            raise StrategyValidationError("تاریخچهٔ پاسخ‌ها نامعتبر است.")
+        questions = round_data.get("questions") or []
+        answers = round_data.get("answers") or []
+        if not isinstance(questions, list) or not isinstance(answers, list):
+            raise StrategyValidationError("تاریخچهٔ پاسخ‌ها نامعتبر است.")
+        clean_questions: list[Any] = []
+        for question in questions[:5]:
+            if isinstance(question, dict):
+                clean_questions.append(
+                    {"question": str(question.get("question", ""))[:500]}
+                )
+            else:
+                clean_questions.append(str(question)[:500])
+        clean_answers = [str(answer)[:500] for answer in answers[:5]]
+        normalized.append({"questions": clean_questions, "answers": clean_answers})
+    return normalized
+
+
 def compile_persian_strategy(
     text: str,
     attempt: int = 1,
@@ -204,7 +311,7 @@ def compile_persian_strategy(
         raise StrategyValidationError("متن استراتژی بیش از حد مجاز (۵۰۰۰ کاراکتر) است.")
 
     attempt = max(1, min(attempt, 10))  # Clamp to sane range
-    conversation_history = conversation_history or []
+    conversation_history = _normalize_conversation_history(conversation_history)
 
     api_key, base_url, model = _get_llm_config()
     client = _client(api_key, base_url)
@@ -213,7 +320,9 @@ def compile_persian_strategy(
     user_prompt = (
         f"متن زیر فقط استراتژی فوتبال دانش‌آموز است. این تلاش شماره {attempt} است."
         " آن را مطابق با ساختار مشخص‌شده کامپایل کن:\n\n"
+        + "<student_strategy>\n"
         + text
+        + "\n</student_strategy>"
     )
 
     # Build messages list with conversation history
@@ -239,9 +348,6 @@ def compile_persian_strategy(
             messages.append({"role": "user", "content": a_text})
 
 
-    response = None
-    parsed_result = None
-
     # Step 1: Attempt structured output with client.beta.chat.completions.parse
     try:
         response = client.beta.chat.completions.parse(
@@ -252,17 +358,14 @@ def compile_persian_strategy(
             max_tokens=3500,
         )
         parsed_result = _parse_pydantic_response(response)
-    except Exception:
+    except Exception as structured_exc:
+        if not _can_fallback_to_plain_json(structured_exc):
+            logger.warning("Structured strategy compilation failed", exc_info=True)
+            raise _service_error(structured_exc) from structured_exc
+
         # Step 2: Fallback for proxies or models that don't support beta.chat.completions.parse
         try:
-            # Append schema hint to the last user message for the fallback path
-            fallback_messages = list(messages)
-            last_msg = fallback_messages[-1]
-            fallback_messages[-1] = {
-                "role": last_msg["role"],
-                "content": last_msg["content"]
-                    + "\n\nپاسخ باید دقیقاً یک JSON معتبر منطبق بر اسکیمای StrategyCompilerResponse باشد.",
-            }
+            fallback_messages = _plain_json_messages(messages)
             response = client.chat.completions.create(
                 model=model,
                 messages=fallback_messages,
@@ -270,43 +373,9 @@ def compile_persian_strategy(
                 max_tokens=3500,
             )
             parsed_result = _parse_pydantic_response(response)
-        except AuthenticationError as exc:
-            raise LLMServiceError(
-                "خطای احراز هویت: کلید دسترسی هوش مصنوعی (API Key) نامعتبر یا منقضی شده است."
-            ) from exc
-        except (PermissionDeniedError, APIStatusError) as exc:
-            status_code = getattr(exc, "status_code", 0)
-            if status_code in (402, 403):
-                raise LLMServiceError(
-                    "اعتبار یا سهمیه مصرف کلید API هوش مصنوعی به پایان رسیده است (Insufficient Quota)."
-                ) from exc
-            raise LLMServiceError(f"خطای سرویس هوش مصنوعی (کد {status_code}): {exc}") from exc
-        except RateLimitError as exc:
-            raise LLMServiceError(
-                "محدودیت تعداد درخواست هوش مصنوعی (Rate Limit) رخ داده است. لطفاً چند لحظه بعد مجدداً تلاش فرمایید."
-            ) from exc
-        except APITimeoutError as exc:
-            raise LLMServiceError(
-                "زمان انتظار برای پاسخ مدل هوش مصنوعی به پایان رسید (Timeout). لطفاً مجدداً تلاش کنید."
-            ) from exc
-        except InternalServerError as exc:
-            raise LLMServiceError(
-                "سرویس‌دهنده هوش مصنوعی موقتاً با اختلال مواجه شده است. لطفاً کمی بعد تلاش کنید."
-            ) from exc
-        except LengthFinishReasonError as exc:
-            raise LLMServiceError(
-                "طول پاسخ مدل از سقف مجاز فراتر رفت. لطفاً استراتژی را خلاصه‌تر بنویسید."
-            ) from exc
-        except APIConnectionError as exc:
-            raise LLMServiceError(
-                "امکان برقراری ارتباط با سرور هوش مصنوعی وجود ندارد. اتصال اینترنت یا آدرس Base URL را بررسی کنید."
-            ) from exc
-        except ValidationError as val_exc:
-            raise LLMServiceError(
-                f"پاسخ هوش مصنوعی با اعتبارسنجی ساختار Pydantic مطابقت ندارد: {val_exc.errors()}"
-            ) from val_exc
         except Exception as exc:
-            raise LLMServiceError(f"خطای ناشناخته در پردازش استراتژی با هوش مصنوعی: {exc}") from exc
+            logger.warning("Plain-JSON strategy compilation failed", exc_info=True)
+            raise _service_error(exc) from exc
 
     usage_summary = _usage_summary(response)
     model_name = getattr(response, "model", None) or model
@@ -347,12 +416,20 @@ def compile_persian_strategy(
     strategy_dict = parsed_result.strategy.model_dump()
     strategy_dict["label"] = "My Bot"
 
+    # The list order is the model's intended priority order. Renumber it
+    # deterministically so a harmless duplicate/skipped priority does not make
+    # an otherwise usable student strategy fail engine validation.
+    strategy_dict["rules"].sort(key=lambda rule: rule["priority"])
+    for priority, rule in enumerate(strategy_dict["rules"], start=1):
+        rule["priority"] = priority
+
     # Pass through deterministic game engine validator
     try:
         validate_strategy(strategy_dict)
     except StrategyValidationError as exc:
+        logger.warning("Compiled strategy rejected by engine validator: %s", exc)
         raise LLMServiceError(
-            f"مدل یک Strategy نامعتبر ساخت و Validator موتور بازی آن را رد کرد: {exc}"
+            "استراتژی ساخته شد اما یکی از قانون‌ها قابل اجرا نبود. دوباره تلاش کن یا جمله را کمی ساده‌تر بنویس."
         ) from exc
 
     return {
