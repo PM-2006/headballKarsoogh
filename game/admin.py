@@ -11,7 +11,15 @@ from .models import GameConfigOverride, SavedStrategy
 
 @admin.register(GameConfigOverride)
 class GameConfigOverrideAdmin(admin.ModelAdmin):
-    list_display = ("__str__", "updated_by", "updated_at")
+    list_display = (
+        "__str__",
+        "game_enabled",
+        "session_limit",
+        "strategy_strictness",
+        "show_strictness_to_user",
+        "updated_by",
+        "updated_at",
+    )
     readonly_fields = ("updated_at",)
 
 
