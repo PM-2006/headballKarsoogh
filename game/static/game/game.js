@@ -656,6 +656,54 @@ function setFeedback(text,kind=""){
   if(kind==="err"||kind==="ok"){showToast(text,kind);return;}
   $("feedback").textContent=text;$("feedback").className="feedback "+kind;
 }
+// ---------- Match seed ----------
+// Ordinary users never see a seed box: every match draws a fresh seed uniformly
+// at random, so the same pairing never replays identically twice. Superusers
+// keep the box, plus a switch that hands the choice back to the system.
+const SEED_MAX=4294967295;      // uniform over the whole uint32 range
+let seedRandom=true;            // superuser toggle; everyone else is always random
+function randomSeed(){
+  const c=window.crypto||window.msCrypto;
+  // CSPRNG when available; Math.random only as a last resort on ancient browsers.
+  if(c&&c.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0];
+  return Math.floor(Math.random()*(SEED_MAX+1));
+}
+// The seed the next match/batch should use. In manual mode that is whatever the
+// superuser typed; otherwise a fresh draw, echoed into the box so they can see
+// (and later re-enter) which match they just watched.
+function nextSeed(){
+  const box=$("seedInput");
+  if(box&&!seedRandom){
+    const typed=Number(box.value);
+    return Number.isFinite(typed)?Math.trunc(typed):1;
+  }
+  const seed=randomSeed();
+  if(box) box.value=seed;
+  return seed;
+}
+function applySeedMode(){
+  const box=$("seedInput"),btn=$("seedRandomToggle");
+  if(!btn) return;
+  btn.textContent=seedRandom?"🎲 انتخاب تصادفی":"✍️ انتخاب دستی";
+  btn.title=seedRandom
+    ?"سیستم برای هر مسابقه یک شمارهٔ تصادفی می‌سازد. برای وارد کردن دستی کلیک کن."
+    :"شمارهٔ بازی را خودت وارد می‌کنی. برای واگذاری به سیستم کلیک کن.";
+  btn.classList.toggle("on",seedRandom);
+  btn.setAttribute("aria-pressed",seedRandom?"true":"false");
+  if(box) box.disabled=seedRandom;
+}
+function toggleSeedMode(){
+  seedRandom=!seedRandom;
+  try{localStorage.setItem("gilball.seedRandom",seedRandom?"1":"0")}catch(e){}
+  applySeedMode();
+  showToast(seedRandom?"شمارهٔ بازی از این پس تصادفی انتخاب می‌شود.":"شمارهٔ بازی را خودت وارد کن.","ok");
+}
+function initSeedMode(){
+  if(!$("seedRandomToggle")) return;   // not a superuser — nothing to switch
+  try{seedRandom=localStorage.getItem("gilball.seedRandom")!=="0"}catch(e){seedRandom=true}
+  applySeedMode();
+}
+
 // ---------- Basketball-style match: N rounds with substitution rests ----------
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
@@ -707,7 +755,7 @@ async function runMatch(){
   hideRest();
   setArenaMsg("");
   tournament={round:1, rounds:Math.max(1,Math.round(gameConfig.match_rounds||4)),
-              total:[0,0], baseSeed:Number($("seedInput").value)||1, playing:true};
+              total:[0,0], baseSeed:nextSeed(), playing:true};
   await playRound();
 }
 async function playRound(){
@@ -1442,7 +1490,7 @@ async function runBatch(){
     $("runBatch").disabled=true;
     const blue=$("blueSelect").value,red=$("redSelect").value;
     resolveTeamColors(blue,red); applyTeamColors();
-    const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});
+    const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:nextSeed()});
     const total=result.matches;
     $("batchResult").innerHTML=
       batchRow(labelFor(blue),"t1",result.blue_wins,result.blue_goals,total)+
@@ -2013,6 +2061,8 @@ async function init(){
   $("playMatch").onclick=runMatch;
   if($("pauseMatch")) $("pauseMatch").onclick=togglePause;
   if($("resetMatch")) $("resetMatch").onclick=resetMatch;
+  if($("seedRandomToggle")) $("seedRandomToggle").onclick=toggleSeedMode;
+  initSeedMode();
   // Space toggles pause, but only while watching the arena and never while the
   // user is typing into a field.
   document.addEventListener("keydown",(e)=>{
