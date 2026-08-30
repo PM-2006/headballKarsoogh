@@ -1940,7 +1940,7 @@ async function saveShowStrictnessToggle(){
     tog.checked=showStrictnessValue;
     const strictBox=document.querySelector(".strictness-box");
     if(strictBox) strictBox.style.display=showStrictnessValue?"":"none";
-    showToast(showStrictnessValue?"نمایش اسلایدر به کاربر فعال شد.":"اسلایدر از دید کاربر مخفی شد.","ok");
+    showToast(showStrictnessValue?"امکان انتخاب سطح برای کاربر فعال شد.":"انتخاب سطح برای کاربر غیرفعال شد (فقط مدیریت).","ok");
   }catch(err){
     tog.checked=showStrictnessValue;
     showToast("❌ "+humanizeError(err),"err");
