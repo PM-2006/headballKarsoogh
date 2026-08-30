@@ -723,9 +723,58 @@ function setFeedback(text,kind=""){
   if(kind==="err"||kind==="ok"){showToast(text,kind);return;}
   $("feedback").textContent=text;$("feedback").className="feedback "+kind;
 }
+// ---------- Match seed ----------
+// Ordinary users never see a seed box: every match draws a fresh seed uniformly
+// at random, so the same pairing never replays identically twice. Superusers
+// keep the box, plus a switch that hands the choice back to the system.
+const SEED_MAX=4294967295;      // uniform over the whole uint32 range
+let seedRandom=true;            // superuser toggle; everyone else is always random
+function randomSeed(){
+  const c=window.crypto||window.msCrypto;
+  // CSPRNG when available; Math.random only as a last resort on ancient browsers.
+  if(c&&c.getRandomValues) return c.getRandomValues(new Uint32Array(1))[0];
+  return Math.floor(Math.random()*(SEED_MAX+1));
+}
+// The seed the next match/batch should use. In manual mode that is whatever the
+// superuser typed; otherwise a fresh draw, echoed into the box so they can see
+// (and later re-enter) which match they just watched.
+function nextSeed(){
+  const box=$("seedInput");
+  if(box&&!seedRandom){
+    const typed=Number(box.value);
+    return Number.isFinite(typed)?Math.trunc(typed):1;
+  }
+  const seed=randomSeed();
+  if(box) box.value=seed;
+  return seed;
+}
+function applySeedMode(){
+  const box=$("seedInput"),btn=$("seedRandomToggle");
+  if(!btn) return;
+  btn.textContent=seedRandom?"🎲 انتخاب تصادفی":"✍️ انتخاب دستی";
+  btn.title=seedRandom
+    ?"سیستم برای هر مسابقه یک شمارهٔ تصادفی می‌سازد. برای وارد کردن دستی کلیک کن."
+    :"شمارهٔ بازی را خودت وارد می‌کنی. برای واگذاری به سیستم کلیک کن.";
+  btn.classList.toggle("on",seedRandom);
+  btn.setAttribute("aria-pressed",seedRandom?"true":"false");
+  if(box) box.disabled=seedRandom;
+}
+function toggleSeedMode(){
+  seedRandom=!seedRandom;
+  try{localStorage.setItem("gilball.seedRandom",seedRandom?"1":"0")}catch(e){}
+  applySeedMode();
+  showToast(seedRandom?"شمارهٔ بازی از این پس تصادفی انتخاب می‌شود.":"شمارهٔ بازی را خودت وارد کن.","ok");
+}
+function initSeedMode(){
+  if(!$("seedRandomToggle")) return;   // not a superuser — nothing to switch
+  try{seedRandom=localStorage.getItem("gilball.seedRandom")!=="0"}catch(e){seedRandom=true}
+  applySeedMode();
+}
+
 // ---------- Basketball-style match: N rounds with substitution rests ----------
 let tournament=null;          // {round, rounds, total:[0,0], baseSeed, playing}
 let restTimerHandle=null;
+let matchToken=0;             // bumped on every run/reset; stale simulate replies are dropped
 
 const FA_DIGITS="۰۱۲۳۴۵۶۷۸۹";
 function toFa(n){ return String(n).replace(/[0-9]/g,d=>FA_DIGITS[d]); }
@@ -767,12 +816,13 @@ function renderRoundBar(){
 }
 async function runMatch(){
   if(tournament&&tournament.playing) return;      // a match is already in progress
+  matchToken++;
   if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
   setPlaybackControls(false);
   hideRest();
   setArenaMsg("");
   tournament={round:1, rounds:Math.max(1,Math.round(gameConfig.match_rounds||4)),
-              total:[0,0], baseSeed:Number($("seedInput").value)||1, playing:true};
+              total:[0,0], baseSeed:nextSeed(), playing:true};
   await playRound();
 }
 async function playRound(){
@@ -784,14 +834,17 @@ async function playRound(){
   if($("liveName1"))$("liveName1").textContent=n1;
   if($("liveName2"))$("liveName2").textContent=n2;
   paintTeamDots(); updateScore(0,0); renderRoundBar();
+  const token=matchToken;
   try{
     $("playMatch").disabled=true;
     const result=await postJSON("api/simulate/",{
       blue:strategyPayload(s1),red:strategyPayload(s2),
       seed:tournament.baseSeed+tournament.round
     });
+    if(token!==matchToken) return;   // reset while we waited — this replay is stale
     playFrames(result.frames,result.record_fps,onRoundEnd);
   }catch(err){
+    if(token!==matchToken) return;
     setArenaMsg("❌ "+humanizeError(err),"err");
     tournament.playing=false;$("playMatch").disabled=false;
   }
@@ -911,6 +964,26 @@ function togglePause(){
   const btn=$("pauseMatch");
   if(!btn||btn.disabled) return;
   setPaused(!playbackPaused);
+}
+// Abort whatever the arena is doing and put it back to its pre-match state.
+// Open to every kind of user — students and admins alike.
+function resetMatch(){
+  const inProgress=!!(tournament&&tournament.playing);
+  if(inProgress&&!confirm("مسابقهٔ در حال اجرا متوقف می‌شود و نتیجهٔ راندها پاک می‌شود. مطمئنی؟")) return;
+  matchToken++;                                   // drop any simulate reply still in flight
+  if(playbackHandle){cancelAnimationFrame(playbackHandle);playbackHandle=null}
+  hideRest();                                     // rest overlay + its countdown
+  resetFx();                                      // goal flash, winner card, confetti
+  tournament=null;
+  const bar=$("roundBar"); if(bar) bar.style.display="none";
+  const dots=$("roundDots"); if(dots) dots.innerHTML="";
+  const agg=$("roundAgg"); if(agg) agg.innerHTML="";
+  setPlaybackControls(false);                     // disables pause and clears "▶ ادامه"
+  const play=$("playMatch"); if(play) play.disabled=false;
+  setArenaMsg("");
+  updateScore(0,0);
+  drawIdleFrame();
+  showToast(inProgress?"مسابقه بازنشانی شد. هر وقت خواستی دوباره اجرا کن.":"زمین بازی آمادهٔ مسابقهٔ تازه است.","ok");
 }
 
 function playFrames(frames,fps,onEnd){
@@ -1484,7 +1557,7 @@ async function runBatch(){
     $("runBatch").disabled=true;
     const blue=$("blueSelect").value,red=$("redSelect").value;
     resolveTeamColors(blue,red); applyTeamColors();
-    const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:Number($("seedInput").value)||1});
+    const result=await postJSON("api/batch/",{blue:strategyPayload(blue),red:strategyPayload(red),matches:Number($("batchCount").value),seed:nextSeed()});
     const total=result.matches;
     $("batchResult").innerHTML=
       batchRow(labelFor(blue),"t1",result.blue_wins,result.blue_goals,total)+
@@ -2119,6 +2192,9 @@ async function init(){
   document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
   $("playMatch").onclick=runMatch;
   if($("pauseMatch")) $("pauseMatch").onclick=togglePause;
+  if($("resetMatch")) $("resetMatch").onclick=resetMatch;
+  if($("seedRandomToggle")) $("seedRandomToggle").onclick=toggleSeedMode;
+  initSeedMode();
   // Space toggles pause, but only while watching the arena and never while the
   // user is typing into a field.
   document.addEventListener("keydown",(e)=>{

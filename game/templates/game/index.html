@@ -145,10 +145,19 @@
   <div class="arena-toolbar">
     <label class="tb-field tb-team1"><span id="team1Label">🟩 تیم من (سمت چپ)</span><select id="blueSelect"></select></label>
     <label class="tb-field tb-team2"><span id="team2Label">🟦 حریف (سمت راست)</span><select id="redSelect"></select></label>
-    <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span><input id="seedInput" type="number" value="1"></label>
+    {% if request.user.is_superuser %}
+    {# Only the superuser picks a seed by hand; everyone else gets a random one per match. #}
+    <label class="tb-field tb-seed"><span>🎲 Seed (شماره بازی)</span>
+      <div class="seed-row">
+        <input id="seedInput" type="number" value="1">
+        <button type="button" id="seedRandomToggle" class="seed-toggle">🎲 انتخاب تصادفی</button>
+      </div>
+    </label>
+    {% endif %}
     <div class="tb-actions">
       <button id="playMatch" class="primary tb-run">▶ اجرای مسابقه</button>
       <button id="pauseMatch" class="tb-pause" disabled>⏸ توقف</button>
+      <button id="resetMatch" class="tb-reset" title="مسابقه را متوقف کن و زمین را به حالت اول برگردان">🔄 بازنشانی</button>
     </div>
   </div>
   <div class="scorebug">
