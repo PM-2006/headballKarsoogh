@@ -938,10 +938,12 @@ function setupHalftimeSwitcher(){
   if($("halftimeTeam2Head")) $("halftimeTeam2Head").textContent = `🟦 استراتژی تیم ۲ (${n2})`;
 
   if(bSel && origBSel){
-    bSel.innerHTML=origBSel.innerHTML;
-    bSel.value=origBSel.value;
-    bSel.onchange=()=>{
-      origBSel.value=bSel.value;
+    bSel.innerHTML = buildSelectOptionsForTeam(origBSel.value, 0);
+    bSel.value = origBSel.value;
+    bSel.onchange = ()=>{
+      origBSel.value = bSel.value;
+      bSel.innerHTML = buildSelectOptionsForTeam(bSel.value, 0);
+      bSel.value = origBSel.value;
       onHalftimeStrategyChange(bSel.value, 0);
       renderTeamHalftimeQuickButtons(0, bSel, origBSel, qbWrap1);
     };
@@ -949,10 +951,12 @@ function setupHalftimeSwitcher(){
   }
 
   if(rSel && origRSel){
-    rSel.innerHTML=origRSel.innerHTML;
-    rSel.value=origRSel.value;
-    rSel.onchange=()=>{
-      origRSel.value=rSel.value;
+    rSel.innerHTML = buildSelectOptionsForTeam(origRSel.value, 1);
+    rSel.value = origRSel.value;
+    rSel.onchange = ()=>{
+      origRSel.value = rSel.value;
+      rSel.innerHTML = buildSelectOptionsForTeam(rSel.value, 1);
+      rSel.value = origRSel.value;
       onHalftimeStrategyChange(rSel.value, 1);
       renderTeamHalftimeQuickButtons(1, rSel, origRSel, qbWrap2);
     };
@@ -1775,38 +1779,108 @@ function grpPresets(){
   return `<optgroup label="⚡ الگوهای پیش‌فرض">${g}</optgroup>`;
 }
 
+function buildSelectOptionsForTeam(curVal, teamIdx){
+  let author = null;
+  if(curVal === "mybot"){
+    author = currentUsername;
+  } else if(curVal && (curVal.startsWith("saved_") || curVal.startsWith("pub_") || curVal.startsWith("any_"))){
+    const id = Number(curVal.slice(curVal.indexOf("_")+1));
+    const b = botById(id);
+    if(b) author = b.author;
+  }
+
+  const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
+  let authorOpts = "";
+  if(author){
+    const authorBots = pool.filter(s => s.author === author);
+    if(authorBots.length){
+      authorBots.forEach((s, idx)=>{
+        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+        authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
+      });
+    }
+  } else if(!isAdmin && teamIdx === 0 && savedStrategies.length){
+    savedStrategies.forEach((s, idx)=>{
+      const val = `saved_${s.id}`;
+      authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
+    });
+  }
+
+  let html = "";
+  if(authorOpts){
+    const teamTitle = author ? `⚡ استراتژی‌های این تیم (${author})` : `⚡ استراتژی‌های ربات من`;
+    html += `<optgroup label="${teamTitle}">${authorOpts}</optgroup>`;
+  }
+
+  if(isAdmin){
+    // List all other bots grouped by other authors
+    let otherOpts = "";
+    allStrategies.forEach(s=>{
+      if(!author || s.author !== author){
+        otherOpts += `<option value="any_${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.author||"?")}</option>`;
+      }
+    });
+    if(otherOpts){
+      html += `<optgroup label="👥 سایر تیم‌ها / ربات‌ها">${otherOpts}</optgroup>`;
+    }
+  } else {
+    if(teamIdx === 1){
+      // Opponent options for non-admin
+      let pubOpts = "";
+      publicStrategies.forEach(s=>{
+        if(!author || s.author !== author){
+          pubOpts += `<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"مدیر")})</option>`;
+        }
+      });
+      if(pubOpts){
+        html += `<optgroup label="🏆 سایر حریفان">${pubOpts}</optgroup>`;
+      }
+    }
+  }
+
+  html += grpPresets();
+  return html;
+}
+
 function refreshOpponentMenus(){
   const s1=$("blueSelect"), s2=$("redSelect");
   if(!s1||!s2) return;
   const cur1=s1.value, cur2=s2.value;
 
-  let opts1, opts2, lab1, lab2, def1, def2;
+  let lab1, lab2, def1, def2;
   if(isAdmin){
-    // Admin: both sides may line up ANY bot ever made + presets.
-    const draft=myStrategy?`<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری</option></optgroup>`:"";
-    const full=draft+grpAll()+grpPresets();
-    opts1=opts2=full;
     lab1="🟩 تیم ۱ (سمت چپ)"; lab2="🟦 تیم ۲ (سمت راست)";
-    const first=allStrategies[0]?("any_"+allStrategies[0].id):"predictive";
-    const second=allStrategies[1]?("any_"+allStrategies[1].id):(allStrategies[0]?("any_"+allStrategies[0].id):"adaptive");
-    def1=first; def2=second;
+    def1=cur1 || (allStrategies[0]?("any_"+allStrategies[0].id):"predictive");
+    def2=cur2 || (allStrategies[1]?("any_"+allStrategies[1].id):(allStrategies[0]?("any_"+allStrategies[0].id):"adaptive"));
   }else{
-    // Student: own team can be only THEIR bots + presets (no admin/official bots);
-    // the opponent may be anything, including official/admin bots.
-    opts1=grpMine()+grpPresets();
-    opts2=grpMine()+grpPublic()+grpPresets();
     lab1="🟩 تیم من (سمت چپ)"; lab2="🟦 حریف (سمت راست)";
-    def1=(myStrategy?"mybot":(savedStrategies[0]?("saved_"+savedStrategies[0].id):"predictive"));
-    def2=(publicStrategies[0]?("pub_"+publicStrategies[0].id):"adaptive");
+    def1=cur1 || (myStrategy?"mybot":(savedStrategies[0]?("saved_"+savedStrategies[0].id):"predictive"));
+    def2=cur2 || (publicStrategies[0]?("pub_"+publicStrategies[0].id):"adaptive");
   }
 
-  s1.innerHTML=opts1; s2.innerHTML=opts2;
+  s1.innerHTML = buildSelectOptionsForTeam(def1, 0);
+  s2.innerHTML = buildSelectOptionsForTeam(def2, 1);
   if($("team1Label"))$("team1Label").textContent=lab1;
   if($("team2Label"))$("team2Label").textContent=lab2;
 
   const has=(sel,v)=>[...sel.options].some(o=>o.value===v);
   s1.value = has(s1,cur1)?cur1:def1;
   s2.value = has(s2,cur2)?cur2:def2;
+
+  s1.onchange = ()=>{
+    s1.innerHTML = buildSelectOptionsForTeam(s1.value, 0);
+    const [sel1,sel2]=currentSels();
+    resolveTeamColors(sel1,sel2); applyTeamColors(); paintTeamDots();
+    if($("blueName"))$("blueName").textContent=teamDisplayName(sel1);
+    if($("liveName1"))$("liveName1").textContent=teamDisplayName(sel1);
+  };
+  s2.onchange = ()=>{
+    s2.innerHTML = buildSelectOptionsForTeam(s2.value, 1);
+    const [sel1,sel2]=currentSels();
+    resolveTeamColors(sel1,sel2); applyTeamColors(); paintTeamDots();
+    if($("redName"))$("redName").textContent=teamDisplayName(sel2);
+    if($("liveName2"))$("liveName2").textContent=teamDisplayName(sel2);
+  };
 }
 
 async function loadStrategiesFromServer(){
