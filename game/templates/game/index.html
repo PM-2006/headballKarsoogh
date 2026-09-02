@@ -214,18 +214,34 @@
         <div class="rest-count"><span class="rest-count-num" id="restCountdown">۲۵</span><span class="rest-count-unit">ثانیه تا ادامه بازی</span></div>
         
         <div class="halftime-switch-box">
-          <div class="halftime-switch-title">🔄 سوییچ و تغییر استراتژی برای نیمه بعدی:</div>
-          <div class="halftime-switch-row">
-            <label class="halftime-label"><span id="halftimeTeam1Label">🟩 استراتژی تیم ۱:</span>
-              <select id="halftimeBlueSelect" class="halftime-select"></select>
-            </label>
+          <div class="halftime-switch-title">🔄 سوییچ و تغییر تاکتیک برای نیمه بعدی:</div>
+          
+          <div class="halftime-teams-grid">
+            <!-- Team 1 Column -->
+            <div class="halftime-team-card">
+              <div class="halftime-team-head" id="halftimeTeam1Head">🟩 تیم ۱ (سبز)</div>
+              <label class="halftime-label">
+                <span>انتخاب استراتژی:</span>
+                <select id="halftimeBlueSelect" class="halftime-select"></select>
+              </label>
+              <div class="halftime-quick-title">⚡ تاکتیک‌های سریع تیم ۱:</div>
+              <div id="halftimeQuickButtons1" class="halftime-quick-buttons"></div>
+            </div>
+
             {% if request.user.is_superuser %}
-            <label class="halftime-label"><span>🟦 استراتژی تیم ۲:</span>
-              <select id="halftimeRedSelect" class="halftime-select"></select>
-            </label>
+            <!-- Team 2 Column (Admin/Superuser only) -->
+            <div class="halftime-team-card">
+              <div class="halftime-team-head" id="halftimeTeam2Head">🟦 تیم ۲ (آبی)</div>
+              <label class="halftime-label">
+                <span>انتخاب استراتژی:</span>
+                <select id="halftimeRedSelect" class="halftime-select"></select>
+              </label>
+              <div class="halftime-quick-title">⚡ تاکتیک‌های سریع تیم ۲:</div>
+              <div id="halftimeQuickButtons2" class="halftime-quick-buttons"></div>
+            </div>
             {% endif %}
           </div>
-          <div id="halftimeQuickButtons" class="halftime-quick-buttons"></div>
+
           <div id="halftimeSwitchFeedback" class="halftime-feedback"></div>
         </div>
 

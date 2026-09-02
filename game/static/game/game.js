@@ -865,14 +865,77 @@ function onRoundEnd(lastFrame){
   else{ tournament.playing=false;$("playMatch").disabled=false; showFinal(); }
 }
 
+function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem){
+  if(!wrapElem || !origSelElem) return;
+  const currentVal = origSelElem.value;
+  let html = "";
+
+  // 1. If Team 1 is current student's own team (non-admin student):
+  if(teamIdx === 0 && !isAdmin){
+    savedStrategies.forEach((s, idx)=>{
+      const val = "saved_" + s.id;
+      const isCur = (currentVal === val);
+      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
+    });
+  } else {
+    // Admin mode or Team 2: Find the author of the selected bot
+    let author = null;
+    if(currentVal === "mybot"){
+      author = currentUsername;
+    } else if(currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_")){
+      const id = Number(currentVal.slice(currentVal.indexOf("_")+1));
+      const b = botById(id);
+      if(b) author = b.author;
+    }
+
+    if(author){
+      const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
+      const authorBots = pool.filter(s => s.author === author);
+      authorBots.forEach((s, idx)=>{
+        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+        const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
+        html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
+      });
+    }
+
+    // If no author strategies found (e.g. preset was selected), show presets
+    if(!html){
+      ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
+        const isCur = (currentVal === p);
+        const label = p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
+        html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
+      });
+    }
+  }
+
+  wrapElem.innerHTML = html;
+  wrapElem.querySelectorAll(".ht-btn").forEach(btn=>{
+    btn.onclick = ()=>{
+      const val = btn.getAttribute("data-val");
+      origSelElem.value = val;
+      if(selElem) selElem.value = val;
+      wrapElem.querySelectorAll(".ht-btn").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      onHalftimeStrategyChange(val, teamIdx);
+      renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem);
+    };
+  });
+}
+
 function setupHalftimeSwitcher(){
   const bSel=$("halftimeBlueSelect");
   const rSel=$("halftimeRedSelect");
   const origBSel=$("blueSelect");
   const origRSel=$("redSelect");
-  const qbWrap=$("halftimeQuickButtons");
+  const qbWrap1=$("halftimeQuickButtons1");
+  const qbWrap2=$("halftimeQuickButtons2");
   const feedback=$("halftimeSwitchFeedback");
   if(feedback) feedback.textContent="";
+
+  const [s1,s2]=currentSels();
+  const [n1,n2]=[teamDisplayName(s1),teamDisplayName(s2)];
+  if($("halftimeTeam1Head")) $("halftimeTeam1Head").textContent = `🟩 استراتژی تیم ۱ (${n1})`;
+  if($("halftimeTeam2Head")) $("halftimeTeam2Head").textContent = `🟦 استراتژی تیم ۲ (${n2})`;
 
   if(bSel && origBSel){
     bSel.innerHTML=origBSel.innerHTML;
@@ -880,7 +943,9 @@ function setupHalftimeSwitcher(){
     bSel.onchange=()=>{
       origBSel.value=bSel.value;
       onHalftimeStrategyChange(bSel.value, 0);
+      renderTeamHalftimeQuickButtons(0, bSel, origBSel, qbWrap1);
     };
+    renderTeamHalftimeQuickButtons(0, bSel, origBSel, qbWrap1);
   }
 
   if(rSel && origRSel){
@@ -889,43 +954,9 @@ function setupHalftimeSwitcher(){
     rSel.onchange=()=>{
       origRSel.value=rSel.value;
       onHalftimeStrategyChange(rSel.value, 1);
+      renderTeamHalftimeQuickButtons(1, rSel, origRSel, qbWrap2);
     };
-  }
-
-  if(qbWrap){
-    let html="";
-    // Draft bot if available
-    if(myStrategy){
-      const isCur=(origBSel && origBSel.value==="mybot");
-      html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="mybot">🤖 پیش‌نویس جاری</button>`;
-    }
-    // Saved strategies (1 to 3)
-    savedStrategies.forEach((s, idx)=>{
-      const val="saved_"+s.id;
-      const isCur=(origBSel && origBSel.value===val);
-      html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
-    });
-    // If no saved strategies, show standard presets
-    if(savedStrategies.length===0){
-      ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
-        const isCur=(origBSel && origBSel.value===p);
-        const label=p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
-        html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
-      });
-    }
-    qbWrap.innerHTML=html;
-    qbWrap.querySelectorAll(".ht-btn").forEach(btn=>{
-      btn.onclick=()=>{
-        const val=btn.getAttribute("data-val");
-        if(origBSel){
-          origBSel.value=val;
-          if(bSel) bSel.value=val;
-        }
-        qbWrap.querySelectorAll(".ht-btn").forEach(b=>b.classList.remove("active"));
-        btn.classList.add("active");
-        onHalftimeStrategyChange(val, 0);
-      };
-    });
+    renderTeamHalftimeQuickButtons(1, rSel, origRSel, qbWrap2);
   }
 }
 
@@ -941,10 +972,15 @@ function onHalftimeStrategyChange(val, teamIdx=0){
   if($("liveName2"))$("liveName2").textContent=n2;
   if($("restName1"))$("restName1").textContent=n1;
   if($("restName2"))$("restName2").textContent=n2;
-  const chosenName=teamDisplayName(val);
+  if($("halftimeTeam1Head")) $("halftimeTeam1Head").textContent = `🟩 استراتژی تیم ۱ (${n1})`;
+  if($("halftimeTeam2Head")) $("halftimeTeam2Head").textContent = `🟦 استراتژی تیم ۲ (${n2})`;
+
+  const teamPrefix = teamIdx === 0 ? "🟩 تیم ۱" : "🟦 تیم ۲";
+  const chosenStrategyName = labelFor(val);
+  const chosenTeamName = teamDisplayName(val);
   const feedback=$("halftimeSwitchFeedback");
   if(feedback){
-    feedback.innerHTML=`✅ استراتژی تیم برای نیمه بعدی با موفقیت به <b>«${escapeHtml(chosenName)}»</b> سوییچ شد.`;
+    feedback.innerHTML=`✅ استراتژی <b>${teamPrefix} (${escapeHtml(chosenTeamName)})</b> برای نیمه بعدی با موفقیت به <b>«${escapeHtml(chosenStrategyName)}»</b> سوییچ شد.`;
   }
 }
 
