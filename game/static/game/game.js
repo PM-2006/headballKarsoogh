@@ -7,6 +7,7 @@ let playbackPaused = false;   // match replay frozen by the pause button
 let savedStrategies = [];
 let publicStrategies = [];
 let allStrategies = [];       // every bot (admins only) — for lining up any match
+let maxStrategies = 4;
 let isAdmin = false;          // set from the strategies API
 let currentUsername = "";     // the logged-in user's name (their "team" name)
 let editingStrategyId = null;
@@ -136,7 +137,7 @@ function condInstanceLabel(ci){
 }
 const simpleActions = {
   MOVE_TO_BALL:"به سمت توپ برو",MOVE_TO_GOAL:"برگرد سمت دروازه",MOVE_TO_CENTER:"به مرکز زمین برو",
-  JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_CLEAR:"توپ را محکم به بالا دفع کن",IDLE:"صبر کن"
+  JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_STRAIGHT:"شوت مستقیم بزن",KICK_CLEAR:"توپ را محکم به بالا دفع کن",IDLE:"صبر کن"
 };
 let simpleRules = [];
 
@@ -799,11 +800,18 @@ function renderRoundBar(){
     let h="";
     for(let i=1;i<=tournament.rounds;i++){
       const st=i<tournament.round?"done":(i===tournament.round?"now":"");
-      h+=`<span class="rseg ${st}">${toFa(i)}</span>`;
+      const label=tournament.rounds===2 ? (i===1?"نیمه ۱":"نیمه ۲") : toFa(i);
+      h+=`<span class="rseg ${st}">${label}</span>`;
     }
     dots.innerHTML=h;
   }
-  if($("roundInfo"))$("roundInfo").textContent=`راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+  if($("roundInfo")){
+    if(tournament.rounds===2){
+      $("roundInfo").textContent=`نیمه ${toFa(tournament.round)} از ۲`;
+    }else{
+      $("roundInfo").textContent=`راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+    }
+  }
   const [n1,n2]=teamNames();
   const agg=$("roundAgg");
   if(agg){
@@ -856,6 +864,90 @@ function onRoundEnd(lastFrame){
   if(tournament.round<tournament.rounds){ showRest(); }
   else{ tournament.playing=false;$("playMatch").disabled=false; showFinal(); }
 }
+
+function setupHalftimeSwitcher(){
+  const bSel=$("halftimeBlueSelect");
+  const rSel=$("halftimeRedSelect");
+  const origBSel=$("blueSelect");
+  const origRSel=$("redSelect");
+  const qbWrap=$("halftimeQuickButtons");
+  const feedback=$("halftimeSwitchFeedback");
+  if(feedback) feedback.textContent="";
+
+  if(bSel && origBSel){
+    bSel.innerHTML=origBSel.innerHTML;
+    bSel.value=origBSel.value;
+    bSel.onchange=()=>{
+      origBSel.value=bSel.value;
+      onHalftimeStrategyChange(bSel.value, 0);
+    };
+  }
+
+  if(rSel && origRSel){
+    rSel.innerHTML=origRSel.innerHTML;
+    rSel.value=origRSel.value;
+    rSel.onchange=()=>{
+      origRSel.value=rSel.value;
+      onHalftimeStrategyChange(rSel.value, 1);
+    };
+  }
+
+  if(qbWrap){
+    let html="";
+    // Draft bot if available
+    if(myStrategy){
+      const isCur=(origBSel && origBSel.value==="mybot");
+      html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="mybot">🤖 پیش‌نویس جاری</button>`;
+    }
+    // Saved strategies (1 to 3)
+    savedStrategies.forEach((s, idx)=>{
+      const val="saved_"+s.id;
+      const isCur=(origBSel && origBSel.value===val);
+      html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
+    });
+    // If no saved strategies, show standard presets
+    if(savedStrategies.length===0){
+      ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
+        const isCur=(origBSel && origBSel.value===p);
+        const label=p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
+        html+=`<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
+      });
+    }
+    qbWrap.innerHTML=html;
+    qbWrap.querySelectorAll(".ht-btn").forEach(btn=>{
+      btn.onclick=()=>{
+        const val=btn.getAttribute("data-val");
+        if(origBSel){
+          origBSel.value=val;
+          if(bSel) bSel.value=val;
+        }
+        qbWrap.querySelectorAll(".ht-btn").forEach(b=>b.classList.remove("active"));
+        btn.classList.add("active");
+        onHalftimeStrategyChange(val, 0);
+      };
+    });
+  }
+}
+
+function onHalftimeStrategyChange(val, teamIdx=0){
+  const [s1,s2]=currentSels();
+  resolveTeamColors(s1,s2);
+  applyTeamColors();
+  paintTeamDots();
+  const [n1,n2]=[teamDisplayName(s1),teamDisplayName(s2)];
+  if($("blueName"))$("blueName").textContent=n1;
+  if($("redName"))$("redName").textContent=n2;
+  if($("liveName1"))$("liveName1").textContent=n1;
+  if($("liveName2"))$("liveName2").textContent=n2;
+  if($("restName1"))$("restName1").textContent=n1;
+  if($("restName2"))$("restName2").textContent=n2;
+  const chosenName=teamDisplayName(val);
+  const feedback=$("halftimeSwitchFeedback");
+  if(feedback){
+    feedback.innerHTML=`✅ استراتژی تیم برای نیمه بعدی با موفقیت به <b>«${escapeHtml(chosenName)}»</b> سوییچ شد.`;
+  }
+}
+
 function showRest(){
   const rest=$("restFx");
   if(!rest){advanceRound();return;}
@@ -864,14 +956,21 @@ function showRest(){
   const secs=Number.isFinite(configured)?Math.round(configured):25;
   if(secs<=0){advanceRound();return;}
   const [n1,n2]=teamNames();
-  if($("restRound"))$("restRound").textContent=`پایان راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+  const isTwoHalves=(tournament.rounds===2);
+  if($("restRound")){
+    $("restRound").textContent=isTwoHalves
+      ?(tournament.round===1?"پایان نیمه اول (استراحت بین دو نیمه)":`پایان نیمه ${toFa(tournament.round)}`)
+      :`پایان راند ${toFa(tournament.round)} از ${toFa(tournament.rounds)}`;
+  }
   if($("restName1"))$("restName1").textContent=n1;
   if($("restName2"))$("restName2").textContent=n2;
   if($("restScore1"))$("restScore1").textContent=toFa(tournament.total[0]);
   if($("restScore2"))$("restScore2").textContent=toFa(tournament.total[1]);
-  if($("restHint"))$("restHint").textContent = isAdmin
-    ? "می‌توانی از منوی بالای زمین هر یک از دو تیم را با ربات دیگری عوض کنی، سپس راند بعد را شروع کنی."
-    : "می‌توانی از منوی بالای زمین، تیم خودت یا حریف را با ربات دیگری عوض کنی و وارد راند بعد شوی.";
+  if($("restNext")){
+    $("restNext").textContent=isTwoHalves?"شروع نیمه دوم ▶":"شروع راند بعد ▶";
+  }
+  if($("restHint"))$("restHint").textContent="می‌توانی استراتژی تیمت را برای نیمه بعدی سوییچ کنی یا با دکمه بالا بلافاصله بازی را ادامه دهی.";
+  setupHalftimeSwitcher();
   rest.classList.add("show");
   let remain=secs;
   if($("restCountdown"))$("restCountdown").textContent=toFa(remain);
@@ -1074,6 +1173,7 @@ const ACT_FA={
   MOVE_TO_BALL:{t:"به سمت توپ",i:"🏃"},MOVE_TO_GOAL:{t:"دفاع از دروازه",i:"🛡️"},
   MOVE_TO_CENTER:{t:"به مرکز زمین",i:"🎯"},JUMP:{t:"پرش",i:"⬆️"},
   KICK_LOW:{t:"شوت زمینی",i:"⚡"},KICK_HIGH:{t:"شوت هوایی",i:"🚀"},
+  KICK_STRAIGHT:{t:"شوت مستقیم",i:"🎯"},
   KICK_CLEAR:{t:"دفع رو به بالا",i:"🥊"},IDLE:{t:"منتظر",i:"⏸️"}
 };
 function actLabel(code){const a=ACT_FA[code];return a?`${a.i} ${a.t}`:(code||"—")}
@@ -1678,26 +1778,124 @@ async function loadStrategiesFromServer(){
     const res=await getJSON("api/strategies/");
     isAdmin=!!res.is_admin;
     currentUsername=res.username || "";
+    maxStrategies=res.max_strategies || 4;
     savedStrategies=res.my_strategies || [];
     publicStrategies=res.public_strategies || [];
     allStrategies=res.all_strategies || [];
     renderBotGalleries();
+    renderStrategySlots();
     refreshOpponentMenus();
   }catch(e){
     console.error("Failed loading saved strategies",e);
   }
 }
 
+function renderStrategySlots(){
+  const countBadge=$("slotsCountBadge");
+  if(countBadge){
+    countBadge.textContent=`(${toFa(savedStrategies.length)} از ${toFa(maxStrategies)} اسلات)`;
+  }
+  const host=$("strategySlotsList");
+  if(!host) return;
+
+  const totalSlots = Math.max(maxStrategies, savedStrategies.length);
+  let html = "";
+
+  for(let i=0; i<totalSlots; i++){
+    const bot = savedStrategies[i];
+    if(bot){
+      const isEditing = editingStrategyId === bot.id;
+      html += `
+        <div class="slot-card-btn ${isEditing ? 'active' : ''}">
+          <div class="slot-card-head">
+            <span class="slot-card-badge">⚡ استراتژی ${toFa(i+1)}</span>
+            <span class="slot-card-status">${isEditing ? '✏️ در حال ویرایش' : 'آماده ✓'}</span>
+          </div>
+          <div class="slot-card-name" onclick="loadBotIntoBuilder(${bot.id})" title="کلیک برای بارگذاری">${escapeHtml(bot.name)}</div>
+          <div class="slot-card-meta">
+            <span>⚡ ${bot.rules_count ?? (bot.strategy?.rules||[]).length} تصمیم</span>
+            <span>📅 ${bot.updated_at ? bot.updated_at.split(' ')[0] : ''}</span>
+          </div>
+          <div class="slot-card-actions">
+            <button class="mini primary" type="button" onclick="loadBotIntoBuilder(${bot.id})">✏️ ویرایش</button>
+            <button class="mini danger" type="button" onclick="deleteSavedBot(${bot.id},'${escapeHtml(bot.name)}')">🗑 حذف</button>
+          </div>
+        </div>
+      `;
+    }else{
+      const canAdd = !isAdmin ? i < maxStrategies : true;
+      if(canAdd){
+        html += `
+          <div class="slot-card-btn slot-card-empty" onclick="startNewStrategy(${i+1})">
+            <div class="slot-empty-title">➕ استراتژی ${toFa(i+1)}</div>
+            <div class="slot-empty-sub">خالی — کلیک برای ساخت استراتژی جدید</div>
+          </div>
+        `;
+      }
+    }
+  }
+  host.innerHTML = html;
+}
+
+function startNewStrategy(slotNum){
+  if(savedStrategies.length >= maxStrategies && !isAdmin){
+    showToast(`ظرفیت مجاز شما تکمیل است (حداکثر ${toFa(maxStrategies)} استراتژی). برای ساخت استراتژی جدید، یکی از استراتژی‌های قبلی را حذف یا ویرایش کنید.`,"err");
+    return;
+  }
+  editingStrategyId=null;
+  myStrategy=null;
+  setJsonView(null);
+  const num = slotNum || (savedStrategies.length + 1);
+
+  if($("strategyText")) $("strategyText").value="";
+  setCurrentPrompt("");
+
+  const hb=$("humanBrain");
+  if(hb){
+    hb.className="brain empty";
+    hb.innerHTML='هنوز استراتژی‌ای ساخته نشده.<br><span class="muted">از سمت راست یک استراتژی بساز تا مغز ربات اینجا نمایش داده شود.</span>';
+  }
+  const badge=$("botBadge");
+  if(badge){
+    badge.className="bot-badge off";
+    badge.textContent="ساخته نشده";
+  }
+  if($("deleteBot")) $("deleteBot").disabled=true;
+  if($("saveBotBtn")){
+    $("saveBotBtn").disabled=true;
+    $("saveBotBtn").textContent="💾 ذخیره این استراتژی";
+  }
+  if($("botNameInput")){
+    $("botNameInput").value=`استراتژی ${toFa(num)}`;
+    $("botNameInput").focus();
+  }
+  if($("editingInfo")){
+    $("editingInfo").style.display="flex";
+    $("editingBotName").textContent=`استراتژی جدید (اسلات ${toFa(num)})`;
+  }
+  if($("simpleRules")) $("simpleRules").innerHTML="";
+  renderStrategySlots();
+  switchView("builder");
+  showToast(`صفحه برای ساخت استراتژی ${toFa(num)} آماده شد. متن را بنویسید و «تبدیل استراتژی» را بزنید.`,"ok");
+}
+
 function renderBotGalleries(){
+  const countBadge=$("myBotsCountBadge");
+  if(countBadge){
+    countBadge.textContent=`(${toFa(savedStrategies.length)} از ${toFa(maxStrategies)})`;
+  }
   const myWrap=$("myBotsList");
   if(myWrap){
     if(!savedStrategies.length){
-      myWrap.innerHTML='<div class="empty-list">هنوز رباتی ذخیره نکرده‌ای. از بالای صفحه یک ربات بساز و ذخیره‌اش کن!</div>';
+      myWrap.innerHTML=`<div class="empty-list">هنوز استراتژی‌ای ذخیره نکرده‌ای (ظرفیت: حداکثر ${toFa(maxStrategies)} استراتژی). از بالای صفحه یک استراتژی بساز و ذخیره‌اش کن!</div>`;
     }else{
-      myWrap.innerHTML=savedStrategies.map(b=>`
+      myWrap.innerHTML=savedStrategies.map((b, idx)=>`
         <div class="bot-card-item">
           <div class="bot-card-head">
-            <div class="bot-card-name">🤖 ${escapeHtml(b.name)}</div>
+            <div class="bot-card-name">
+              <span class="strategy-slot-badge">استراتژی ${toFa(idx+1)}</span>
+              🤖 ${escapeHtml(b.name)}
+            </div>
             <span class="bot-badge on">${b.rules_count ?? (b.strategy?.rules||[]).length} تصمیم</span>
           </div>
           <div class="bot-card-meta">
@@ -1744,7 +1942,11 @@ async function saveCurrentBot(){
     showToast("ابتدا یک استراتژی بسازید تا بتوانید آن را ذخیره کنید.","err");
     return;
   }
-  const name=($("botNameInput").value || "").trim() || myStrategy.label || "My Bot";
+  if(!editingStrategyId && savedStrategies.length >= maxStrategies && !isAdmin){
+    showToast(`ظرفیت ذخیره شما تکمیل است (حداکثر ${toFa(maxStrategies)} استراتژی). برای ذخیره استراتژی جدید، یکی از استراتژی‌های قبلی را ویرایش یا حذف کنید.`,"err");
+    return;
+  }
+  const name=($("botNameInput").value || "").trim() || myStrategy.label || `استراتژی ${toFa(savedStrategies.length+1)}`;
   const ai_prompt=($("strategyText").value || "").trim();
   const btn=$("saveBotBtn");
   try{
@@ -1756,7 +1958,7 @@ async function saveCurrentBot(){
         strategy:myStrategy,
         ai_prompt
       },"POST");
-      showToast(`ربات «${name}» با موفقیت به‌روزرسانی شد.`,"ok");
+      showToast(`استراتژی «${name}» با موفقیت به‌روزرسانی شد.`,"ok");
     }else{
       const res=await postJSON("api/strategies/",{
         name,
@@ -1768,59 +1970,59 @@ async function saveCurrentBot(){
         $("editingInfo").style.display="flex";
         $("editingBotName").textContent=name;
       }
-      showToast(`ربات «${name}» با موفقیت در سرور ذخیره شد.`,"ok");
+      showToast(`استراتژی «${name}» با موفقیت در سرور ذخیره شد.`,"ok");
     }
     await loadStrategiesFromServer();
   }catch(err){
     showToast("❌ "+humanizeError(err),"err");
   }finally{
     btn.disabled=false;
-    btn.textContent=editingStrategyId ? "💾 ذخیره تغییرات" : "💾 ذخیره ربات";
+    btn.textContent=editingStrategyId ? "💾 ذخیره تغییرات" : "💾 ذخیره این استراتژی";
   }
 }
 
 function cancelEdit(){
   editingStrategyId=null;
   if($("editingInfo")) $("editingInfo").style.display="none";
-  if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره ربات";
+  if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره این استراتژی";
+  renderStrategySlots();
 }
 
 function loadBotIntoBuilder(id){
   const bot=savedStrategies.find(b=>b.id===id) || publicStrategies.find(b=>b.id===id);
   if(!bot){
-    showToast("ربات مورد نظر یافت نشد.","err");
+    showToast("استراتژی مورد نظر یافت نشد.","err");
     return;
   }
   if(!bot.is_owner || !bot.strategy){
     showToast("قابل ویرایش نیست.","err");
     return;
   }
-  if(bot.is_owner){
-    editingStrategyId=bot.id;
-    if($("editingInfo")){
-      $("editingInfo").style.display="flex";
-      $("editingBotName").textContent=bot.name;
-    }
-    if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره تغییرات";
-  }else{
-    cancelEdit();
+  editingStrategyId=bot.id;
+  if($("editingInfo")){
+    $("editingInfo").style.display="flex";
+    $("editingBotName").textContent=bot.name;
   }
+  if($("saveBotBtn")) $("saveBotBtn").textContent="💾 ذخیره تغییرات استراتژی";
   if($("botNameInput")) $("botNameInput").value=bot.name;
+  if($("strategyText")) $("strategyText").value=bot.ai_prompt || "";
   setCurrentPrompt(bot.ai_prompt || "");
   renderCompiledStrategy(bot.strategy);
+  renderStrategySlots();
   switchView("builder");
-  showToast(`ربات «${bot.name}» در ویرایشگر بارگذاری شد.`,"ok");
+  showToast(`استراتژی «${bot.name}» بارگذاری شد. می‌توانید آن را ویرایش یا ذخیره کنید.`,"ok");
 }
 
 async function deleteSavedBot(id,name){
-  if(!confirm(`آیا از حذف ربات «${name}» اطمینان دارید؟`)) return;
+  if(!confirm(`آیا از حذف استراتژی «${name}» اطمینان دارید؟`)) return;
   try{
     await postJSON(`api/strategies/${id}/`,{},"DELETE");
     if(editingStrategyId===id){
-      cancelEdit();
+      startNewStrategy();
+    }else{
+      await loadStrategiesFromServer();
     }
-    showToast(`ربات «${name}» با موفقیت حذف شد.`,"ok");
-    await loadStrategiesFromServer();
+    showToast(`استراتژی «${name}» با موفقیت حذف شد.`,"ok");
   }catch(err){
     showToast("❌ "+humanizeError(err),"err");
   }
@@ -1868,7 +2070,7 @@ async function ensurePanelLoaded(){
     const data=await getJSON("api/game-config/");
     if(data.error){setPanelStatus("❌ "+data.error);return;}
     renderPanel(data.groups);panelLoaded=true;
-    refreshGameActive();refreshSessionLimit();refreshAdminStrictness();
+    refreshGameActive();refreshSessionLimit();refreshStrategyLimit();refreshAdminStrictness();
     setPanelStatus("مقادیر فعلی بارگذاری شد. تغییر بده، «آزمایش» کن، بعد «ذخیره».");
   }catch(e){setPanelStatus("❌ خطا در بارگذاری تنظیمات.");}
 }
@@ -1966,8 +2168,37 @@ async function saveSessionLimit(){
     showToast("❌ "+humanizeError(err),"err");
   }finally{input.disabled=false;}
 }
+let strategyLimitValue=null;
+async function refreshStrategyLimit(){
+  const input=$("strategyLimitInput");if(!input)return;
+  try{
+    const d=await getJSON("api/strategy-limit/");
+    strategyLimitValue=d.limit;
+    if(d.min!=null)input.min=d.min;
+    if(d.max!=null)input.max=d.max;
+    input.value=d.limit;input.disabled=false;
+    maxStrategies=d.limit;
+    renderBotGalleries();
+  }catch(e){input.disabled=true;}
+}
+async function saveStrategyLimit(){
+  const input=$("strategyLimitInput");if(!input)return;
+  const value=Number(input.value);
+  if(!Number.isFinite(value)){input.value=strategyLimitValue;return;}
+  input.disabled=true;
+  try{
+    const res=await postJSON("api/strategy-limit/",{limit:value});
+    strategyLimitValue=res.limit;input.value=res.limit;
+    maxStrategies=res.limit;
+    renderBotGalleries();
+    showToast(res.message||"ذخیره شد.","ok");
+  }catch(err){
+    if(strategyLimitValue!=null)input.value=strategyLimitValue;
+    showToast("❌ "+humanizeError(err),"err");
+  }finally{input.disabled=false;}
+}
 let adminStrictnessValue=null;
-let showStrictnessValue=true;
+let showStrictnessValue=false;
 async function refreshAdminStrictness(){
   const sel=$("adminStrictness");
   const tog=$("showStrictnessToggle");
@@ -1975,7 +2206,7 @@ async function refreshAdminStrictness(){
   try{
     const d=await getJSON("api/strategy-strictness/");
     adminStrictnessValue=d.strictness;
-    showStrictnessValue=d.show_to_user!==false;
+    showStrictnessValue=Boolean(d.show_to_user);
     if(sel){
       sel.value=String(d.strictness);
       sel.disabled=false;
@@ -2158,7 +2389,7 @@ async function init(){
     }
     const strictBox=document.querySelector(".strictness-box");
     if(strictBox){
-      strictBox.style.display=(vocabulary.show_strictness_to_user===false)?"none":"";
+      strictBox.style.display=vocabulary.show_strictness_to_user?"":"none";
     }
   }
   await loadStrategiesFromServer();
@@ -2173,6 +2404,7 @@ async function init(){
   if($("panelTest")) $("panelTest").onclick=panelTest;
   if($("gameActiveToggle")) $("gameActiveToggle").onclick=toggleGameActive;
   if($("sessionLimit")) $("sessionLimit").onchange=saveSessionLimit;
+  if($("strategyLimitInput")) $("strategyLimitInput").onchange=saveStrategyLimit;
   if($("adminStrictness")) $("adminStrictness").onchange=saveAdminStrictness;
   if($("showStrictnessToggle")) $("showStrictnessToggle").onchange=saveShowStrictnessToggle;
   if($("saveKitBtn")) $("saveKitBtn").onclick=saveKit;
@@ -2185,7 +2417,8 @@ async function init(){
   $("compileWithAI").onclick=compileWithAI;
   $("fillAiSample").onclick=()=>{$("strategyText").value="اگر بتونم شوت کنم شوت زمینی بزن. اگر حریف از من به توپ نزدیک‌تر بود برگرد دفاع. اگر من نزدیک‌تر بودم برو سمت توپ. اگر توپ بالای سرم بود بپر."};
   $("testBot").onclick=()=>{if(!myStrategy){showToast("اول یک ربات بساز.","err");return;}refreshOpponentMenus();$("blueSelect").value="mybot";$("redSelect").value="adaptive";switchView("arena");runMatch()};
-  $("deleteBot").onclick=deleteBot;
+  if($("deleteBot")) $("deleteBot").onclick=deleteBot;
+  if($("addNewStrategyBtn")) $("addNewStrategyBtn").onclick=()=>startNewStrategy();
   if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
   if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;
   if($("refreshMyBotsBtn")) $("refreshMyBotsBtn").onclick=loadStrategiesFromServer;

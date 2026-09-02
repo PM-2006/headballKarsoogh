@@ -392,6 +392,10 @@ class AICompilerSchemaTests(TestCase):
 
 class SavedStrategyTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        from .gameconfig import set_strategy_limit, DEFAULT_STRATEGY_LIMIT
+        cache.clear()
+        set_strategy_limit(DEFAULT_STRATEGY_LIMIT)
         self.user1 = User.objects.create_user(username="student1", password="pass123456user")
         self.user2 = User.objects.create_user(username="student2", password="pass123456user")
         self.admin = User.objects.create_superuser(username="superadmin", password="admin123456pass")
@@ -406,6 +410,12 @@ class SavedStrategyTests(TestCase):
             ],
             "default_action": "MOVE_TO_BALL",
         }
+
+    def tearDown(self):
+        from django.core.cache import cache
+        from .gameconfig import set_strategy_limit, DEFAULT_STRATEGY_LIMIT
+        cache.clear()
+        set_strategy_limit(DEFAULT_STRATEGY_LIMIT)
 
     def test_create_and_list_strategy(self):
         self.client.login(username="student1", password="pass123456user")
@@ -518,6 +528,155 @@ class SavedStrategyTests(TestCase):
         )
         self.assertEqual(sim_res.status_code, 200)
         self.assertIn("frames", sim_res.json())
+
+    def test_user_cannot_save_more_than_strategy_limit(self):
+        from .models import SavedStrategy
+        from django.core.exceptions import ValidationError
+
+        self.client.login(username="student1", password="pass123456user")
+        # Default limit is 4
+        for i in range(1, 5):
+            res = self.client.post(
+                reverse("game:api_strategies"),
+                data=json.dumps({
+                    "name": f"Bot {i}",
+                    "strategy": self.sample_strategy,
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 201)
+
+        # 5th strategy via API must fail with 400
+        res_fifth = self.client.post(
+            reverse("game:api_strategies"),
+            data=json.dumps({
+                "name": "Bot 5",
+                "strategy": self.sample_strategy,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res_fifth.status_code, 400)
+        self.assertTrue(res_fifth.json().get("limit_reached"))
+
+        # 5th strategy via model create must also raise ValidationError
+        with self.assertRaises(ValidationError):
+            SavedStrategy.objects.create(
+                user=self.user1,
+                name="Bot 5 Direct",
+                strategy_data=self.sample_strategy,
+            )
+
+    def test_user_can_edit_strategy_when_at_limit(self):
+        from .models import SavedStrategy
+        self.client.login(username="student1", password="pass123456user")
+        saved_bots = []
+        for i in range(1, 5):
+            res = self.client.post(
+                reverse("game:api_strategies"),
+                data=json.dumps({
+                    "name": f"Tactical Bot {i}",
+                    "strategy": self.sample_strategy,
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 201)
+            saved_bots.append(res.json()["strategy"])
+
+        # Edit the first bot
+        first_id = saved_bots[0]["id"]
+        res_edit = self.client.post(
+            reverse("game:api_strategy_detail", kwargs={"pk": first_id}),
+            data=json.dumps({
+                "name": "Tactical Bot 1 Updated",
+                "strategy": self.sample_strategy,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res_edit.status_code, 200)
+        self.assertEqual(res_edit.json()["strategy"]["name"], "Tactical Bot 1 Updated")
+
+    def test_admin_can_configure_strategy_limit_from_1_to_10(self):
+        from .gameconfig import get_strategy_limit
+
+        # Ordinary student cannot configure strategy limit
+        self.client.login(username="student1", password="pass123456user")
+        res_forbidden = self.client.post(
+            reverse("game:api_strategy_limit"),
+            data=json.dumps({"limit": 8}),
+            content_type="application/json",
+        )
+        self.assertEqual(res_forbidden.status_code, 403)
+
+        # Admin can configure strategy limit
+        self.client.login(username="superadmin", password="admin123456pass")
+        res_get = self.client.get(reverse("game:api_strategy_limit"))
+        self.assertEqual(res_get.status_code, 200)
+        self.assertEqual(res_get.json()["limit"], 4)
+        self.assertEqual(res_get.json()["min"], 1)
+        self.assertEqual(res_get.json()["max"], 10)
+
+        # Admin sets limit to 6
+        res_set = self.client.post(
+            reverse("game:api_strategy_limit"),
+            data=json.dumps({"limit": 6}),
+            content_type="application/json",
+        )
+        self.assertEqual(res_set.status_code, 200)
+        self.assertEqual(res_set.json()["limit"], 6)
+        self.assertEqual(get_strategy_limit(), 6)
+
+        # Values outside 1-10 are clamped
+        self.client.post(
+            reverse("game:api_strategy_limit"),
+            data=json.dumps({"limit": 50}),
+            content_type="application/json",
+        )
+        self.assertEqual(get_strategy_limit(), 10)
+
+        self.client.post(
+            reverse("game:api_strategy_limit"),
+            data=json.dumps({"limit": -5}),
+            content_type="application/json",
+        )
+        self.assertEqual(get_strategy_limit(), 1)
+
+    def test_admin_can_save_more_than_strategy_limit(self):
+        from .models import SavedStrategy
+        self.client.login(username="superadmin", password="admin123456pass")
+        for i in range(1, 15):
+            res = self.client.post(
+                reverse("game:api_strategies"),
+                data=json.dumps({
+                    "name": f"Admin Bot {i}",
+                    "strategy": self.sample_strategy,
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(res.status_code, 201)
+        self.assertEqual(SavedStrategy.objects.filter(user=self.admin).count(), 14)
+
+    def test_invalid_strategy_cannot_be_saved(self):
+        self.client.login(username="student1", password="pass123456user")
+        invalid_strategy = {
+            "label": "Bad Bot",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [{"left": "non_existent_sensor", "operator": "==", "rightType": "value", "right": True}],
+                    "action": "KICK_LOW",
+                }
+            ],
+            "default_action": "MOVE_TO_BALL",
+        }
+        res = self.client.post(
+            reverse("game:api_strategies"),
+            data=json.dumps({
+                "name": "Bad Sensor Bot",
+                "strategy": invalid_strategy,
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 400)
 
     def _create(self, name):
         return self.client.post(
@@ -1020,6 +1179,8 @@ class StrictnessAndCompilerTests(TestCase):
 
     def test_api_compile_strategy_forwards_strictness(self):
         from unittest.mock import patch
+        from .gameconfig import set_show_strictness_to_user
+        set_show_strictness_to_user(True)
 
         self.client.login(username="tactician", password="pw12345678")
         with patch("game.views.compile_persian_strategy") as mock_compile:
@@ -1091,13 +1252,26 @@ class StrictnessAndCompilerTests(TestCase):
 
         vocab_resp = self.client.get(reverse("game:api_vocabulary"))
         self.assertEqual(vocab_resp.json()["default_strictness"], 5)
-        self.assertTrue(vocab_resp.json()["show_strictness_to_user"])
+        self.assertFalse(vocab_resp.json()["show_strictness_to_user"])
 
     def test_show_strictness_to_user_toggle_and_enforcement(self):
         admin_user = User.objects.create_superuser(username="superadmin", password="pw12345678")
         self.client.login(username="superadmin", password="pw12345678")
 
-        # 1. Admin turns off show_to_user
+        # 1. Default should be False (off by default)
+        vocab_initial = self.client.get(reverse("game:api_vocabulary")).json()
+        self.assertFalse(vocab_initial["show_strictness_to_user"])
+
+        # 2. Admin can turn it ON (True)
+        resp_on = self.client.post(
+            reverse("game:api_strategy_strictness"),
+            data=json.dumps({"show_to_user": True}),
+            content_type="application/json",
+        )
+        self.assertEqual(resp_on.status_code, 200)
+        self.assertTrue(resp_on.json()["show_to_user"])
+
+        # 3. Admin turns it back OFF (False) and sets strictness=3
         resp = self.client.post(
             reverse("game:api_strategy_strictness"),
             data=json.dumps({"show_to_user": False, "strictness": 3}),

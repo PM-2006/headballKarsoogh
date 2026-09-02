@@ -45,6 +45,7 @@ ActionType = Literal[
     "JUMP",
     "KICK_LOW",
     "KICK_HIGH",
+    "KICK_STRAIGHT",
     "KICK_CLEAR",
     "IDLE",
 ]
@@ -375,7 +376,8 @@ STANDARD PERSIAN SEMANTIC MAPPINGS
 - «برو سمت توپ / دنبال توپ برو» -> MOVE_TO_BALL
 - «برگرد دفاع / برگرد سمت دروازه خودی» -> MOVE_TO_GOAL
 - «برو وسط / مرکز زمین» -> MOVE_TO_CENTER
-- «بپر / پرش» -> JUMP
+- «بپر / پرش / هد بزن» -> JUMP
+- «شوت مستقیم / شوت صاف / شوت به سمت دروازه» -> KICK_STRAIGHT
 - «شوت زمینی» -> KICK_LOW
 - «شوت هوایی / چیپ» -> KICK_HIGH
 - «دفع کن / توپ را دور کن» -> KICK_CLEAR (ضربه محکم رو به بالا، به همان سمتی که توپ نسبت به بازیکن قرار دارد؛ حتی اگر توپ پشت بازیکن باشد)
@@ -402,7 +404,7 @@ JUMP + AIRBORNE KICK MAPPING
 - If the student explicitly asks to jump and then shoot while airborne, compile it as ordered rules:
   1) the student's jump condition + on_ground == true -> JUMP
   2) on_ground == false + can_kick == true -> the explicitly requested kick action
-- KICK_LOW, KICK_HIGH, and KICK_CLEAR are all allowed while airborne.
-- Do not invent a kick type. If the student only says «شوت» without high/low/clear, ask for clarification.
+- KICK_LOW, KICK_HIGH, KICK_STRAIGHT, and KICK_CLEAR are all allowed while airborne.
+- Do not invent a kick type. If the student only says «شوت» without high/low/straight/clear, ask for clarification.
 
 """.strip()

@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='gameconfigoverride',
             name='show_strictness_to_user',
-            field=models.BooleanField(default=True, help_text='اگر فعال باشد، اسلایدر انتخاب سطح سخت\u200cگیری برای دانش\u200cآموزان نمایش داده می\u200cشود؛ در غیر این صورت مخفی شده و سطح پیش\u200cفرض ادمین اجباری اعمال می\u200cشود.', verbose_name='نمایش تنظیم سخت\u200cگیری به کاربر'),
+            field=models.BooleanField(default=False, help_text='اگر فعال باشد، بخش انتخاب سطح سخت\u200cگیری برای دانش\u200cآموزان نمایش داده می\u200cشود؛ در غیر این صورت مخفی شده و سطح پیش\u200cفرض ادمین اجباری اعمال می\u200cشود.', verbose_name='امکان انتخاب سطح توسط کاربر'),
         ),
     ]

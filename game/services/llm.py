@@ -83,9 +83,9 @@ def _get_llm_config() -> Tuple[str, str, str]:
                 model = fallback_model
 
     if not base_url:
-        base_url = "https://api.orcarouter.ai/v1"
+        base_url = "https://api.gapgpt.app/v1"
     if not model:
-        model = "deepseek/deepseek-v4-flash-free"
+        model = "deepseek-v4-flash"
 
     if not api_key:
         raise LLMConfigurationError(
