@@ -487,6 +487,50 @@ class SavedStrategyTests(TestCase):
         self.assertIn("Staff Practice Bot", my_names)
         self.assertNotIn("Staff Practice Bot", staff_public)
 
+    def test_search_strategies(self):
+        from .models import SavedStrategy
+        SavedStrategy.objects.create(
+            user=self.user1,
+            name="مهاجم آتشین",
+            ai_prompt="شوت محکم و گلزنی",
+            strategy_data=self.sample_strategy,
+        )
+        SavedStrategy.objects.create(
+            user=self.user1,
+            name="مدافع مستحکم",
+            ai_prompt="دفاع قوی و دور کردن توپ",
+            strategy_data=self.sample_strategy,
+        )
+        SavedStrategy.objects.create(
+            user=self.admin,
+            name="Official Boss Striker",
+            ai_prompt="Boss AI",
+            strategy_data=self.sample_strategy,
+            is_public=True,
+        )
+
+        self.client.login(username="student1", password="pass123456user")
+
+        # Search by name
+        res = self.client.get(reverse("game:api_strategies") + "?q=آتشین")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(len(data["my_strategies"]), 1)
+        self.assertEqual(data["my_strategies"][0]["name"], "مهاجم آتشین")
+
+        # Search by prompt
+        res_prompt = self.client.get(reverse("game:api_strategies") + "?q=دور کردن")
+        data_prompt = res_prompt.json()
+        self.assertEqual(len(data_prompt["my_strategies"]), 1)
+        self.assertEqual(data_prompt["my_strategies"][0]["name"], "مدافع مستحکم")
+
+        # Search in public strategies
+        res_pub = self.client.get(reverse("game:api_strategies") + "?q=Boss")
+        data_pub = res_pub.json()
+        self.assertEqual(len(data_pub["public_strategies"]), 1)
+        self.assertEqual(data_pub["public_strategies"][0]["name"], "Official Boss Striker")
+        self.assertEqual(len(data_pub["my_strategies"]), 0)
+
     def test_permissions_user_cannot_edit_or_delete_others_strategy(self):
         from .models import SavedStrategy
         strat = SavedStrategy.objects.create(

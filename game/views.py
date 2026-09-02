@@ -216,6 +216,24 @@ def api_strategies(request):
             Q(user__is_superuser=True) | Q(is_public=True, user__is_staff=False)
         ).exclude(user=request.user).select_related("user__kit")
 
+        q = (request.GET.get("q") or "").strip()
+        if q:
+            q_lower = q.lower()
+            if not is_admin:
+                my_strategies = [
+                    s for s in my_strategies
+                    if q_lower in s.name.lower() or (s.ai_prompt and q_lower in s.ai_prompt.lower())
+                ]
+            else:
+                my_strategies = list(
+                    request.user.saved_strategies.filter(
+                        Q(name__icontains=q) | Q(ai_prompt__icontains=q)
+                    ).select_related("user__kit").order_by("created_at")
+                )
+            public_strategies = public_strategies.filter(
+                Q(name__icontains=q) | Q(ai_prompt__icontains=q) | Q(user__username__icontains=q)
+            )
+
         resp = {
             "is_admin": is_admin,
             "username": request.user.username,
@@ -229,9 +247,12 @@ def api_strategies(request):
         }
         # Admins may line up and work with every bot ever made by any user.
         if is_admin:
-            everyone = SavedStrategy.objects.select_related("user__kit").order_by(
-                "user__username", "name"
-            )
+            everyone = SavedStrategy.objects.select_related("user__kit")
+            if q:
+                everyone = everyone.filter(
+                    Q(name__icontains=q) | Q(ai_prompt__icontains=q) | Q(user__username__icontains=q)
+                )
+            everyone = everyone.order_by("user__username", "name")
             resp["all_strategies"] = [
                 {**s.to_dict(), "is_owner": s.user_id == request.user.id}
                 for s in everyone

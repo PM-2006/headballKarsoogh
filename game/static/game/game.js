@@ -1739,6 +1739,158 @@ function grpPresets(){
   return `<optgroup label="⚡ الگوهای پیش‌فرض">${g}</optgroup>`;
 }
 
+function setupSearchableSelect(selectEl){
+  if(!selectEl) return;
+  const selectId = selectEl.id;
+  let container = selectEl.parentElement.querySelector(`.search-select-container[data-for="${selectId}"]`);
+  
+  if(!container){
+    container = document.createElement("div");
+    container.className = "search-select-container";
+    container.setAttribute("data-for", selectId);
+    selectEl.style.display = "none";
+    selectEl.parentElement.appendChild(container);
+  }
+
+  const curOpt = selectEl.options[selectEl.selectedIndex] || selectEl.options[0];
+  const curLabel = curOpt ? curOpt.textContent : "انتخاب ربات...";
+
+  container.innerHTML = `
+    <button type="button" class="search-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+      <span class="search-select-label">${escapeHtml(curLabel)}</span>
+      <span class="search-select-arrow">▾</span>
+    </button>
+    <div class="search-select-dropdown" style="display:none;">
+      <div class="search-select-filter-wrap">
+        <input type="text" class="search-select-filter" placeholder="🔍 جستجوی سریع ربات..." autocomplete="off">
+      </div>
+      <div class="search-select-options-list" role="listbox"></div>
+    </div>
+  `;
+
+  const trigger = container.querySelector(".search-select-trigger");
+  const dropdown = container.querySelector(".search-select-dropdown");
+  const filterInput = container.querySelector(".search-select-filter");
+  const list = container.querySelector(".search-select-options-list");
+
+  function renderOptions(filterText = ""){
+    const q = filterText.trim().toLowerCase();
+    let html = "";
+    let totalVisible = 0;
+
+    for(const child of selectEl.children){
+      if(child.tagName === "OPTGROUP"){
+        const groupLabel = child.label || "";
+        let groupItemsHtml = "";
+        for(const opt of child.children){
+          const optLabel = opt.textContent;
+          if(!q || optLabel.toLowerCase().includes(q)){
+            const isSelected = (opt.value === selectEl.value);
+            groupItemsHtml += `
+              <div class="search-select-option ${isSelected ? 'selected' : ''}" data-value="${escapeHtml(opt.value)}" role="option">
+                <span class="opt-check">✓</span>
+                <span class="opt-label">${escapeHtml(optLabel)}</span>
+              </div>
+            `;
+            totalVisible++;
+          }
+        }
+        if(groupItemsHtml){
+          html += `
+            <div class="search-select-group">
+              <div class="search-select-group-title">${escapeHtml(groupLabel)}</div>
+              ${groupItemsHtml}
+            </div>
+          `;
+        }
+      }else if(child.tagName === "OPTION"){
+        const optLabel = child.textContent;
+        if(!q || optLabel.toLowerCase().includes(q)){
+          const isSelected = (child.value === selectEl.value);
+          html += `
+            <div class="search-select-option ${isSelected ? 'selected' : ''}" data-value="${escapeHtml(child.value)}" role="option">
+              <span class="opt-check">✓</span>
+              <span class="opt-label">${escapeHtml(optLabel)}</span>
+            </div>
+          `;
+          totalVisible++;
+        }
+      }
+    }
+
+    if(totalVisible === 0){
+      html = `<div class="search-select-no-result">رباتی با عبارت «${escapeHtml(filterText)}» یافت نشد.</div>`;
+    }
+
+    list.innerHTML = html;
+
+    list.querySelectorAll(".search-select-option").forEach(optEl=>{
+      optEl.onclick = (e)=>{
+        e.stopPropagation();
+        const val = optEl.getAttribute("data-value");
+        selectEl.value = val;
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+        const newOpt = selectEl.options[selectEl.selectedIndex];
+        if(newOpt){
+          container.querySelector(".search-select-label").textContent = newOpt.textContent;
+        }
+        closeDropdown();
+      };
+    });
+  }
+
+  function openDropdown(){
+    document.querySelectorAll(".search-select-dropdown").forEach(d=>{
+      if(d !== dropdown){
+        d.style.display = "none";
+        d.parentElement.querySelector(".search-select-trigger")?.classList.remove("open");
+      }
+    });
+
+    dropdown.style.display = "flex";
+    trigger.classList.add("open");
+    filterInput.value = "";
+    renderOptions("");
+    setTimeout(()=>filterInput.focus(), 25);
+  }
+
+  function closeDropdown(){
+    dropdown.style.display = "none";
+    trigger.classList.remove("open");
+  }
+
+  trigger.onclick = (e)=>{
+    e.stopPropagation();
+    if(dropdown.style.display === "none" || !dropdown.style.display){
+      openDropdown();
+    }else{
+      closeDropdown();
+    }
+  };
+
+  dropdown.onclick = (e)=>{
+    e.stopPropagation();
+  };
+
+  filterInput.oninput = ()=>{
+    renderOptions(filterInput.value);
+  };
+
+  filterInput.onkeydown = (e)=>{
+    if(e.key === "Escape"){
+      closeDropdown();
+      trigger.focus();
+    }else if(e.key === "Enter"){
+      const firstOpt = list.querySelector(".search-select-option");
+      if(firstOpt){
+        firstOpt.click();
+      }
+    }
+  };
+
+  renderOptions("");
+}
+
 function refreshOpponentMenus(){
   const s1=$("blueSelect"), s2=$("redSelect");
   if(!s1||!s2) return;
@@ -1771,6 +1923,9 @@ function refreshOpponentMenus(){
   const has=(sel,v)=>[...sel.options].some(o=>o.value===v);
   s1.value = has(s1,cur1)?cur1:def1;
   s2.value = has(s2,cur2)?cur2:def2;
+
+  setupSearchableSelect(s1);
+  setupSearchableSelect(s2);
 }
 
 async function loadStrategiesFromServer(){
@@ -1879,6 +2034,48 @@ function startNewStrategy(slotNum){
   showToast(`صفحه برای ساخت استراتژی ${toFa(num)} آماده شد. متن را بنویسید و «تبدیل استراتژی» را بزنید.`,"ok");
 }
 
+let myBotsSearchQuery = "";
+let publicBotsSearchQuery = "";
+
+function matchesBotSearch(b, query){
+  if(!query) return true;
+  const q = query.trim().toLowerCase();
+  if(!q) return true;
+  if(b.name && b.name.toLowerCase().includes(q)) return true;
+  if(b.author && b.author.toLowerCase().includes(q)) return true;
+  if(b.ai_prompt && b.ai_prompt.toLowerCase().includes(q)) return true;
+  if(b.strategy && Array.isArray(b.strategy.rules)){
+    for(const r of b.strategy.rules){
+      if(r.action && r.action.toLowerCase().includes(q)) return true;
+      if(Array.isArray(r.conditions)){
+        for(const c of r.conditions){
+          if(c.left && String(c.left).toLowerCase().includes(q)) return true;
+          if(c.right && String(c.right).toLowerCase().includes(q)) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function clearMyBotsSearch(){
+  myBotsSearchQuery = "";
+  const input = $("myBotsSearchInput");
+  if(input) input.value = "";
+  const clearBtn = $("myBotsSearchClear");
+  if(clearBtn) clearBtn.style.display = "none";
+  renderBotGalleries();
+}
+
+function clearPublicBotsSearch(){
+  publicBotsSearchQuery = "";
+  const input = $("publicBotsSearchInput");
+  if(input) input.value = "";
+  const clearBtn = $("publicBotsSearchClear");
+  if(clearBtn) clearBtn.style.display = "none";
+  renderBotGalleries();
+}
+
 function renderBotGalleries(){
   const countBadge=$("myBotsCountBadge");
   if(countBadge){
@@ -1886,14 +2083,20 @@ function renderBotGalleries(){
   }
   const myWrap=$("myBotsList");
   if(myWrap){
+    const filtered = savedStrategies.filter(b => matchesBotSearch(b, myBotsSearchQuery));
     if(!savedStrategies.length){
       myWrap.innerHTML=`<div class="empty-list">هنوز استراتژی‌ای ذخیره نکرده‌ای (ظرفیت: حداکثر ${toFa(maxStrategies)} استراتژی). از بالای صفحه یک استراتژی بساز و ذخیره‌اش کن!</div>`;
+    }else if(!filtered.length){
+      myWrap.innerHTML=`<div class="empty-list">هیچ استراتژی‌ای با عبارت «<b>${escapeHtml(myBotsSearchQuery)}</b>» در ربات‌های من پیدا نشد.<br><button type="button" class="reset-search-btn" onclick="clearMyBotsSearch()">پاک کردن جستجو</button></div>`;
     }else{
-      myWrap.innerHTML=savedStrategies.map((b, idx)=>`
+      myWrap.innerHTML=filtered.map((b, idx)=>{
+        const originalIndex = savedStrategies.findIndex(s => s.id === b.id);
+        const slotNum = originalIndex >= 0 ? originalIndex + 1 : idx + 1;
+        return `
         <div class="bot-card-item">
           <div class="bot-card-head">
             <div class="bot-card-name">
-              <span class="strategy-slot-badge">استراتژی ${toFa(idx+1)}</span>
+              <span class="strategy-slot-badge">استراتژی ${toFa(slotNum)}</span>
               🤖 ${escapeHtml(b.name)}
             </div>
             <span class="bot-badge on">${b.rules_count ?? (b.strategy?.rules||[]).length} تصمیم</span>
@@ -1908,16 +2111,19 @@ function renderBotGalleries(){
             <button class="btn-danger" onclick="deleteSavedBot(${b.id},'${escapeHtml(b.name)}')">🗑 حذف</button>
           </div>
         </div>
-      `).join("");
+      `}).join("");
     }
   }
 
   const pubWrap=$("publicBotsList");
   if(pubWrap){
+    const filteredPub = publicStrategies.filter(b => matchesBotSearch(b, publicBotsSearchQuery));
     if(!publicStrategies.length){
       pubWrap.innerHTML='<div class="empty-list">هنوز ربات رسمی‌ای توسط مدیران منتشر نشده است.</div>';
+    }else if(!filteredPub.length){
+      pubWrap.innerHTML=`<div class="empty-list">هیچ ربات رسمی‌ای با عبارت «<b>${escapeHtml(publicBotsSearchQuery)}</b>» پیدا نشد.<br><button type="button" class="reset-search-btn" onclick="clearPublicBotsSearch()">پاک کردن جستجو</button></div>`;
     }else{
-      pubWrap.innerHTML=publicStrategies.map(b=>`
+      pubWrap.innerHTML=filteredPub.map(b=>`
         <div class="bot-card-item">
           <div class="bot-card-head">
             <div class="bot-card-name">🏆 ${escapeHtml(b.name)}</div>
@@ -2422,6 +2628,33 @@ async function init(){
   if($("saveBotBtn")) $("saveBotBtn").onclick=saveCurrentBot;
   if($("cancelEditBtn")) $("cancelEditBtn").onclick=cancelEdit;
   if($("refreshMyBotsBtn")) $("refreshMyBotsBtn").onclick=loadStrategiesFromServer;
+  
+  const mySearch = $("myBotsSearchInput");
+  const myClear = $("myBotsSearchClear");
+  if(mySearch){
+    mySearch.oninput=()=>{
+      myBotsSearchQuery = mySearch.value;
+      if(myClear) myClear.style.display = myBotsSearchQuery ? "block" : "none";
+      renderBotGalleries();
+    };
+  }
+  if(myClear){
+    myClear.onclick=clearMyBotsSearch;
+  }
+
+  const pubSearch = $("publicBotsSearchInput");
+  const pubClear = $("publicBotsSearchClear");
+  if(pubSearch){
+    pubSearch.oninput=()=>{
+      publicBotsSearchQuery = pubSearch.value;
+      if(pubClear) pubClear.style.display = publicBotsSearchQuery ? "block" : "none";
+      renderBotGalleries();
+    };
+  }
+  if(pubClear){
+    pubClear.onclick=clearPublicBotsSearch;
+  }
+
   document.querySelectorAll("[data-quick]").forEach(btn=>btn.onclick=()=>quickPreset(btn.dataset.quick));
   $("playMatch").onclick=runMatch;
   if($("pauseMatch")) $("pauseMatch").onclick=togglePause;
@@ -2442,6 +2675,27 @@ async function init(){
   });
   $("runBatch").onclick=runBatch;
   $("winClose").onclick=()=>$("winFx").classList.remove("show");
+
+  const onTeamSelectChange = ()=>{
+    const [s1,s2]=currentSels();
+    resolveTeamColors(s1,s2);
+    applyTeamColors();
+    paintTeamDots();
+    const [n1,n2]=[teamDisplayName(s1),teamDisplayName(s2)];
+    if($("blueName"))$("blueName").textContent=n1;
+    if($("redName"))$("redName").textContent=n2;
+    if($("liveName1"))$("liveName1").textContent=n1;
+    if($("liveName2"))$("liveName2").textContent=n2;
+  };
+  if($("blueSelect")) $("blueSelect").onchange = onTeamSelectChange;
+  if($("redSelect")) $("redSelect").onchange = onTeamSelectChange;
+
+  document.addEventListener("click",()=>{
+    document.querySelectorAll(".search-select-dropdown").forEach(d=>{
+      d.style.display="none";
+      d.parentElement.querySelector(".search-select-trigger")?.classList.remove("open");
+    });
+  });
 
   drawIdleFrame();
 }
