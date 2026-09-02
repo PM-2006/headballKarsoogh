@@ -354,7 +354,7 @@ def compile_persian_strategy(
             messages=messages,
             response_format=StrategyCompilerResponse,
             temperature=0.0,
-            max_tokens=3500,
+            max_tokens=8000,
         )
         parsed_result = _parse_pydantic_response(response)
     except Exception as structured_exc:
@@ -369,7 +369,7 @@ def compile_persian_strategy(
                 model=model,
                 messages=fallback_messages,
                 temperature=0.0,
-                max_tokens=3500,
+                max_tokens=8000,
             )
             parsed_result = _parse_pydantic_response(response)
         except Exception as exc:
