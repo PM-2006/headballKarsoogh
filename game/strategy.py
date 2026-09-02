@@ -16,7 +16,7 @@ SENSORS = {
 OPERATORS = ("<", "<=", ">", ">=", "==", "!=")
 ACTIONS = (
     "MOVE_LEFT", "MOVE_RIGHT", "MOVE_TO_BALL", "MOVE_TO_GOAL", "MOVE_TO_CENTER",
-    "JUMP", "KICK_LOW", "KICK_HIGH", "KICK_CLEAR", "IDLE",
+    "JUMP", "KICK_LOW", "KICK_HIGH", "KICK_STRAIGHT", "KICK_CLEAR", "IDLE",
 )
 
 def condition(left, operator, right, right_type="value"):

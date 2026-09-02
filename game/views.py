@@ -24,15 +24,19 @@ from .engine import (
 from .gameconfig import (
     MAX_SESSION_LIMIT,
     MIN_SESSION_LIMIT,
+    MAX_STRATEGY_LIMIT,
+    MIN_STRATEGY_LIMIT,
     MAX_STRATEGY_STRICTNESS,
     MIN_STRATEGY_STRICTNESS,
     config_with_overrides,
     get_session_limit,
+    get_strategy_limit,
     get_show_strictness_to_user,
     get_strategy_strictness,
     is_game_enabled,
     set_game_enabled,
     set_session_limit,
+    set_strategy_limit,
     set_show_strictness_to_user,
     set_strategy_strictness,
     reset_overrides,
@@ -192,7 +196,22 @@ def api_validate_strategy(request):
 def api_strategies(request):
     if request.method == "GET":
         is_admin = bool(request.user.is_superuser)
-        my_strategies = request.user.saved_strategies.select_related("user__kit").all()
+        limit = get_strategy_limit()
+        if not is_admin:
+            # Latest `limit` strategies for the user
+            recent_ids = list(
+                request.user.saved_strategies.order_by("-created_at")
+                .values_list("id", flat=True)[:limit]
+            )
+            my_strategies = list(
+                request.user.saved_strategies.filter(id__in=recent_ids)
+                .select_related("user__kit")
+                .order_by("created_at")
+            )
+        else:
+            my_strategies = list(
+                request.user.saved_strategies.select_related("user__kit").order_by("created_at")
+            )
         public_strategies = SavedStrategy.objects.filter(
             Q(user__is_superuser=True) | Q(is_public=True, user__is_staff=False)
         ).exclude(user=request.user).select_related("user__kit")
@@ -200,6 +219,7 @@ def api_strategies(request):
         resp = {
             "is_admin": is_admin,
             "username": request.user.username,
+            "max_strategies": limit,
             "my_strategies": [
                 {**s.to_dict(), "is_owner": True} for s in my_strategies
             ],
@@ -231,6 +251,19 @@ def api_strategies(request):
                 {"error": f"نام «{name}» قبلاً توسط کاربر دیگری استفاده شده است. یک نام دیگر انتخاب کنید."},
                 status=409,
             )
+
+        if not request.user.is_superuser:
+            limit = get_strategy_limit()
+            user_strat_count = SavedStrategy.objects.filter(user=request.user).count()
+            if user_strat_count >= limit:
+                return JsonResponse(
+                    {
+                        "error": f"شما به حداکثر سقف مجاز ({limit} استراتژی) رسیده‌اید. برای ذخیره استراتژی جدید، ابتدا یکی از استراتژی‌های قبلی خود را حذف یا ویرایش کنید.",
+                        "limit_reached": True,
+                        "max_strategies": limit,
+                    },
+                    status=400,
+                )
 
         raw_strategy = payload.get("strategy")
         if not raw_strategy:
@@ -511,6 +544,38 @@ def api_session_limit(request):
         "min": MIN_SESSION_LIMIT,
         "max": MAX_SESSION_LIMIT,
         "message": f"حداکثر نشست همزمان روی {limit} تنظیم شد.",
+    })
+
+
+@api_login_required
+@require_http_methods(["GET", "POST"])
+def api_strategy_limit(request):
+    """Superuser-only: read (GET) or set (POST) the max saved strategies limit per ordinary user."""
+    if not request.user.is_superuser:
+        return _forbidden()
+
+    if request.method == "GET":
+        return JsonResponse({
+            "limit": get_strategy_limit(),
+            "min": MIN_STRATEGY_LIMIT,
+            "max": MAX_STRATEGY_LIMIT,
+        })
+
+    try:
+        payload = _json_body(request)
+    except StrategyValidationError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    if "limit" not in payload:
+        return JsonResponse({"error": "مقدار limit ارسال نشده است."}, status=400)
+
+    limit = set_strategy_limit(payload["limit"], user=request.user)
+    logger.info("strategy-limit set to %s by %s", limit, request.user.username)
+    return JsonResponse({
+        "limit": limit,
+        "min": MIN_STRATEGY_LIMIT,
+        "max": MAX_STRATEGY_LIMIT,
+        "message": f"حداکثر استراتژی هر کاربر روی {limit} تنظیم شد.",
     })
 
 
