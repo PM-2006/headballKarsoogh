@@ -925,30 +925,88 @@ function resolveAuthorForVal(currentVal, teamIdx=0){
   return author;
 }
 
-function buildSelectOptionsForTeam(teamIdx, currentVal){
-  const author = resolveAuthorForVal(currentVal, teamIdx);
-  let html = "";
+function getAuthorStrategiesPartition(author){
+  if(!author) return { panelBots: [], olderBots: [] };
   const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
-
-  // 1. First in the list: THIS user's active strategies (e.g. all 4)
-  if(author){
-    const authorBots = pool.filter(s => s.author === author);
-    if(authorBots.length > 0){
-      let authorOpts = "";
-      authorBots.forEach((s, idx)=>{
-        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
-        authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
-      });
-      html += `<optgroup label="⚡ استراتژی‌های کاربر (${escapeHtml(author)})">${authorOpts}</optgroup>`;
+  const seen = new Set();
+  const authorBots = [];
+  for(const b of pool){
+    if(b && b.author === author && !seen.has(b.id)){
+      seen.add(b.id);
+      authorBots.push(b);
     }
   }
 
-  // 2. Draft bot if applicable
+  // If author is current logged-in user and savedStrategies are loaded:
+  if(author === currentUsername && savedStrategies.length > 0){
+    const panelIds = new Set(savedStrategies.map(s => s.id));
+    const older = authorBots.filter(s => !panelIds.has(s.id)).sort((a, b) => b.id - a.id);
+    return { panelBots: savedStrategies, olderBots: older };
+  }
+
+  // Otherwise, sort chronologically by ID ascending
+  const sorted = [...authorBots].sort((a, b) => a.id - b.id);
+  const limit = maxStrategies || 4;
+  if(sorted.length <= limit){
+    return { panelBots: sorted, olderBots: [] };
+  }
+  // The latest `limit` bots are the active slots (1 to 4)!
+  const panelBots = sorted.slice(-limit);
+  // Any older bots
+  const olderBots = sorted.slice(0, -limit).sort((a, b) => b.id - a.id);
+  return { panelBots, olderBots };
+}
+
+function buildSelectOptionsForTeam(teamIdx, currentVal){
+  const author = resolveAuthorForVal(currentVal, teamIdx);
+  let html = "";
+  let currentBotId = null;
+  if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
+    currentBotId = Number(currentVal.slice(currentVal.indexOf("_")+1));
+  }
+  const currentBot = currentBotId ? botById(currentBotId) : null;
+
+  if(author){
+    const { panelBots, olderBots } = getAuthorStrategiesPartition(author);
+    const isCurrentInPanel = panelBots.some(s => s.id === currentBotId);
+
+    // If current bot is an older bot not in panel, show it first with clear label so user sees it in the dropdown
+    if(currentBot && !isCurrentInPanel){
+      const val = currentBot.is_owner ? `saved_${currentBot.id}` : (allStrategies.length ? `any_${currentBot.id}` : `pub_${currentBot.id}`);
+      html += `<optgroup label="⚽ استراتژی جاری در زمین"><option value="${val}">⚡ در حال اجرا: ${escapeHtml(currentBot.name)}</option></optgroup>`;
+    }
+
+    // 1. Panel strategies (Slots 1 to 4)
+    if(panelBots.length > 0){
+      let authorOpts = "";
+      panelBots.forEach((s, idx)=>{
+        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+        authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
+      });
+      html += `<optgroup label="⚡ استراتژی‌های فعال در پنل (${escapeHtml(author)})">${authorOpts}</optgroup>`;
+    }
+
+    // 2. Older bots of this author if any
+    if(olderBots.length > 0){
+      let olderOpts = "";
+      olderBots.forEach(s => {
+        if(!currentBot || s.id !== currentBot.id){
+          const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+          olderOpts += `<option value="${val}">📁 ${escapeHtml(s.name)}</option>`;
+        }
+      });
+      if(olderOpts){
+        html += `<optgroup label="📂 سایر استراتژی‌های قبلی (${escapeHtml(author)})">${olderOpts}</optgroup>`;
+      }
+    }
+  }
+
+  // 3. Draft bot if applicable
   if(myStrategy && (teamIdx === 0 || isAdmin || author === currentUsername)){
     html += `<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری (پیش‌نویس)</option></optgroup>`;
   }
 
-  // 3. Other bots (excluding this author)
+  // 4. Other bots (excluding this author)
   if(isAdmin){
     let otherBots = allStrategies;
     if(author){
@@ -959,7 +1017,7 @@ function buildSelectOptionsForTeam(teamIdx, currentVal){
       otherBots.forEach(s => {
         otherHtml += `<option value="any_${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.author||"?")}</option>`;
       });
-      html += `<optgroup label="🗂 سایر ربات‌ها (${toFa(otherBots.length)})">${otherHtml}</optgroup>`;
+      html += `<optgroup label="🗂 سایر کاربران (${toFa(otherBots.length)})">${otherHtml}</optgroup>`;
     }
   } else {
     if(teamIdx === 0){
@@ -980,7 +1038,7 @@ function buildSelectOptionsForTeam(teamIdx, currentVal){
     }
   }
 
-  // 4. Presets
+  // 5. Presets
   html += grpPresets();
   return html;
 }
@@ -991,27 +1049,47 @@ function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem)
   const author = resolveAuthorForVal(currentVal, teamIdx);
   let html = "";
 
-  const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
-  let authorBots = [];
-  if(author){
-    authorBots = pool.filter(s => s.author === author);
+  let currentBotId = null;
+  if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
+    currentBotId = Number(currentVal.slice(currentVal.indexOf("_") + 1));
   }
+  const currentBot = currentBotId ? botById(currentBotId) : null;
 
-  if(author && authorBots.length > 0){
-    html += `<div class="ht-user-header"><span>👤 استراتژی‌های کاربر: <b>${escapeHtml(author)}</b></span></div>`;
+  if(author){
+    const { panelBots, olderBots } = getAuthorStrategiesPartition(author);
+    const isCurrentInPanel = panelBots.some(s => s.id === currentBotId);
 
-    authorBots.forEach((s, idx)=>{
-      const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
-      const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
-      const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
+    html += `<div class="ht-user-header"><span>👤 کاربر: <b>${escapeHtml(author)}</b></span></div>`;
+
+    // If currently running bot is NOT in the active 4 panel slots, show it at the very top!
+    if(currentBot && !isCurrentInPanel){
+      const val = currentBot.is_owner ? `saved_${currentBot.id}` : (allStrategies.length ? `any_${currentBot.id}` : `pub_${currentBot.id}`);
       html += `
-        <button type="button" class="ht-btn ${isCur ? 'active' : ''}" data-val="${val}">
-          <span>⚡ استراتژی ${toFa(idx+1)}: <b>${escapeHtml(s.name)}</b></span>
-          ${badge}
+        <div class="ht-user-subheader" style="color:var(--accent);"><span>⚽ استراتژی در حال اجرا در زمین:</span></div>
+        <button type="button" class="ht-btn active" data-val="${val}">
+          <span>⚡ <b>${escapeHtml(currentBot.name)}</b></span>
+          <span class="ht-badge">✓ در حال اجرا</span>
         </button>
       `;
-    });
+    }
 
+    // Panel strategies (Slots 1 to 4)
+    if(panelBots.length > 0){
+      html += `<div class="ht-user-subheader"><span>⚡ استراتژی‌های فعال در پنل (۱ تا ${toFa(panelBots.length)}):</span></div>`;
+      panelBots.forEach((s, idx)=>{
+        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+        const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
+        const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
+        html += `
+          <button type="button" class="ht-btn ${isCur ? 'active' : ''}" data-val="${val}">
+            <span>⚡ استراتژی ${toFa(idx+1)}: <b>${escapeHtml(s.name)}</b></span>
+            ${badge}
+          </button>
+        `;
+      });
+    }
+
+    // Draft bot if applicable
     if(myStrategy && (author === currentUsername || teamIdx === 0)){
       const isCur = (currentVal === "mybot");
       const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
@@ -1022,7 +1100,34 @@ function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem)
         </button>
       `;
     }
+
+    // Older archived bots if any
+    if(olderBots.length > 0){
+      let olderHtml = "";
+      olderBots.forEach(s => {
+        if(!currentBot || s.id !== currentBot.id){
+          const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+          olderHtml += `
+            <button type="button" class="ht-btn" data-val="${val}" style="padding:5px 10px; font-size:11.5px; opacity:0.85;">
+              <span>📁 ${escapeHtml(s.name)}</span>
+              <span class="ht-badge">سوییچ ↺</span>
+            </button>
+          `;
+        }
+      });
+      if(olderHtml){
+        html += `
+          <details class="ht-older-details">
+            <summary class="ht-older-summary">📂 سایر استراتژی‌های قبلی کاربر (${toFa(olderBots.length)}) ▾</summary>
+            <div style="display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+              ${olderHtml}
+            </div>
+          </details>
+        `;
+      }
+    }
   } else {
+    // Fallback Presets
     html += `<div class="ht-user-header"><span>⚙️ الگوهای پیش‌فرض تاکتیک:</span></div>`;
     ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
       const isCur = (currentVal === p);
