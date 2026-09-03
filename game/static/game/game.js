@@ -910,7 +910,7 @@ function setSelectValueSafely(selectElem, val){
   }
 }
 
-function buildSelectOptionsForTeam(teamIdx, currentVal){
+function resolveAuthorForVal(currentVal, teamIdx=0){
   let author = null;
   if(currentVal === "mybot"){
     author = currentUsername;
@@ -919,10 +919,18 @@ function buildSelectOptionsForTeam(teamIdx, currentVal){
     const b = botById(id);
     if(b) author = b.author;
   }
+  if(!author && teamIdx === 0 && !isAdmin){
+    author = currentUsername;
+  }
+  return author;
+}
 
+function buildSelectOptionsForTeam(teamIdx, currentVal){
+  const author = resolveAuthorForVal(currentVal, teamIdx);
   let html = "";
   const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
 
+  // 1. First in the list: THIS user's active strategies (e.g. all 4)
   if(author){
     const authorBots = pool.filter(s => s.author === author);
     if(authorBots.length > 0){
@@ -931,24 +939,48 @@ function buildSelectOptionsForTeam(teamIdx, currentVal){
         const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
         authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
       });
-      html += `<optgroup label="⚡ استراتژی‌های این تیم (${escapeHtml(author)})">${authorOpts}</optgroup>`;
+      html += `<optgroup label="⚡ استراتژی‌های کاربر (${escapeHtml(author)})">${authorOpts}</optgroup>`;
     }
   }
 
-  if(myStrategy && (teamIdx === 0 || isAdmin)){
+  // 2. Draft bot if applicable
+  if(myStrategy && (teamIdx === 0 || isAdmin || author === currentUsername)){
     html += `<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری (پیش‌نویس)</option></optgroup>`;
   }
 
+  // 3. Other bots (excluding this author)
   if(isAdmin){
-    html += grpAll();
+    let otherBots = allStrategies;
+    if(author){
+      otherBots = allStrategies.filter(s => s.author !== author);
+    }
+    if(otherBots.length > 0){
+      let otherHtml = "";
+      otherBots.forEach(s => {
+        otherHtml += `<option value="any_${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.author||"?")}</option>`;
+      });
+      html += `<optgroup label="🗂 سایر ربات‌ها (${toFa(otherBots.length)})">${otherHtml}</optgroup>`;
+    }
   } else {
     if(teamIdx === 0){
       html += grpMine();
     } else {
-      html += grpPublic() + grpMine();
+      let pub = publicStrategies;
+      if(author){
+        pub = publicStrategies.filter(s => s.author !== author);
+      }
+      if(pub.length > 0){
+        let pubHtml = "";
+        pub.forEach(s => {
+          pubHtml += `<option value="pub_${s.id}">🏆 ${escapeHtml(s.name)} (${escapeHtml(s.author||"مدیر")})</option>`;
+        });
+        html += `<optgroup label="🏆 ربات‌های رسمی و مدیران">${pubHtml}</optgroup>`;
+      }
+      html += grpMine();
     }
   }
 
+  // 4. Presets
   html += grpPresets();
   return html;
 }
@@ -956,42 +988,52 @@ function buildSelectOptionsForTeam(teamIdx, currentVal){
 function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem){
   if(!wrapElem || !origSelElem) return;
   const currentVal = origSelElem.value;
+  const author = resolveAuthorForVal(currentVal, teamIdx);
   let html = "";
 
-  let author = null;
-  if(currentVal === "mybot"){
-    author = currentUsername;
-  } else if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
-    const id = Number(currentVal.slice(currentVal.indexOf("_")+1));
-    const b = botById(id);
-    if(b) author = b.author;
+  const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
+  let authorBots = [];
+  if(author){
+    authorBots = pool.filter(s => s.author === author);
   }
 
-  if(teamIdx === 0 && !isAdmin && (!author || author === currentUsername)){
-    savedStrategies.forEach((s, idx)=>{
-      const val = "saved_" + s.id;
-      const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
-      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
-    });
-    if(myStrategy){
-      const isCur = (currentVal === "mybot");
-      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="mybot">🤖 پیش‌نویس جاری</button>`;
-    }
-  } else if(author){
-    const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
-    const authorBots = pool.filter(s => s.author === author);
+  if(author && authorBots.length > 0){
+    html += `<div class="ht-user-header"><span>👤 استراتژی‌های کاربر: <b>${escapeHtml(author)}</b></span></div>`;
+
     authorBots.forEach((s, idx)=>{
       const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
       const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
-      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
+      const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
+      html += `
+        <button type="button" class="ht-btn ${isCur ? 'active' : ''}" data-val="${val}">
+          <span>⚡ استراتژی ${toFa(idx+1)}: <b>${escapeHtml(s.name)}</b></span>
+          ${badge}
+        </button>
+      `;
     });
-  }
 
-  if(!html){
+    if(myStrategy && (author === currentUsername || teamIdx === 0)){
+      const isCur = (currentVal === "mybot");
+      const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
+      html += `
+        <button type="button" class="ht-btn ${isCur ? 'active' : ''}" data-val="mybot">
+          <span>🤖 پیش‌نویس جاری</span>
+          ${badge}
+        </button>
+      `;
+    }
+  } else {
+    html += `<div class="ht-user-header"><span>⚙️ الگوهای پیش‌فرض تاکتیک:</span></div>`;
     ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
       const isCur = (currentVal === p);
       const label = p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
-      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
+      const badge = isCur ? `<span class="ht-badge">✓ در حال اجرا</span>` : `<span class="ht-badge">سوییچ ↺</span>`;
+      html += `
+        <button type="button" class="ht-btn ${isCur ? 'active' : ''}" data-val="${p}">
+          <span>⚙️ ${label}</span>
+          ${badge}
+        </button>
+      `;
     });
   }
 
@@ -1033,6 +1075,8 @@ function setupHalftimeSwitcher(){
       if(bSel.value){
         setSelectValueSafely(origBSel, bSel.value);
         onHalftimeStrategyChange(bSel.value, 0);
+        bSel.innerHTML = buildSelectOptionsForTeam(0, bSel.value);
+        setSelectValueSafely(bSel, bSel.value);
         renderTeamHalftimeQuickButtons(0, bSel, origBSel, qbWrap1);
       }
     };
@@ -1046,6 +1090,8 @@ function setupHalftimeSwitcher(){
       if(rSel.value){
         setSelectValueSafely(origRSel, rSel.value);
         onHalftimeStrategyChange(rSel.value, 1);
+        rSel.innerHTML = buildSelectOptionsForTeam(1, rSel.value);
+        setSelectValueSafely(rSel, rSel.value);
         renderTeamHalftimeQuickButtons(1, rSel, origRSel, qbWrap2);
       }
     };
