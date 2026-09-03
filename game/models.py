@@ -282,3 +282,138 @@ class UserSession(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user.username}: {self.session_id}"
+
+
+class Message(models.Model):
+    """What an admin wrote, and who it was aimed at.
+
+    Deliberately separate from :class:`Notification`. A ``Message`` is the
+    announcement itself; a ``Notification`` is one copy of it sitting in one
+    person's inbox, and that is where read state lives. Collapsing the two
+    would mean re-deriving the audience on every read, which is both slower
+    and wrong -- see ``messaging.send_message`` for why.
+    """
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", _("پیش‌نویس")
+        SENT = "sent", _("ارسال‌شده")
+
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sent_messages",
+        verbose_name=_("فرستنده"),
+    )
+    # Stamped when the message is written and refreshed at send time, so a
+    # delivered announcement keeps the name it was signed with even if the
+    # account is later renamed or deleted.
+    sender_label = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name=_("نام نمایشی فرستنده"),
+    )
+
+    title = models.CharField(max_length=120, verbose_name=_("عنوان"))
+    body = models.TextField(blank=True, default="", verbose_name=_("متن پیام"))
+
+    # The audience. Everyone, or exactly the people named in ``users``.
+    to_everyone = models.BooleanField(
+        default=False,
+        verbose_name=_("برای همه"),
+        help_text=_("اگر فعال باشد، فهرست کاربران نادیده گرفته می‌شود."),
+    )
+    users = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="targeted_messages",
+        verbose_name=_("گیرندگان مشخص"),
+    )
+
+    status = models.CharField(
+        max_length=8,
+        choices=Status.choices,
+        default=Status.DRAFT,
+        verbose_name=_("وضعیت"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("تاریخ ایجاد"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name=_("تاریخ ارسال"))
+
+    class Meta:
+        verbose_name = _("پیام")
+        verbose_name_plural = _("پیام‌ها")
+        ordering = ["-id"]
+        indexes = [
+            models.Index(fields=["status", "-id"], name="msg_status_recent"),
+        ]
+        constraints = [
+            # A draft has never been sent and a sent message always has a
+            # timestamp. Enforced in the database because "sent" drives whether
+            # the message may still be edited, and a row that disagrees with
+            # itself would make that check unanswerable.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(status="draft", sent_at__isnull=True)
+                    | models.Q(status="sent", sent_at__isnull=False)
+                ),
+                name="msg_sent_at_matches_status",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.title} [{self.status}]"
+
+    @property
+    def is_sent(self) -> bool:
+        return self.status == self.Status.SENT
+
+
+class Notification(models.Model):
+    """One message as delivered to one person. Read state lives here."""
+
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name=_("پیام"),
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        verbose_name=_("گیرنده"),
+    )
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name=_("زمان خواندن"))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("تاریخ دریافت"))
+
+    class Meta:
+        verbose_name = _("اعلان")
+        verbose_name_plural = _("اعلان‌ها")
+        ordering = ["-id"]
+        constraints = [
+            # One delivery per person per message: re-sending must not double up.
+            models.UniqueConstraint(
+                fields=["message", "user"], name="uniq_notification_per_recipient"
+            ),
+        ]
+        indexes = [
+            # The inbox listing.
+            models.Index(fields=["user", "-id"], name="notif_user_recent"),
+            # The unread badge count, which is read on every page load.
+            models.Index(
+                fields=["user"],
+                condition=models.Q(read_at__isnull=True),
+                name="notif_user_unread",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        state = "read" if self.read_at else "unread"
+        return f"#{self.message_id} -> {self.user_id} ({state})"
+
+    @property
+    def is_read(self) -> bool:
+        return self.read_at is not None

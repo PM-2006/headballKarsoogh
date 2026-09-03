@@ -5,9 +5,27 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>گیلبال | GilBall</title>
 <link rel="stylesheet" href="{% static 'game/styles.css' %}">
+<link rel="stylesheet" href="{% static 'game/inbox.css' %}">
 </head>
 <body>
 <div id="toastWrap" class="toast-wrap"></div>
+<div id="inboxBackdrop" class="inbox-backdrop" hidden></div>
+<aside id="inboxDrawer" class="inbox-drawer" role="dialog" aria-modal="true" aria-labelledby="inboxDrawerTitle" hidden>
+  <div class="ibx-head">
+    <h2 id="inboxDrawerTitle">📨 صندوق پیام <span id="ibxUnreadPill" class="ibx-pill" hidden></span></h2>
+    <button id="inboxClose" class="ibx-icon-btn" type="button" aria-label="بستن صندوق پیام">✕</button>
+  </div>
+  <div class="ibx-toolbar">
+    <button id="inboxRefresh" class="ibx-refresh" type="button"><span class="ibx-spin" aria-hidden="true">⟳</span> تازه‌سازی</button>
+    <span id="inboxUpdated" class="ibx-updated">هنوز به‌روزرسانی نشده</span>
+    <button id="inboxReadAll" class="ibx-linkbtn" type="button" disabled>خواندن همه</button>
+  </div>
+  {% comment %}Stays visible at all times, not only when the list is empty: someone
+  who assumes messages arrive by themselves will otherwise miss them.{% endcomment %}
+  <p class="ibx-note"><span aria-hidden="true">ℹ️</span> پیام‌های تازه خودکار نمی‌آیند. برای دیدن پیام‌های جدید، دکمهٔ «تازه‌سازی» را بزن.</p>
+  <div id="inboxList" class="ibx-list" aria-live="polite"></div>
+  <div class="ibx-foot"><button id="inboxSeeAll" class="ibx-linkbtn" type="button">مشاهدهٔ همهٔ پیام‌ها ←</button></div>
+</aside>
 <div class="app">
 <header>
   <div class="brand">
@@ -19,6 +37,13 @@
   </div>
   <div class="header-controls">
     <div class="user-bar">
+      <button id="inboxBell" class="bell-btn" type="button" aria-label="پیام‌ها" aria-haspopup="dialog" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span id="inboxBadge" class="bell-badge" aria-hidden="true" hidden>0</span>
+      </button>
       <span class="user-name">👤 {{ request.user.username }}</span>
       {% if request.user.is_superuser %}
         <a href="{% url 'admin:index' %}" class="btn-link" target="_blank">⚙️ پنل مدیریت</a>
@@ -31,6 +56,9 @@
     <div class="nav">
       <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
       <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+      {% if is_msg_admin %}
+      <button id="messagesTab"><span class="nav-ico">📨</span> پیام‌ها</button>
+      {% endif %}
       {% if request.user.is_superuser %}
       <button id="panelTab"><span class="nav-ico">⚙️</span> تنظیمات بازی</button>
       {% endif %}
@@ -313,7 +341,116 @@
   </div>
 </section>
 {% endif %}
+<section id="inboxView" class="view">
+  <div id="inboxListPane" class="card ibx-page">
+    <div class="ibx-page-head">
+      <div>
+        <h2>📨 همهٔ پیام‌های من</h2>
+        <p class="muted">پیام‌هایی که مدیران برای تو فرستاده‌اند. روی هر پیام بزن تا کامل باز شود.</p>
+      </div>
+    </div>
+    <div class="ibx-toolbar">
+      <button id="inboxPageRefresh" class="ibx-refresh" type="button"><span class="ibx-spin" aria-hidden="true">⟳</span> تازه‌سازی</button>
+      <span id="inboxPageUpdated" class="ibx-updated">هنوز به‌روزرسانی نشده</span>
+      <button id="inboxPageReadAll" class="ibx-linkbtn" type="button" disabled>خواندن همه</button>
+    </div>
+    <p class="ibx-note"><span aria-hidden="true">ℹ️</span> پیام‌های تازه خودکار نمی‌آیند. برای دیدن پیام‌های جدید، دکمهٔ «تازه‌سازی» را بزن.</p>
+    <div id="inboxPageList" class="ibx-list" aria-live="polite"></div>
+  </div>
+
+  {% comment %}A separate view rather than an inline expand: a long message turns a
+  list that looked fine with two-line cards into a mess.{% endcomment %}
+  <div id="inboxDetailPane" class="card ibx-detail" hidden>
+    <button id="inboxBack" class="ibx-back" type="button"><span aria-hidden="true">→</span> بازگشت به همهٔ پیام‌ها</button>
+    <div class="ibx-detail-head">
+      <div id="ibxDetailAvatar" class="ibx-avatar" aria-hidden="true">م</div>
+      <div class="ibx-detail-who">
+        <div id="ibxDetailSender" class="ibx-detail-sender"></div>
+        <div id="ibxDetailTime" class="ibx-detail-time"></div>
+      </div>
+    </div>
+    <h1 id="ibxDetailTitle" class="ibx-detail-title"></h1>
+    <div id="ibxDetailBody" class="ibx-detail-body"></div>
+  </div>
+</section>
+{% if is_msg_admin %}
+<section id="messagesView" class="view">
+  <div class="card">
+    <div class="msg-tabs" role="tablist">
+      <button type="button" data-mtab="compose" class="active">✍️ نوشتن پیام</button>
+      <button type="button" data-mtab="drafts">📝 پیش‌نویس‌ها <span id="draftsCount" class="mtab-count" hidden></span></button>
+      <button type="button" data-mtab="sent">📤 ارسال‌شده‌ها</button>
+    </div>
+
+    <div id="mtab-compose" class="mtab-pane active">
+      <div class="aud-box">
+        <div class="aud-head">
+          <label class="aud-everyone">
+            <input type="checkbox" id="audEveryone">
+            <span class="aud-switch" aria-hidden="true"></span>
+            <span class="aud-everyone-text"><b>ارسال به همه</b><small>همهٔ کاربران فعال، به‌جز خودت</small></span>
+          </label>
+          <span id="audReach" class="aud-reach is-loading">…</span>
+        </div>
+        <div id="audPicker" class="aud-picker">
+          <div class="aud-search-row">
+            <input id="audSearch" type="text" placeholder="🔍 جستجوی نام کاربر…" autocomplete="off">
+            <button id="audSelectShown" class="mini" type="button">انتخاب همهٔ نتایج</button>
+            <button id="audClear" class="mini" type="button">پاک کردن</button>
+            <span id="audSelectedCount" class="msg-counter"></span>
+          </div>
+          <div id="audList" class="aud-list"></div>
+        </div>
+      </div>
+
+      <label class="msg-field">
+        <span class="msg-label">عنوان پیام <span id="msgTitleCount" class="msg-counter">۰/۱۲۰</span></span>
+        <input id="msgTitle" type="text" maxlength="120" placeholder="مثلاً: مسابقهٔ نهایی روز پنجشنبه برگزار می‌شود">
+      </label>
+      <label class="msg-field">
+        <span class="msg-label">متن پیام</span>
+        <textarea id="msgBody" rows="8" placeholder="متن کامل پیام را اینجا بنویس…"></textarea>
+      </label>
+
+      <div class="msg-actions">
+        <button id="msgSend" class="primary" type="button" disabled>📨 ارسال پیام</button>
+        <button id="msgSaveDraft" type="button">💾 ذخیره پیش‌نویس</button>
+        <button id="msgResetForm" class="ghost" type="button">پاک کردن فرم</button>
+        <span id="msgEditingBadge" class="msg-editing" hidden></span>
+      </div>
+      <p class="msg-hint">دکمهٔ ارسال تا وقتی عنوان بنویسی و دست‌کم یک گیرنده انتخاب کنی فعال نمی‌شود. پیام پس از ارسال دیگر قابل ویرایش یا حذف نیست.</p>
+    </div>
+
+    <div id="mtab-drafts" class="mtab-pane">
+      <p class="muted">پیش‌نویس‌ها فقط برای خودت دیده می‌شوند. روی «ویرایش» بزن تا دوباره در فرم بارگذاری شود.</p>
+      <div id="draftsList" class="msg-rows"></div>
+    </div>
+
+    <div id="mtab-sent" class="mtab-pane">
+      <p class="muted">پیام‌های ارسال‌شدهٔ همهٔ مدیران. روی عدد «خوانده» بزن تا ببینی دقیقاً چه کسانی هنوز پیام را باز نکرده‌اند.</p>
+      <div id="sentList" class="msg-rows"></div>
+    </div>
+
+    <div id="mtab-receipts" class="mtab-pane">
+      <button id="rcptBack" class="ibx-back" type="button"><span aria-hidden="true">→</span> بازگشت به ارسال‌شده‌ها</button>
+      <div class="rcpt-head">
+        <h3 id="rcptTitle" class="rcpt-title"></h3>
+        <div id="rcptBody" class="rcpt-body"></div>
+      </div>
+      <div class="rcpt-progress"><div id="rcptBar" class="rcpt-bar"></div></div>
+      <div id="rcptStat" class="rcpt-stat"></div>
+      <div class="rcpt-filter">
+        <button type="button" data-rfilter="unread" class="active">خوانده‌نشده</button>
+        <button type="button" data-rfilter="all">همه</button>
+      </div>
+      <div id="rcptList" class="rcpt-list"></div>
+    </div>
+  </div>
+</section>
+{% endif %}
 </div>
-<script>window.IS_STUDENT = {% if is_student %}true{% else %}false{% endif %};</script>
+<script>window.IS_STUDENT = {% if is_student %}true{% else %}false{% endif %};
+window.IS_MESSAGING_ADMIN = {% if is_msg_admin %}true{% else %}false{% endif %};</script>
 <script src="{% static 'game/game.js' %}"></script>
+<script src="{% static 'game/inbox.js' %}"></script>
 </body></html>

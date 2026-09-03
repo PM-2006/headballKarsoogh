@@ -6,7 +6,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
-from .models import GameConfigOverride, SavedStrategy
+from .models import GameConfigOverride, Message, Notification, SavedStrategy
 
 
 @admin.register(GameConfigOverride)
@@ -106,3 +106,37 @@ class SavedStrategyAdmin(admin.ModelAdmin):
             '<pre style="background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; font-family: monospace; max-height: 400px; overflow: auto; direction: ltr; text-align: left;">{}</pre>',
             formatted,
         )
+
+
+@admin.register(Message)
+class MessageAdmin(admin.ModelAdmin):
+    """Read-only-ish fallback view. Messages are written from the in-app composer.
+
+    ``sent_at``/``status`` are shown but not offered for editing: a message
+    flipped to "sent" here would have no Notification rows behind it, so it
+    would sit in the Sent box having reached nobody.
+    """
+
+    list_display = ("title", "status", "sender_label", "audience", "delivered", "sent_at")
+    list_filter = ("status", "to_everyone")
+    search_fields = ("title", "body", "sender_label")
+    readonly_fields = ("status", "sent_at", "created_at", "updated_at")
+    filter_horizontal = ("users",)
+
+    @admin.display(description=_("گیرندگان"))
+    def audience(self, obj: Message) -> str:
+        from .messaging import audience_label
+
+        return audience_label(obj)
+
+    @admin.display(description=_("تحویل‌شده"))
+    def delivered(self, obj: Message) -> int:
+        return obj.notifications.count()
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ("message", "user", "read_at", "created_at")
+    list_filter = ("read_at",)
+    search_fields = ("user__username", "message__title")
+    readonly_fields = ("message", "user", "created_at")

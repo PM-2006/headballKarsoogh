@@ -141,7 +141,7 @@ const simpleActions = {
 };
 let simpleRules = [];
 
-const VIEW_NAMES=["builder","arena","panel"];
+const VIEW_NAMES=["builder","arena","panel","inbox","messages"];
 function switchView(which){
   VIEW_NAMES.forEach(v=>{
     const view=$(v+"View"),tab=$(v+"Tab");

@@ -167,6 +167,7 @@ def healthz(request):
 @ensure_csrf_cookie
 def index(request):
     from .engine import get_game_config
+    from .messaging import is_messaging_admin
     # "Students" are ordinary players: they get the guided AI-only builder,
     # while staff/superusers keep the manual rule editor and the raw JSON view.
     is_student = not (request.user.is_staff or request.user.is_superuser)
@@ -176,6 +177,9 @@ def index(request):
         {
             "game_config": get_game_config().to_dict(),
             "is_student": is_student,
+            # Same predicate the messages/ endpoints enforce, so the composer
+            # can never be shown to someone the API would answer with a 403.
+            "is_msg_admin": is_messaging_admin(request.user),
         },
     )
 
