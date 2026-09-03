@@ -44,7 +44,7 @@ from .gameconfig import (
     spec as config_spec,
 )
 from .models import SavedStrategy
-from .strategy import get_preset, vocabulary
+from .strategy import PRESETS, get_preset, vocabulary
 from .validators import StrategyValidationError, validate_strategy
 from .services.llm import (
     LLMConfigurationError,
@@ -123,21 +123,24 @@ def _name_taken_by_other(name: str, user) -> bool:
 def _resolve_strategy(payload, key, user=None):
     item = payload.get(key)
     if not isinstance(item, dict):
-        raise StrategyValidationError(f"{key} must be an object.")
+        return get_preset("predictive")
     if "preset" in item:
+        preset_name = str(item.get("preset") or "").strip().lower()
+        if not preset_name or preset_name not in PRESETS:
+            preset_name = "predictive"
         try:
-            return get_preset(item["preset"])
+            return get_preset(preset_name)
         except KeyError as exc:
-            raise StrategyValidationError(str(exc)) from exc
+            return get_preset("predictive")
     if "strategy_id" in item:
         try:
             strategy_id = int(item["strategy_id"])
         except (ValueError, TypeError):
-            raise StrategyValidationError(f"شناسه استراتژی {key} نامعتبر است.")
+            return get_preset("predictive")
         try:
             saved = SavedStrategy.objects.select_related("user").get(id=strategy_id)
         except SavedStrategy.DoesNotExist:
-            raise StrategyValidationError(f"استراتژی با شناسه {strategy_id} یافت نشد.")
+            return get_preset("predictive")
 
         if user and not (saved.user == user or saved.is_admin_strategy or user.is_staff or user.is_superuser):
             raise StrategyValidationError(f"شما اجازه دسترسی به استراتژی {saved.name} را ندارید.")
@@ -145,7 +148,7 @@ def _resolve_strategy(payload, key, user=None):
 
     strategy = item.get("strategy")
     if strategy is None:
-        raise StrategyValidationError(f"{key} must contain either 'preset', 'strategy_id', or 'strategy'.")
+        return get_preset("predictive")
     return validate_strategy(strategy)
 
 @require_GET

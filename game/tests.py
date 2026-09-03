@@ -153,8 +153,8 @@ class ConfigTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("config", data)
-        self.assertEqual(data["config"]["width"], 1500.0)
-        self.assertEqual(data["config"]["ball_radius"], 23.0)
+        self.assertEqual(data["config"]["width"], 1800.0)
+        self.assertEqual(data["config"]["ball_radius"], 17.0)
 
     def test_env_variable_overrides(self):
         import os
@@ -864,8 +864,10 @@ class SingleSessionTests(TestCase):
 
     def setUp(self):
         from django.core.cache import cache
+        from .gameconfig import set_session_limit
 
         cache.clear()
+        set_session_limit(1)
         self.password = "pass123456user"
         self.user = User.objects.create_user(username="oneuser", password=self.password)
 
@@ -978,10 +980,10 @@ class SessionLimitTests(TestCase):
 
         return set_session_limit(value, user=self.admin)
 
-    def test_default_limit_is_one(self):
+    def test_default_limit_is_three(self):
         from .gameconfig import get_session_limit
 
-        self.assertEqual(get_session_limit(), 1)
+        self.assertEqual(get_session_limit(), 3)
 
     def test_limit_of_three_keeps_three_sessions(self):
         from .models import UserSession
@@ -1062,7 +1064,7 @@ class SessionLimitTests(TestCase):
         self.assertEqual(self._set_limit(0), 1)
         self.assertEqual(self._set_limit(-5), 1)
         self.assertEqual(self._set_limit(9999), MAX_SESSION_LIMIT)
-        self.assertEqual(self._set_limit("junk"), 1)
+        self.assertEqual(self._set_limit("junk"), 3)
 
     def test_endpoint_is_superuser_only(self):
         from .gameconfig import get_session_limit
@@ -1075,7 +1077,7 @@ class SessionLimitTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 403)
-        self.assertEqual(get_session_limit(), 1)
+        self.assertEqual(get_session_limit(), 3)
 
     def test_superuser_reads_and_writes_the_limit(self):
         from .gameconfig import get_session_limit
@@ -1083,7 +1085,7 @@ class SessionLimitTests(TestCase):
         self.client.login(username="boss", password="pw12345678")
         read = self.client.get("/api/session-limit/")
         self.assertEqual(read.status_code, 200)
-        self.assertEqual(json.loads(read.content)["limit"], 1)
+        self.assertEqual(json.loads(read.content)["limit"], 3)
 
         write = self.client.post(
             "/api/session-limit/",
@@ -1296,15 +1298,15 @@ class StrictnessAndCompilerTests(TestCase):
 
         vocab_resp = self.client.get(reverse("game:api_vocabulary"))
         self.assertEqual(vocab_resp.json()["default_strictness"], 5)
-        self.assertFalse(vocab_resp.json()["show_strictness_to_user"])
+        self.assertTrue(vocab_resp.json()["show_strictness_to_user"])
 
     def test_show_strictness_to_user_toggle_and_enforcement(self):
         admin_user = User.objects.create_superuser(username="superadmin", password="pw12345678")
         self.client.login(username="superadmin", password="pw12345678")
 
-        # 1. Default should be False (off by default)
+        # 1. Default should be True (on by default)
         vocab_initial = self.client.get(reverse("game:api_vocabulary")).json()
-        self.assertFalse(vocab_initial["show_strictness_to_user"])
+        self.assertTrue(vocab_initial["show_strictness_to_user"])
 
         # 2. Admin can turn it ON (True)
         resp_on = self.client.post(
