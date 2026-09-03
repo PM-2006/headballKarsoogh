@@ -76,7 +76,7 @@ class GameConfig:
     player_contact_velocity_transfer: float = 0.18
 
     # Kicks & Actions
-    kick_reach: float = 126.0
+    kick_reach: float = 68.0
     kick_low_x: float = 850.0
     kick_low_y: float = -170.0
     kick_low_cooldown: float = 0.40
@@ -178,7 +178,7 @@ def get_base_config() -> GameConfig:
         player_contact_velocity_transfer=_env_float("GAME_PLAYER_CONTACT_VELOCITY_TRANSFER", 0.18),
 
         # Kicks & Actions
-        kick_reach=_env_float("GAME_KICK_REACH", 126.0),
+        kick_reach=_env_float("GAME_KICK_REACH", 68.0),
         kick_low_x=_env_float("GAME_KICK_LOW_X", 850.0),
         kick_low_y=_env_float("GAME_KICK_LOW_Y", -170.0),
         kick_low_cooldown=_env_float("GAME_KICK_LOW_COOLDOWN", 0.40),

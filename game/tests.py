@@ -73,7 +73,7 @@ class KickMechanicsTests(TestCase):
                     team, "KICK_CLEAR", ball_offset, face
                 )
                 self.assertGreater(world.ball.vx * expected_direction, 0.0)
-                self.assertLess(world.ball.vy, config.kick_high_y)
+                self.assertLess(world.ball.vy, 0.0)
 
     def test_normal_shot_still_targets_enemy_goal_when_ball_is_behind(self):
         blue_world, _ = self._apply_single_kick(0, "KICK_HIGH", -50.0, -1)

@@ -1211,8 +1211,13 @@ function drawFrame(frame){
   // moves left on screen. The scoreboard/live/selection are laid out Team 1 on
   // the left to match. Each character is drawn in its own team's kit colour.
   const d0=frame.debug?.[0]||{},d1=frame.debug?.[1]||{};
-  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,teamColors[0]);
-  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,teamColors[1]);
+  const isKicking0=Boolean(d0.action&&String(d0.action).startsWith("KICK_"));
+  const isKicking1=Boolean(d1.action&&String(d1.action).startsWith("KICK_"));
+  drawPlayer(ctx,frame.players[0],"blue",PW,PH,G,teamColors[0],isKicking0);
+  drawPlayer(ctx,frame.players[1],"red",PW,PH,G,teamColors[1],isKicking1);
+  if(isKicking0||isKicking1){
+    drawKickImpact(ctx,frame.ball.x,frame.ball.y,BR);
+  }
   // Ball ground shadow shrinks as the ball rises.
   const hi=Math.max(0,Math.min(1,(G-frame.ball.y)/(G-150)));
   ctx.fillStyle=`rgba(0,0,0,${0.20*(1-0.55*hi)})`;
@@ -1539,13 +1544,36 @@ function drawLimb(ctx,x1,y1,x2,y2,thickness,color){
   ctx.lineTo(x2,y2);
   ctx.stroke();
 }
+function drawKickImpact(ctx,bx,by,r){
+  ctx.save();
+  const grad=ctx.createRadialGradient(bx,by,0,bx,by,r*1.6);
+  grad.addColorStop(0,"rgba(255,255,255,0.95)");
+  grad.addColorStop(0.35,"rgba(255,210,60,0.7)");
+  grad.addColorStop(1,"rgba(255,80,20,0)");
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.arc(bx,by,r*1.6,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle="rgba(255,255,255,0.9)";
+  ctx.lineWidth=2.5;
+  const sparkLen=r*1.5;
+  for(let a=0;a<4;a++){
+    const angle=(Math.PI/4)+(a*Math.PI/2);
+    ctx.beginPath();
+    ctx.moveTo(bx+Math.cos(angle)*(r*0.35),by+Math.sin(angle)*(r*0.35));
+    ctx.lineTo(bx+Math.cos(angle)*sparkLen,by+Math.sin(angle)*sparkLen);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 // The original hand-drawn character: spiky head, big eyes, kit-coloured shirt.
 // Drawn as vectors (not a sprite sheet) so it takes the team's kit colour
 // directly instead of being tinted.
-function drawPlayer(ctx,p,team,w,h,G,kitColor){
-  drawVectorPlayer(ctx,p,kitColor||(team==="red"?"#ff5262":"#2f9bff"),w,h,G);
+function drawPlayer(ctx,p,team,w,h,G,kitColor,isKicking){
+  drawVectorPlayer(ctx,p,kitColor||(team==="red"?"#ff5262":"#2f9bff"),w,h,G,isKicking);
 }
-function drawVectorPlayer(ctx,p,color,w,h,G){
+function drawVectorPlayer(ctx,p,color,w,h,G,isKicking){
   const number="";
   const palette=paletteFromColor(color);
 
@@ -1627,15 +1655,28 @@ function drawVectorPlayer(ctx,p,color,w,h,G){
   roundedRectPath(ctx,cx-13,p.y+57,30,8,4);
   ctx.fill();
 
-  // Running stance: front leg reaches forward, rear leg trails back.
-  drawLimb(ctx,cx-5,p.y+63,cx-11,p.y+68,5.5,palette.skin);
-  drawLimb(ctx,cx+9,p.y+63,cx+15,p.y+67,5.5,palette.skin);
+  if(isKicking){
+    // Firm rear leg plant
+    drawLimb(ctx,cx-7,p.y+63,cx-14,p.y+69,5.5,palette.skin);
+    // Dynamic kick reach forward toward the ball
+    drawLimb(ctx,cx+8,p.y+61,cx+24,p.y+63,5.5,palette.skin);
 
-  ctx.fillStyle=palette.boots;
-  ctx.beginPath();
-  roundedRectPath(ctx,cx-19,p.y+66,15,6,3);
-  roundedRectPath(ctx,cx+9,p.y+65,17,6,3);
-  ctx.fill();
+    ctx.fillStyle=palette.boots;
+    ctx.beginPath();
+    roundedRectPath(ctx,cx-22,p.y+67,15,6,3);
+    roundedRectPath(ctx,cx+20,p.y+60,19,7,3);
+    ctx.fill();
+  } else {
+    // Running stance: front leg reaches forward, rear leg trails back.
+    drawLimb(ctx,cx-5,p.y+63,cx-11,p.y+68,5.5,palette.skin);
+    drawLimb(ctx,cx+9,p.y+63,cx+15,p.y+67,5.5,palette.skin);
+
+    ctx.fillStyle=palette.boots;
+    ctx.beginPath();
+    roundedRectPath(ctx,cx-19,p.y+66,15,6,3);
+    roundedRectPath(ctx,cx+9,p.y+65,17,6,3);
+    ctx.fill();
+  }
 
   ctx.restore();
 
@@ -2301,8 +2342,14 @@ function renderPanel(groups){
     </details>`).join("");
   host.querySelectorAll(".pfield").forEach(row=>{
     const rng=row.querySelector(".pf-range"),num=row.querySelector(".pf-num");
-    rng.oninput=()=>{num.value=rng.value;};
-    num.oninput=()=>{rng.value=num.value;};
+    const updateProgress=()=>{
+      const min=Number(rng.min), max=Number(rng.max), val=Number(rng.value);
+      const pct=max>min?Math.max(0, Math.min(100, ((val-min)/(max-min))*100)):0;
+      rng.style.background=`linear-gradient(to left, #4d9bff 0%, #4d9bff ${pct}%, #1b2c49 ${pct}%, #1b2c49 100%)`;
+    };
+    rng.oninput=()=>{num.value=rng.value; updateProgress();};
+    num.oninput=()=>{rng.value=num.value; updateProgress();};
+    updateProgress();
   });
 }
 function collectPanelValues(){
