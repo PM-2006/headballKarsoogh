@@ -25,9 +25,17 @@ from game.prompts.strategy_compiler import (
     StrategyCompilerResponse,
     build_strategy_compiler_prompt,
 )
-from game.validators import StrategyValidationError, validate_strategy
+from game.validators import (
+    MAX_CONDITIONS_PER_RULE,
+    MAX_RULES,
+    StrategyValidationError,
+    validate_strategy,
+)
 
 logger = logging.getLogger(__name__)
+
+# Headroom for the largest strategy the schema permits plus its Persian feedback.
+MAX_COMPLETION_TOKENS = 6000
 
 
 class LLMConfigurationError(RuntimeError):
@@ -36,6 +44,10 @@ class LLMConfigurationError(RuntimeError):
 
 class LLMServiceError(RuntimeError):
     """The external LLM service failed or returned an unusable result."""
+
+
+class LLMTruncatedResponseError(LLMServiceError):
+    """The model ran out of completion budget mid-answer."""
 
 
 def _discover_fallback_credentials() -> Tuple[str | None, str | None, str | None]:
@@ -135,6 +147,12 @@ def _parse_pydantic_response(response: Any) -> StrategyCompilerResponse:
     choice = response.choices[0]
     message = choice.message
 
+    if getattr(choice, "finish_reason", None) == "length":
+        raise LLMTruncatedResponseError(
+            "پاسخ مدل ناقص ماند. دوباره دکمهٔ تبدیل را بزن؛ اگر باز هم تکرار شد، "
+            "استراتژی را به قانون‌های کمتری خلاصه کن."
+        )
+
     # Check for AI refusal
     refusal = getattr(message, "refusal", None)
     if refusal:
@@ -204,6 +222,8 @@ def _plain_json_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]
 
 def _can_fallback_to_plain_json(exc: Exception) -> bool:
     """True only when the structured-output mechanism itself may be unsupported."""
+    if isinstance(exc, LLMTruncatedResponseError):
+        return False
     if isinstance(
         exc,
         (
@@ -239,7 +259,7 @@ def _service_error(exc: Exception) -> LLMServiceError:
     elif isinstance(exc, InternalServerError):
         message = "سرویس ساخت ربات موقتاً مشکل دارد. کمی بعد دوباره تلاش کن."
     elif isinstance(exc, LengthFinishReasonError):
-        message = "استراتژی یا پاسخ آن خیلی طولانی شد. متن را کمی کوتاه‌تر کن و دوباره تلاش کن."
+        message = "پاسخ مدل ناقص ماند. دوباره تلاش کن؛ اگر تکرار شد، استراتژی را به قانون‌های کمتری خلاصه کن."
     elif isinstance(exc, APIConnectionError):
         message = "ارتباط با سرویس ساخت ربات برقرار نشد. کمی بعد دوباره تلاش کن."
     elif isinstance(exc, ValidationError):
@@ -285,6 +305,56 @@ def _normalize_conversation_history(
         clean_answers = [str(answer)[:500] for answer in answers[:5]]
         normalized.append({"questions": clean_questions, "answers": clean_answers})
     return normalized
+
+
+def _enforce_strategy_limits(strategy_dict: dict[str, Any]) -> list[str]:
+    """Trim a compiled strategy down to what the engine accepts.
+
+    Also renumbers priorities: the list order is the model's intended order, so
+    a duplicated or skipped priority must not fail engine validation.
+    Returns Persian notes for anything that had to be dropped.
+    """
+    notes: list[str] = []
+    rules = strategy_dict.get("rules") or []
+
+    # A rule with no conditions always fires and would shadow every rule below
+    # it, so it is dropped rather than kept as a silent catch-all.
+    kept = [rule for rule in rules if rule.get("conditions")]
+    if len(kept) != len(rules):
+        notes.append("چند قانون بدون شرط بودند و حذف شدند.")
+
+    # Sort by the model's stated priority, keeping list order as the tie-break
+    # and for rules that left priority unset.
+    def _sort_key(pair: tuple[int, dict]) -> tuple[int, int]:
+        index, rule = pair
+        priority = rule.get("priority")
+        if not isinstance(priority, int) or priority < 1:
+            priority = 10**6  # unset priority sinks to the end, order preserved
+        return priority, index
+
+    kept = [rule for _, rule in sorted(enumerate(kept), key=_sort_key)]
+
+    if len(kept) > MAX_RULES:
+        notes.append(
+            f"استراتژی تو بیشتر از {MAX_RULES} قانون داشت؛ "
+            f"{MAX_RULES} قانون با بالاترین اولویت نگه داشته شد و بقیه حذف شدند."
+        )
+        kept = kept[:MAX_RULES]
+
+    trimmed_conditions = False
+    for priority, rule in enumerate(kept, start=1):
+        rule["priority"] = priority
+        conditions = rule.get("conditions") or []
+        if len(conditions) > MAX_CONDITIONS_PER_RULE:
+            rule["conditions"] = conditions[:MAX_CONDITIONS_PER_RULE]
+            trimmed_conditions = True
+    if trimmed_conditions:
+        notes.append(
+            f"بعضی قانون‌ها بیشتر از {MAX_CONDITIONS_PER_RULE} شرط داشتند؛ شرط‌های اضافه حذف شدند."
+        )
+
+    strategy_dict["rules"] = kept
+    return notes
 
 
 def compile_persian_strategy(
@@ -355,7 +425,7 @@ def compile_persian_strategy(
             messages=messages,
             response_format=StrategyCompilerResponse,
             temperature=0.0,
-            max_tokens=3500,
+            max_tokens=MAX_COMPLETION_TOKENS,
         )
         parsed_result = _parse_pydantic_response(response)
     except Exception as structured_exc:
@@ -370,7 +440,7 @@ def compile_persian_strategy(
                 model=model,
                 messages=fallback_messages,
                 temperature=0.0,
-                max_tokens=3500,
+                max_tokens=MAX_COMPLETION_TOKENS,
             )
             parsed_result = _parse_pydantic_response(response)
         except Exception as exc:
@@ -416,12 +486,10 @@ def compile_persian_strategy(
     strategy_dict = parsed_result.strategy.model_dump()
     strategy_dict["label"] = "My Bot"
 
-    # The list order is the model's intended priority order. Renumber it
-    # deterministically so a harmless duplicate/skipped priority does not make
-    # an otherwise usable student strategy fail engine validation.
-    strategy_dict["rules"].sort(key=lambda rule: rule["priority"])
-    for priority, rule in enumerate(strategy_dict["rules"], start=1):
-        rule["priority"] = priority
+    # Models overshoot the rule/condition caps on long strategies. Trimming to
+    # fit gives the student a bot that runs, instead of an error telling them to
+    # rewrite a text that was within its own length limit all along.
+    limit_notes = _enforce_strategy_limits(strategy_dict)
 
     # Pass through deterministic game engine validator
     try:
@@ -436,7 +504,7 @@ def compile_persian_strategy(
         "valid": True,
         "needs_clarification": False,
         "questions": [],
-        "feedback": parsed_result.feedback,
+        "feedback": parsed_result.feedback + limit_notes,
         "strategy": strategy_dict,
         "model": model_name,
         "usage": usage_summary,
