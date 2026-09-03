@@ -171,7 +171,8 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .tb-field{display:flex;flex-direction:column;gap:8px;color:var(--muted);font-weight:800;font-size:12.5px;direction:rtl}
 .tb-field span{padding-inline-start:3px}
 .tb-field select,.tb-field input{width:100%}
-.tb-team1 span{color:var(--team1)}.tb-team2 span{color:var(--team2)}
+.tb-team1 > span, #team1Label{color:var(--team1)}
+.tb-team2 > span, #team2Label{color:var(--team2)}
 
 /* Searchable Custom Select for Arena Team Selection */
 .search-select-container{position:relative;width:100%;direction:rtl}
@@ -185,7 +186,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
   border:1px solid var(--line);
   border-radius:11px;
   padding:10px 13px;
-  color:#fff;
+  color:#fff !important;
   font-weight:700;
   font-size:14px;
   cursor:pointer;
@@ -207,6 +208,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
   display:inline-flex;
   align-items:center;
   gap:6px;
+  color:#fff !important;
 }
 .search-select-arrow{
   font-size:11px;
@@ -275,7 +277,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 .search-select-group-title{
   font-size:12px;
   font-weight:800;
-  color:#fff;
+  color:#fff !important;
   background:rgba(255,255,255,.05);
   padding:6px 14px;
   border-bottom:1px solid rgba(255,255,255,.05);
@@ -287,7 +289,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
   align-items:center;
   gap:8px;
   padding:8px 14px;
-  color:var(--text);
+  color:#fff !important;
   font-size:13.5px;
   font-weight:700;
   cursor:pointer;
@@ -296,16 +298,16 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 }
 .search-select-option:hover,.search-select-option.highlighted{
   background:#234a7d;
-  color:#fff;
+  color:#fff !important;
 }
 .search-select-option.selected{
   background:#2b5998;
-  color:#fff;
+  color:#fff !important;
 }
 .search-select-option .opt-check{
   width:14px;
   font-size:12px;
-  color:#fff;
+  color:#fff !important;
   opacity:0;
   flex:none;
   text-align:center;
@@ -319,6 +321,7 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
+  color:#fff !important;
 }
 .search-select-no-result{
   padding:18px 14px;
