@@ -1238,10 +1238,6 @@ function onHalftimeStrategyChange(val, teamIdx=0){
 function showRest(){
   const rest=$("restFx");
   if(!rest){advanceRound();return;}
-  // rest_time is admin-configurable; 0 means "no break", so skip the screen.
-  const configured=Number(gameConfig.rest_time);
-  const secs=Number.isFinite(configured)?Math.round(configured):25;
-  if(secs<=0){advanceRound();return;}
   const [n1,n2]=teamNames();
   const isTwoHalves=(tournament.rounds===2);
   if($("restRound")){
@@ -1256,17 +1252,10 @@ function showRest(){
   if($("restNext")){
     $("restNext").textContent=isTwoHalves?"شروع نیمه دوم ▶":"شروع راند بعد ▶";
   }
-  if($("restHint"))$("restHint").textContent="می‌توانی استراتژی تیمت را برای نیمه بعدی سوییچ کنی یا با دکمه بالا بلافاصله بازی را ادامه دهی.";
+  if($("restHint"))$("restHint").textContent="می‌توانی استراتژی تیمت را بررسی یا تعویض کنی. هر زمان آماده بودی دکمه «شروع نیمه بعد» را بزن.";
   setupHalftimeSwitcher();
   rest.classList.add("show");
-  let remain=secs;
-  if($("restCountdown"))$("restCountdown").textContent=toFa(remain);
   clearInterval(restTimerHandle);
-  restTimerHandle=setInterval(()=>{
-    remain--;
-    if($("restCountdown"))$("restCountdown").textContent=toFa(Math.max(0,remain));
-    if(remain<=0){advanceRound();}
-  },1000);
 }
 function advanceRound(){
   clearInterval(restTimerHandle);
