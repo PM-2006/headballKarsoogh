@@ -875,48 +875,124 @@ function onRoundEnd(lastFrame){
   else{ tournament.playing=false;$("playMatch").disabled=false; showFinal(); }
 }
 
+function findMatchingOptionValue(selectElem, val){
+  if(!selectElem || !val) return null;
+  if([...selectElem.options].some(o => o.value === val)) return val;
+
+  let id = null;
+  if(typeof val === "number"){
+    id = val;
+  } else if(typeof val === "string"){
+    const parts = val.split("_");
+    if(parts.length > 1 && Number.isFinite(Number(parts[1]))){
+      id = Number(parts[1]);
+    }
+  }
+
+  if(id !== null){
+    const match = [...selectElem.options].find(o => o.value === `saved_${id}` || o.value === `pub_${id}` || o.value === `any_${id}`);
+    if(match) return match.value;
+  }
+  return null;
+}
+
+function setSelectValueSafely(selectElem, val){
+  if(!selectElem || !val) return;
+  const match = findMatchingOptionValue(selectElem, val);
+  if(match){
+    selectElem.value = match;
+  } else {
+    const opt = document.createElement("option");
+    opt.value = val;
+    opt.textContent = labelFor(val);
+    selectElem.appendChild(opt);
+    selectElem.value = val;
+  }
+}
+
+function buildSelectOptionsForTeam(teamIdx, currentVal){
+  let author = null;
+  if(currentVal === "mybot"){
+    author = currentUsername;
+  } else if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
+    const id = Number(currentVal.slice(currentVal.indexOf("_")+1));
+    const b = botById(id);
+    if(b) author = b.author;
+  }
+
+  let html = "";
+  const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
+
+  if(author){
+    const authorBots = pool.filter(s => s.author === author);
+    if(authorBots.length > 0){
+      let authorOpts = "";
+      authorBots.forEach((s, idx)=>{
+        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+        authorOpts += `<option value="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</option>`;
+      });
+      html += `<optgroup label="⚡ استراتژی‌های این تیم (${escapeHtml(author)})">${authorOpts}</optgroup>`;
+    }
+  }
+
+  if(myStrategy && (teamIdx === 0 || isAdmin)){
+    html += `<optgroup label="✏️ پیش‌نویس"><option value="mybot">🤖 ربات جاری (پیش‌نویس)</option></optgroup>`;
+  }
+
+  if(isAdmin){
+    html += grpAll();
+  } else {
+    if(teamIdx === 0){
+      html += grpMine();
+    } else {
+      html += grpPublic() + grpMine();
+    }
+  }
+
+  html += grpPresets();
+  return html;
+}
+
 function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem){
   if(!wrapElem || !origSelElem) return;
   const currentVal = origSelElem.value;
   let html = "";
 
-  if(teamIdx === 0 && !isAdmin){
+  let author = null;
+  if(currentVal === "mybot"){
+    author = currentUsername;
+  } else if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
+    const id = Number(currentVal.slice(currentVal.indexOf("_")+1));
+    const b = botById(id);
+    if(b) author = b.author;
+  }
+
+  if(teamIdx === 0 && !isAdmin && (!author || author === currentUsername)){
     savedStrategies.forEach((s, idx)=>{
       const val = "saved_" + s.id;
-      const isCur = (currentVal === val);
+      const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
       html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
     });
     if(myStrategy){
       const isCur = (currentVal === "mybot");
       html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="mybot">🤖 پیش‌نویس جاری</button>`;
     }
-  } else {
-    let author = null;
-    if(currentVal === "mybot"){
-      author = currentUsername;
-    } else if(currentVal && (currentVal.startsWith("saved_") || currentVal.startsWith("pub_") || currentVal.startsWith("any_"))){
-      const id = Number(currentVal.slice(currentVal.indexOf("_")+1));
-      const b = botById(id);
-      if(b) author = b.author;
-    }
+  } else if(author){
+    const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
+    const authorBots = pool.filter(s => s.author === author);
+    authorBots.forEach((s, idx)=>{
+      const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
+      const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
+      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
+    });
+  }
 
-    if(author){
-      const pool = (allStrategies.length ? allStrategies : publicStrategies.concat(savedStrategies));
-      const authorBots = pool.filter(s => s.author === author);
-      authorBots.forEach((s, idx)=>{
-        const val = s.is_owner ? `saved_${s.id}` : (allStrategies.length ? `any_${s.id}` : `pub_${s.id}`);
-        const isCur = (currentVal === val || currentVal.endsWith(`_${s.id}`));
-        html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${val}">⚡ استراتژی ${toFa(idx+1)}: ${escapeHtml(s.name)}</button>`;
-      });
-    }
-
-    if(!html){
-      ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
-        const isCur = (currentVal === p);
-        const label = p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
-        html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
-      });
-    }
+  if(!html){
+    ["predictive","aggressive","defensive","adaptive"].forEach(p=>{
+      const isCur = (currentVal === p);
+      const label = p==="predictive"?"پیش‌بین":(p==="aggressive"?"تهاجمی":(p==="defensive"?"دفاعی":"تطبیقی"));
+      html += `<button type="button" class="ht-btn ${isCur?'active':''}" data-val="${p}">⚙️ ${label}</button>`;
+    });
   }
 
   wrapElem.innerHTML = html;
@@ -924,8 +1000,8 @@ function renderTeamHalftimeQuickButtons(teamIdx, selElem, origSelElem, wrapElem)
     btn.onclick = ()=>{
       const val = btn.getAttribute("data-val");
       if(val){
-        origSelElem.value = val;
-        if(selElem) selElem.value = val;
+        setSelectValueSafely(origSelElem, val);
+        if(selElem) setSelectValueSafely(selElem, val);
         wrapElem.querySelectorAll(".ht-btn").forEach(b=>b.classList.remove("active"));
         btn.classList.add("active");
         onHalftimeStrategyChange(val, teamIdx);
@@ -951,11 +1027,11 @@ function setupHalftimeSwitcher(){
   if($("halftimeTeam2Head")) $("halftimeTeam2Head").textContent = `🟦 استراتژی تیم ۲ (${n2})`;
 
   if(bSel && origBSel){
-    bSel.innerHTML = origBSel.innerHTML;
-    bSel.value = origBSel.value;
+    bSel.innerHTML = buildSelectOptionsForTeam(0, origBSel.value);
+    setSelectValueSafely(bSel, origBSel.value);
     bSel.onchange = ()=>{
       if(bSel.value){
-        origBSel.value = bSel.value;
+        setSelectValueSafely(origBSel, bSel.value);
         onHalftimeStrategyChange(bSel.value, 0);
         renderTeamHalftimeQuickButtons(0, bSel, origBSel, qbWrap1);
       }
@@ -964,11 +1040,11 @@ function setupHalftimeSwitcher(){
   }
 
   if(rSel && origRSel){
-    rSel.innerHTML = origRSel.innerHTML;
-    rSel.value = origRSel.value;
+    rSel.innerHTML = buildSelectOptionsForTeam(1, origRSel.value);
+    setSelectValueSafely(rSel, origRSel.value);
     rSel.onchange = ()=>{
       if(rSel.value){
-        origRSel.value = rSel.value;
+        setSelectValueSafely(origRSel, rSel.value);
         onHalftimeStrategyChange(rSel.value, 1);
         renderTeamHalftimeQuickButtons(1, rSel, origRSel, qbWrap2);
       }
@@ -981,16 +1057,8 @@ function onHalftimeStrategyChange(val, teamIdx=0){
   if(!val) return;
   const targetSel = (teamIdx === 0 ? $("blueSelect") : $("redSelect"));
   if(targetSel){
-    const has = [...targetSel.options].some(o => o.value === val);
-    if(has){
-      targetSel.value = val;
-    } else {
-      const opt = document.createElement("option");
-      opt.value = val;
-      opt.textContent = labelFor(val);
-      targetSel.appendChild(opt);
-      targetSel.value = val;
-    }
+    setSelectValueSafely(targetSel, val);
+    updateSearchableSelectLabel(targetSel);
   }
 
   const [s1,s2]=currentSels();
@@ -2006,6 +2074,18 @@ function setupSearchableSelect(selectEl){
   };
 
   renderOptions("");
+}
+
+function updateSearchableSelectLabel(selectEl){
+  if(!selectEl) return;
+  const selectId = selectEl.id;
+  const container = selectEl.parentElement?.querySelector(`.search-select-container[data-for="${selectId}"]`);
+  if(!container) return;
+  const curOpt = selectEl.options[selectEl.selectedIndex] || selectEl.options[0];
+  const labelSpan = container.querySelector(".search-select-label");
+  if(labelSpan && curOpt){
+    labelSpan.textContent = curOpt.textContent;
+  }
 }
 
 function refreshOpponentMenus(){
