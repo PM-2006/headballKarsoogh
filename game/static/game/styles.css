@@ -562,9 +562,9 @@ pre{direction:ltr;text-align:left;white-space:pre-wrap;background:#081120;paddin
 
 /* ---------- Round progress bar ---------- */
 .round-bar{max-width:640px;margin:12px auto 0;display:flex;flex-direction:column;align-items:center;gap:9px}
-.round-dots{display:flex;gap:8px;direction:ltr}
-.rseg{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;
-  font-size:12px;font-weight:900;color:var(--muted);background:#0d1a30;border:1px solid var(--line-soft);transition:.18s}
+.round-dots{display:flex;gap:8px;direction:rtl;align-items:center;justify-content:center}
+.rseg{min-width:28px;height:28px;padding:0 12px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:900;color:var(--muted);background:#0d1a30;border:1px solid var(--line-soft);white-space:nowrap;line-height:1;box-sizing:border-box;transition:.18s}
 .rseg.done{background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:#04150e;border-color:transparent}
 .rseg.now{background:#101f3b;color:#fff;border-color:var(--gold);box-shadow:0 0 0 2px rgba(255,203,77,.28)}
 .round-label{font-size:13px;font-weight:900;color:var(--text)}
