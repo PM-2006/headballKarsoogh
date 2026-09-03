@@ -34,19 +34,19 @@ def _env_int(name: str, default: int) -> int:
 @dataclass(frozen=True)
 class GameConfig:
     # Playground & Geometry
-    width: float = 1500.0
+    width: float = 1800.0
     height: float = 860.0
     ground_y: float = 730.0
-    goal_depth: float = 122.0
-    goal_height: float = 205.0
+    goal_depth: float = 85.0
+    goal_height: float = 300.0
     goal_post_radius: float = 7.0
 
     # Ball Physics & Elasticity
-    ball_radius: float = 23.0
-    gravity: float = 1700.0
-    ball_max_speed: float = 1450.0
-    floor_bounce: float = 0.58
-    floor_friction: float = 0.980
+    ball_radius: float = 17.0
+    gravity: float = 2000.0
+    ball_max_speed: float = 850.0
+    floor_bounce: float = 0.67
+    floor_friction: float = 0.95
     horizontal_drag_per_60fps: float = 0.999
     ball_wall_bounce: float = 0.84
     ball_ceiling_bounce: float = 0.82
@@ -78,13 +78,16 @@ class GameConfig:
     # Kicks & Actions
     kick_reach: float = 126.0
     kick_low_x: float = 850.0
-    kick_low_y: float = -280.0
+    kick_low_y: float = -170.0
     kick_low_cooldown: float = 0.40
     kick_high_x: float = 760.0
-    kick_high_y: float = -760.0
+    kick_high_y: float = -620.0
     kick_high_cooldown: float = 0.46
+    kick_straight_x: float = 1000.0
+    kick_straight_y: float = -280.0
+    kick_straight_cooldown: float = 0.46
     kick_clear_x: float = 1000.0
-    kick_clear_y: float = -900.0
+    kick_clear_y: float = -360.0
     kick_clear_cooldown: float = 0.52
     kick_keep_ball_velocity: float = 0.38
     kick_player_velocity_transfer: float = 0.52
@@ -110,8 +113,8 @@ class GameConfig:
 
     # Anti-Stall Watchdog
     stall_speed_threshold: float = 45.0
-    stall_pop_after: float = 6.0
-    stall_kickoff_after: float = 10.0
+    stall_pop_after: float = 2.5
+    stall_kickoff_after: float = 5.0
     stall_pop_vx: float = 220.0
     stall_pop_vy: float = 640.0
 
@@ -132,19 +135,19 @@ def get_base_config() -> GameConfig:
     """Config from code defaults + environment variables (no DB overrides)."""
     return GameConfig(
         # Playground Geometry
-        width=_env_float("GAME_PLAYGROUND_WIDTH", 1500.0),
+        width=_env_float("GAME_PLAYGROUND_WIDTH", 1800.0),
         height=_env_float("GAME_PLAYGROUND_HEIGHT", 860.0),
         ground_y=_env_float("GAME_GROUND_Y", 730.0),
-        goal_depth=_env_float("GAME_GOAL_DEPTH", 122.0),
-        goal_height=_env_float("GAME_GOAL_HEIGHT", 205.0),
+        goal_depth=_env_float("GAME_GOAL_DEPTH", 85.0),
+        goal_height=_env_float("GAME_GOAL_HEIGHT", 300.0),
         goal_post_radius=_env_float("GAME_GOAL_POST_RADIUS", 7.0),
 
         # Ball Physics & Elasticity
-        ball_radius=_env_float("GAME_BALL_RADIUS", 23.0),
-        gravity=_env_float("GAME_GRAVITY", 1700.0),
-        ball_max_speed=_env_float("GAME_BALL_MAX_SPEED", 1450.0),
-        floor_bounce=_env_float("GAME_FLOOR_BOUNCE", 0.58),
-        floor_friction=_env_float("GAME_FLOOR_FRICTION", 0.980),
+        ball_radius=_env_float("GAME_BALL_RADIUS", 17.0),
+        gravity=_env_float("GAME_GRAVITY", 2000.0),
+        ball_max_speed=_env_float("GAME_BALL_MAX_SPEED", 850.0),
+        floor_bounce=_env_float("GAME_FLOOR_BOUNCE", 0.67),
+        floor_friction=_env_float("GAME_FLOOR_FRICTION", 0.95),
         horizontal_drag_per_60fps=_env_float("GAME_BALL_AIR_DRAG", 0.999),
         ball_wall_bounce=_env_float("GAME_BALL_WALL_BOUNCE", 0.84),
         ball_ceiling_bounce=_env_float("GAME_BALL_CEILING_BOUNCE", 0.82),
@@ -177,13 +180,16 @@ def get_base_config() -> GameConfig:
         # Kicks & Actions
         kick_reach=_env_float("GAME_KICK_REACH", 126.0),
         kick_low_x=_env_float("GAME_KICK_LOW_X", 850.0),
-        kick_low_y=_env_float("GAME_KICK_LOW_Y", -280.0),
+        kick_low_y=_env_float("GAME_KICK_LOW_Y", -170.0),
         kick_low_cooldown=_env_float("GAME_KICK_LOW_COOLDOWN", 0.40),
         kick_high_x=_env_float("GAME_KICK_HIGH_X", 760.0),
-        kick_high_y=_env_float("GAME_KICK_HIGH_Y", -760.0),
+        kick_high_y=_env_float("GAME_KICK_HIGH_Y", -620.0),
         kick_high_cooldown=_env_float("GAME_KICK_HIGH_COOLDOWN", 0.46),
+        kick_straight_x=_env_float("GAME_KICK_STRAIGHT_X", 1000.0),
+        kick_straight_y=_env_float("GAME_KICK_STRAIGHT_Y", -280.0),
+        kick_straight_cooldown=_env_float("GAME_KICK_STRAIGHT_COOLDOWN", 0.46),
         kick_clear_x=_env_float("GAME_KICK_CLEAR_X", 1000.0),
-        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -900.0),
+        kick_clear_y=_env_float("GAME_KICK_CLEAR_Y", -360.0),
         kick_clear_cooldown=_env_float("GAME_KICK_CLEAR_COOLDOWN", 0.52),
         kick_keep_ball_velocity=_env_float("GAME_KICK_KEEP_BALL_VELOCITY", 0.38),
         kick_player_velocity_transfer=_env_float("GAME_KICK_PLAYER_VELOCITY_TRANSFER", 0.52),
@@ -201,8 +207,8 @@ def get_base_config() -> GameConfig:
 
         # Anti-Stall Watchdog
         stall_speed_threshold=_env_float("GAME_STALL_SPEED_THRESHOLD", 45.0),
-        stall_pop_after=_env_float("GAME_STALL_POP_AFTER", 6.0),
-        stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 10.0),
+        stall_pop_after=_env_float("GAME_STALL_POP_AFTER", 2.5),
+        stall_kickoff_after=_env_float("GAME_STALL_KICKOFF_AFTER", 5.0),
         stall_pop_vx=_env_float("GAME_STALL_POP_VX", 220.0),
         stall_pop_vy=_env_float("GAME_STALL_POP_VY", 640.0),
 
@@ -493,6 +499,8 @@ def _kick_parameters(action: str, config: GameConfig):
         return config.kick_low_x, config.kick_low_y, config.kick_low_cooldown
     if action == "KICK_HIGH":
         return config.kick_high_x, config.kick_high_y, config.kick_high_cooldown
+    if action == "KICK_STRAIGHT":
+        return config.kick_straight_x, config.kick_straight_y, config.kick_straight_cooldown
     if action == "KICK_CLEAR":
         return config.kick_clear_x, config.kick_clear_y, config.kick_clear_cooldown
     return None

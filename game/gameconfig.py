@@ -58,7 +58,10 @@ LABELS: dict[str, str] = {
     "kick_reach": "برد ضربه", "kick_low_x": "قدرت افقی شوت زمینی",
     "kick_low_y": "قدرت عمودی شوت زمینی", "kick_low_cooldown": "ریکاوری شوت زمینی",
     "kick_high_x": "قدرت افقی شوت هوایی", "kick_high_y": "قدرت عمودی شوت هوایی",
-    "kick_high_cooldown": "ریکاوری شوت هوایی", "kick_clear_x": "قدرت افقی دفع",
+    "kick_high_cooldown": "ریکاوری شوت هوایی",
+    "kick_straight_x": "قدرت افقی شوت مستقیم", "kick_straight_y": "قدرت عمودی شوت مستقیم",
+    "kick_straight_cooldown": "ریکاوری شوت مستقیم",
+    "kick_clear_x": "قدرت افقی دفع",
     "kick_clear_y": "قدرت عمودی دفع", "kick_clear_cooldown": "ریکاوری دفع",
     "kick_keep_ball_velocity": "حفظ سرعت توپ در ضربه",
     "kick_player_velocity_transfer": "انتقال سرعت به شوت", "move_deadzone": "ناحیه مرده حرکت",
@@ -246,27 +249,20 @@ SESSION_LIMIT_CACHE_KEY = "session_limit"
 SESSION_LIMIT_CACHE_TTL = 30
 MIN_SESSION_LIMIT = 1
 MAX_SESSION_LIMIT = 20
+DEFAULT_SESSION_LIMIT = 3
 
 
 def clamp_session_limit(value: Any) -> int:
-    """Coerce anything into a usable session ceiling.
-
-    Falls back to the strictest value rather than the most permissive one: a
-    garbled number should not quietly hand every student unlimited logins.
-    """
+    """Coerce anything into a usable session ceiling."""
     try:
         num = int(value)
     except (TypeError, ValueError):
-        return MIN_SESSION_LIMIT
+        return DEFAULT_SESSION_LIMIT
     return max(MIN_SESSION_LIMIT, min(MAX_SESSION_LIMIT, num))
 
 
 def get_session_limit() -> int:
-    """How many concurrent sessions an ordinary user may hold.
-
-    Read on every login, so the answer is cached like ``is_game_enabled``.
-    Defaults to 1 on any error, which is the behaviour that predates the setting.
-    """
+    """How many concurrent sessions an ordinary user may hold."""
     from django.core.cache import cache
 
     cached = cache.get(SESSION_LIMIT_CACHE_KEY)
@@ -276,9 +272,9 @@ def get_session_limit() -> int:
         from .models import GameConfigOverride
 
         obj = GameConfigOverride.objects.filter(singleton_id=1).first()
-        limit = MIN_SESSION_LIMIT if obj is None else clamp_session_limit(obj.session_limit)
+        limit = DEFAULT_SESSION_LIMIT if obj is None else clamp_session_limit(obj.session_limit)
     except Exception:
-        return MIN_SESSION_LIMIT
+        return DEFAULT_SESSION_LIMIT
     cache.set(SESSION_LIMIT_CACHE_KEY, limit, SESSION_LIMIT_CACHE_TTL)
     return limit
 
@@ -299,6 +295,167 @@ def set_session_limit(value: Any, user=None) -> int:
     obj.save()
     cache.set(SESSION_LIMIT_CACHE_KEY, obj.session_limit, SESSION_LIMIT_CACHE_TTL)
     return obj.session_limit
+
+
+STRATEGY_LIMIT_CACHE_KEY = "strategy_limit"
+STRATEGY_LIMIT_CACHE_TTL = 30
+MIN_STRATEGY_LIMIT = 1
+MAX_STRATEGY_LIMIT = 10
+DEFAULT_STRATEGY_LIMIT = 4
+
+
+def clamp_strategy_limit(value: Any) -> int:
+    """Coerce anything into a valid strategy limit between 1 and 10."""
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_STRATEGY_LIMIT
+    return max(MIN_STRATEGY_LIMIT, min(MAX_STRATEGY_LIMIT, num))
+
+
+def get_strategy_limit() -> int:
+    """Read the max saved strategies limit per ordinary user (1 to 10)."""
+    from django.core.cache import cache
+
+    cached = cache.get(STRATEGY_LIMIT_CACHE_KEY)
+    if cached is not None:
+        return int(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        limit = (
+            DEFAULT_STRATEGY_LIMIT
+            if obj is None
+            else clamp_strategy_limit(obj.strategy_limit)
+        )
+    except Exception:
+        return DEFAULT_STRATEGY_LIMIT
+    cache.set(STRATEGY_LIMIT_CACHE_KEY, limit, STRATEGY_LIMIT_CACHE_TTL)
+    return limit
+
+
+def set_strategy_limit(value: Any, user=None) -> int:
+    """Store a new max saved strategies limit."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.strategy_limit = clamp_strategy_limit(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(
+        STRATEGY_LIMIT_CACHE_KEY,
+        obj.strategy_limit,
+        STRATEGY_LIMIT_CACHE_TTL,
+    )
+    return obj.strategy_limit
+
+
+STRATEGY_STRICTNESS_CACHE_KEY = "strategy_strictness"
+STRATEGY_STRICTNESS_CACHE_TTL = 30
+MIN_STRATEGY_STRICTNESS = 1
+MAX_STRATEGY_STRICTNESS = 5
+DEFAULT_STRATEGY_STRICTNESS = 2
+
+
+def clamp_strategy_strictness(value: Any) -> int:
+    """Coerce anything into a valid strictness level between 1 and 5."""
+    try:
+        num = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_STRATEGY_STRICTNESS
+    return max(MIN_STRATEGY_STRICTNESS, min(MAX_STRATEGY_STRICTNESS, num))
+
+
+def get_strategy_strictness() -> int:
+    """Read the default strategy strictness level (1 to 5)."""
+    from django.core.cache import cache
+
+    cached = cache.get(STRATEGY_STRICTNESS_CACHE_KEY)
+    if cached is not None:
+        return int(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        strictness = (
+            DEFAULT_STRATEGY_STRICTNESS
+            if obj is None
+            else clamp_strategy_strictness(obj.strategy_strictness)
+        )
+    except Exception:
+        return DEFAULT_STRATEGY_STRICTNESS
+    cache.set(
+        STRATEGY_STRICTNESS_CACHE_KEY, strictness, STRATEGY_STRICTNESS_CACHE_TTL
+    )
+    return strictness
+
+
+def set_strategy_strictness(value: Any, user=None) -> int:
+    """Store a new default strategy strictness level."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.strategy_strictness = clamp_strategy_strictness(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(
+        STRATEGY_STRICTNESS_CACHE_KEY,
+        obj.strategy_strictness,
+        STRATEGY_STRICTNESS_CACHE_TTL,
+    )
+    return obj.strategy_strictness
+
+
+SHOW_STRICTNESS_TO_USER_CACHE_KEY = "show_strictness_to_user"
+SHOW_STRICTNESS_TO_USER_CACHE_TTL = 30
+DEFAULT_SHOW_STRICTNESS_TO_USER = True
+
+
+def get_show_strictness_to_user() -> bool:
+    """Check if the strictness slider should be displayed to students."""
+    from django.core.cache import cache
+
+    cached = cache.get(SHOW_STRICTNESS_TO_USER_CACHE_KEY)
+    if cached is not None:
+        return bool(cached)
+    try:
+        from .models import GameConfigOverride
+
+        obj = GameConfigOverride.objects.filter(singleton_id=1).first()
+        show = (
+            DEFAULT_SHOW_STRICTNESS_TO_USER
+            if obj is None
+            else bool(obj.show_strictness_to_user)
+        )
+    except Exception:
+        return DEFAULT_SHOW_STRICTNESS_TO_USER
+    cache.set(
+        SHOW_STRICTNESS_TO_USER_CACHE_KEY, show, SHOW_STRICTNESS_TO_USER_CACHE_TTL
+    )
+    return show
+
+
+def set_show_strictness_to_user(value: Any, user=None) -> bool:
+    """Store whether to show the strictness selector to users."""
+    from django.core.cache import cache
+    from .models import GameConfigOverride
+
+    obj = GameConfigOverride.load()
+    obj.show_strictness_to_user = bool(value)
+    if user is not None and getattr(user, "is_authenticated", False):
+        obj.updated_by = user
+    obj.save()
+    cache.set(
+        SHOW_STRICTNESS_TO_USER_CACHE_KEY,
+        obj.show_strictness_to_user,
+        SHOW_STRICTNESS_TO_USER_CACHE_TTL,
+    )
+    return obj.show_strictness_to_user
 
 
 def load_overrides() -> dict:

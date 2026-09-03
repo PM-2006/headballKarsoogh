@@ -88,6 +88,16 @@ class SavedStrategy(models.Model):
         except StrategyValidationError as exc:
             raise ValidationError({"strategy_data": f"ساختار استراتژی معتبر نیست: {exc}"}) from exc
 
+        # Max strategies limit per user (superusers exempt)
+        if self.user_id and not (self.user and self.user.is_superuser):
+            from .gameconfig import get_strategy_limit
+            max_limit = get_strategy_limit()
+            existing_count = SavedStrategy.objects.filter(user_id=self.user_id)
+            if self.pk:
+                existing_count = existing_count.exclude(pk=self.pk)
+            if existing_count.count() >= max_limit:
+                raise ValidationError(_(f"هر کاربر می‌تواند حداکثر {max_limit} استراتژی ذخیره کند."))
+
     def save(self, *args, **kwargs) -> None:
         # Superuser bots are official opponents. Staff bots stay private.
         if self.user and self.user.is_superuser:
@@ -162,11 +172,33 @@ class GameConfigOverride(models.Model):
     # Also outside ``overrides``, for the same reason: it is a whole number of
     # sessions, not a bounded physics float.
     session_limit = models.PositiveSmallIntegerField(
-        default=1,
+        default=3,
         verbose_name=_("حداکثر نشست همزمان"),
         help_text=_(
             "تعداد نشست‌هایی که هر کاربر عادی می‌تواند همزمان باز داشته باشد. "
             "با ورود جدید، قدیمی‌ترین نشست‌های اضافه بسته می‌شوند. مدیران مستثنا هستند."
+        ),
+    )
+    strategy_limit = models.PositiveSmallIntegerField(
+        default=4,
+        verbose_name=_("حداکثر استراتژی هر کاربر"),
+        help_text=_(
+            "حداکثر تعداد استراتژی‌های ذخیره‌شده مجاز برای هر کاربر عادی (از ۱ تا ۱۰)."
+        ),
+    )
+    strategy_strictness = models.PositiveSmallIntegerField(
+        default=2,
+        verbose_name=_("سخت‌گیری پیش‌فرض استراتژی"),
+        help_text=_(
+            "سطح پیش‌فرض سخت‌گیری هوش مصنوعی در تبدیل متن به استراتژی (از ۱ تا ۵)."
+        ),
+    )
+    show_strictness_to_user = models.BooleanField(
+        default=True,
+        verbose_name=_("امکان انتخاب سطح توسط کاربر"),
+        help_text=_(
+            "اگر فعال باشد، بخش انتخاب سطح سخت‌گیری برای دانش‌آموزان نمایش داده می‌شود؛ "
+            "در غیر این صورت مخفی شده و سطح پیش‌فرض ادمین اجباری اعمال می‌شود."
         ),
     )
     updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))

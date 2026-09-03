@@ -46,6 +46,7 @@ ActionType = Literal[
     "JUMP",
     "KICK_LOW",
     "KICK_HIGH",
+    "KICK_STRAIGHT",
     "KICK_CLEAR",
     "IDLE",
 ]
@@ -231,56 +232,100 @@ class StrategyCompilerResponse(BaseModel):
         return []
 
 
-def build_strategy_compiler_prompt(attempt: int = 1) -> str:
+STRICTNESS_CONFIG = {
+    1: {
+        "title": "LEVEL 1: ULTRA-RELAXED (خیلی آسان‌گیر)",
+        "rules": """
+- Compile ANY text into a valid strategy immediately without asking clarification questions.
+- Single-word inputs like «بپر» or «شوت» must be compiled directly as default_action or single rule.
+- Do NOT ask questions, even for ambiguities. Choose the most common default (KICK_LOW for kick, distance < 200 for near, IDLE for unstated).
+- Set needs_clarification=false and questions=[].
+""",
+    },
+    2: {
+        "title": "LEVEL 2: RELAXED (آسان‌گیر - پیش‌فرض سیستم)",
+        "rules": """
+- Compile clear intents directly, even if incomplete (e.g. «بپر» -> default_action=JUMP, «دنبال توپ برو» -> default_action=MOVE_TO_BALL).
+- ONLY ask questions if there is a genuine ambiguity IN the student's own words (e.g. «شوت بزن» without specifying kick type, or «نزدیک» without distance).
+- NEVER invent new scenarios or ask "what should the bot do the rest of the time?" If not mentioned, use IDLE as default_action.
+- Do NOT leak unmentioned game capabilities in questions.
+""",
+    },
+    3: {
+        "title": "LEVEL 3: BALANCED & STANDARD (متعادل و استاندارد)",
+        "rules": """
+- A playable bot must cover AT LEAST TWO essential pillars:
+  1) Movement / Positioning (e.g. moving toward the ball MOVE_TO_BALL, or moving to goal MOVE_TO_GOAL)
+  2) Ball action / Reaction (e.g. kicking KICK_LOW / KICK_HIGH / KICK_CLEAR or jumping JUMP)
+- If the student's text only specifies one pillar (e.g. only «شوت بزن» without saying how to move toward the ball, OR only «دنبال توپ برو» without saying how to shoot or clear), do NOT compile yet on attempt <= 2.
+- Instead, ask a polite clarification question in Persian with suggested answer options:
+  * Missing movement: ask «وقتی توپ ازت دوره، رباتت باید چطور حرکت کنه؟» with options: [«برو سمت توپ», «برگرد دفاع»]
+  * Missing ball action: ask «وقتی به توپ رسیدی چه کار کنم؟» with options: [«شوت زمینی بزن», «شوت هوایی بزن», «دفع بلند کن»]
+- Also resolve internal ambiguities (kick type, vague distances) as in Level 2.
+""",
+    },
+    4: {
+        "title": "LEVEL 4: STRICT & ADVANCED (سخت‌گیر و پیشرفته)",
+        "rules": """
+- The bot must cover THREE tactical aspects:
+  1) Movement & Ball Action (approaching the ball and shooting)
+  2) Defensive behavior (what to do when the ball is in own half or approaching own goal)
+  3) High/Aerial ball reaction (what to do when the ball is airborne/above the player: ball_above_me / JUMP)
+- On attempt <= 2, if any of these 3 aspects are missing:
+  * If defense is missing: ask «وقتی توپ در نیمه زمین خودتونه یا حریف حمله می‌کنه چه واکنشی نشون بدم؟» with options: [«برگرد به دروازه دفاع کن», «با شوت بلند دفع کن», «برو سمت توپ توپ‌گیری کن»]
+  * If aerial reaction is missing: ask «وقتی توپ روی هوا یا بالای سرت قرار داره چکار کنم؟» with options: [«بپر و ضربه سر بزن», «صبر کن تا توپ بیاد پایین»]
+- Guide the student to build a well-rounded two-way player.
+""",
+    },
+    5: {
+        "title": "LEVEL 5: TOURNAMENT MASTER (کامل و مسابقه‌ای)",
+        "rules": """
+- Require a comprehensive, match-ready strategy covering:
+  1) Attacking & Goal-scoring logic (kicking with explicit conditions)
+  2) Defensive clearance / positioning near own goal (protecting the net)
+  3) Aerial duel behavior (jumping when ball is above player)
+  4) End-game or Score-aware tactics (reacting to remaining_time or score_difference, e.g. defending when ahead or all-out attack when behind)
+  5) Explicit fallback/default action when no condition is met.
+- On attempt <= 2, inspect what's missing and ask up to 3-4 targeted questions with options covering the missing tactical phases.
+- If the student has covered all 5, compile directly into a rich, multi-rule strategy.
+""",
+    },
+}
+
+
+def build_strategy_compiler_prompt(attempt: int = 1, strictness: int = 2) -> str:
     sensor_lines = "\n".join(f"- {name}: {kind}" for name, kind in SENSORS.items())
     action_lines = "\n".join(f"- {name}" for name in ACTIONS)
     operators = ", ".join(OPERATORS)
 
-    # After 2 rounds of clarification, force the model to decide
-    force_decide = attempt > 2
+    # Clamp strictness to 1..5
+    strictness = max(1, min(5, strictness))
+    strict_info = STRICTNESS_CONFIG.get(strictness, STRICTNESS_CONFIG[2])
 
-    clarification_block = """
-CLARIFICATION MODE (attempt <= 2)
-CRITICAL RULES — read carefully:
+    # Level 1 always forces decision immediately; other levels force after 2 attempts
+    force_decide = attempt > 2 or strictness == 1
 
-1. COMPILE CLEAR INTENTS DIRECTLY:
-   If the student's text can be mapped to a valid strategy — even if simple or incomplete — just compile it.
-   Examples of clear intents that need NO questions:
-   - «بپر» → default_action=JUMP, no rules needed. Done.
-   - «دنبال توپ برو» → default_action=MOVE_TO_BALL. Done.
-   - «شوت زمینی بزن» → default_action=KICK_LOW. Done.
-   - «وقتی توپ نزدیکه شوت بزن» → use the standard «near» threshold below and only ask what type of kick.
-   A simple strategy IS a valid strategy. Do not ask about scenarios the student did not mention.
+    clarification_block = f"""
+CLARIFICATION MODE (attempt <= 2) — CURRENT STRICTNESS: {strict_info['title']}
+STRICTNESS-SPECIFIC RULES:
+{strict_info['rules']}
 
-2. ONLY ASK ABOUT WHAT THE STUDENT ACTUALLY WROTE:
-   - NEVER invent new scenarios, edge cases, or "what about when X?" questions.
-   - NEVER ask "what should the bot do the rest of the time?" or "what about other situations?"
-   - If the student didn't mention a scenario, it means they don't care — use IDLE as default_action.
-   - Only ask questions to resolve genuine ambiguities IN the student's own words.
-   Example: «شوت بزن» is ambiguous (which kick type?). «نزدیک توپ» is NOT ambiguous; use the standard threshold below.
-   But «بپر» is NOT ambiguous — JUMP is the only meaning.
-
-3. NEVER LEAK GAME CAPABILITIES:
-   - Do NOT mention or list sensors, actions, or features the student hasn't already referenced.
-   - Question options must ONLY use concepts the student already knows from their own text.
-   - Do NOT offer options like "شوت هوایی / شوت زمینی / دفع" unless the student mentioned shooting.
-   - Bad example: student says «بپر» and you ask «بعد از پریدن شوت بزنم یا صبر کنم؟» — this leaks capabilities.
-
-4. KEEP QUESTIONS MINIMAL:
-   - Ask the FEWEST questions possible — ideally 1 or 2, never more than truly needed.
-   - Each question must address ONE specific ambiguity in the student's own words.
-   - Set valid=false and strategy=null when asking questions.
-   - Set needs_clarification=true.
-""" if not force_decide else """
-FINAL ATTEMPT MODE (attempt > 2 — MUST DECIDE)
-The student has already answered clarification questions. You MUST now produce a valid strategy.
+GENERAL GUIDELINES:
+- Keep clarification questions concise and friendly in Persian.
+- Options must be directly actionable in Persian.
+- Set valid=false and strategy=null when asking questions.
+- Set needs_clarification=true when questions are present.
+""" if not force_decide else f"""
+FINAL ATTEMPT MODE (attempt > 2 or Level 1 — MUST DECIDE) — CURRENT STRICTNESS: {strict_info['title']}
+The strategy must now be finalized.
 - Do NOT ask any more questions. Set needs_clarification=false and questions=[].
-- For any remaining ambiguities, choose the most reasonable and commonly-intended value:
-  * Generic «شوت کن» → KICK_LOW (most common intent)
-  * Vague «نزدیک» → distance < 200
-  * Vague «دور» → distance > 600
-  * Vague «سریع» → ball_speed > 400
-  * Unspecified default action → IDLE
+- For any remaining ambiguities or unaddressed tactical phases, choose reasonable, standard defaults:
+  * Generic «شوت کن» -> KICK_LOW
+  * Vague «نزدیک» -> distance < 200
+  * Vague «دور» -> distance > 600
+  * Vague «سریع» -> ball_speed > 400
+  * Unspecified movement -> MOVE_TO_BALL
+  * Unspecified default action -> IDLE
 - Include feedback explaining what defaults you chose, e.g.: «چون نوع شوت مشخص نبود، شوت زمینی را انتخاب کردم.»
 - You MUST set valid=true and provide a complete strategy.
 """
@@ -350,7 +395,8 @@ STANDARD PERSIAN SEMANTIC MAPPINGS
 - «برو سمت توپ / دنبال توپ برو» -> MOVE_TO_BALL
 - «برگرد دفاع / برگرد سمت دروازه خودی» -> MOVE_TO_GOAL
 - «برو وسط / مرکز زمین» -> MOVE_TO_CENTER
-- «بپر / پرش» -> JUMP
+- «بپر / پرش / هد بزن» -> JUMP
+- «شوت مستقیم / شوت صاف / شوت به سمت دروازه» -> KICK_STRAIGHT
 - «شوت زمینی» -> KICK_LOW
 - «شوت هوایی / چیپ» -> KICK_HIGH
 - «دفع کن / توپ را دور کن» -> KICK_CLEAR (ضربه محکم رو به بالا، به همان سمتی که توپ نسبت به بازیکن قرار دارد؛ حتی اگر توپ پشت بازیکن باشد)
@@ -377,7 +423,7 @@ JUMP + AIRBORNE KICK MAPPING
 - If the student explicitly asks to jump and then shoot while airborne, compile it as ordered rules:
   1) the student's jump condition + on_ground == true -> JUMP
   2) on_ground == false + can_kick == true -> the explicitly requested kick action
-- KICK_LOW, KICK_HIGH, and KICK_CLEAR are all allowed while airborne.
-- Do not invent a kick type. If the student only says «شوت» without high/low/clear, ask for clarification.
+- KICK_LOW, KICK_HIGH, KICK_STRAIGHT, and KICK_CLEAR are all allowed while airborne.
+- Do not invent a kick type. If the student only says «شوت» without high/low/straight/clear, ask for clarification.
 
 """.strip()
