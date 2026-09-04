@@ -349,11 +349,22 @@ def _kickoff(world: World, rng: random.Random, config: GameConfig, initial: bool
 
 
 def _can_kick(player: Player, ball: Ball, config: GameConfig) -> bool:
-    px, py = _player_center(player, config)
-    return (
-        hypot(ball.x - px, ball.y - py) <= config.kick_reach
-        and player.kick_cd <= 0.0
-    )
+    """True when the player can strike the ball -- off the body OR off the head.
+
+    Measuring only from the body centre put the player's own head outside its
+    own kick range: the head sits ``player_height/2 - head_center_y`` above that
+    centre, so a ball resting on it is 75px away while ``kick_reach`` is 68.
+    A bot could jump, physically head the ball, and still be told it cannot
+    kick -- the ball bounced off passively and no KICK rule could ever fire.
+    The head circle is a real striking surface, so it gets the same reach.
+    """
+    if player.kick_cd > 0.0:
+        return False
+    body_x, body_y = _player_center(player, config)
+    if hypot(ball.x - body_x, ball.y - body_y) <= config.kick_reach:
+        return True
+    head_x, head_y = _head_center(player, config)
+    return hypot(ball.x - head_x, ball.y - head_y) <= config.kick_reach
 
 
 def _sensor_state(world: World, team: int, config: GameConfig) -> dict:

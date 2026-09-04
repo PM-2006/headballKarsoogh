@@ -82,6 +82,90 @@ class KickMechanicsTests(TestCase):
         self.assertGreater(blue_world.ball.vx, 0.0)
         self.assertLess(red_world.ball.vx, 0.0)
 
+    # A bot that jumps to head the ball must be able to strike it. kick_reach is
+    # measured from the body centre, and the head sits far enough above that
+    # centre that a body-only check excludes it: the ball would bounce off the
+    # head with can_kick False, so no KICK rule could ever fire on a header.
+    def test_ball_resting_on_the_head_is_kickable(self):
+        from .engine import Ball, GameConfig, Player, _can_kick, _head_center
+
+        config = GameConfig()
+        player = Player(x=500.0, y=config.ground_y - config.player_height, face=1)
+        head_x, head_y = _head_center(player, config)
+
+        # Exactly touching the top of the head: head surface + ball radius.
+        contact_y = head_y - config.head_radius - config.ball_radius
+        self.assertTrue(
+            _can_kick(player, Ball(head_x, contact_y), config),
+            "a ball touching the top of the head must be kickable",
+        )
+
+    def test_head_kick_window_opens_before_contact_and_respects_cooldown(self):
+        from .engine import Ball, GameConfig, Player, _can_kick, _head_center
+
+        config = GameConfig()
+        player = Player(x=500.0, y=config.ground_y - config.player_height, face=1)
+        head_x, head_y = _head_center(player, config)
+        contact_y = head_y - config.head_radius - config.ball_radius
+
+        # Just above contact is still strikable, so the bot shoots instead of
+        # letting the ball bounce off its head.
+        self.assertTrue(_can_kick(player, Ball(head_x, contact_y - 8.0), config))
+
+        # Far above the head is not.
+        self.assertFalse(
+            _can_kick(player, Ball(head_x, head_y - config.kick_reach - 1.0), config)
+        )
+
+        # The cooldown still gates every kick, head ones included.
+        player.kick_cd = 0.2
+        self.assertFalse(_can_kick(player, Ball(head_x, contact_y), config))
+
+    def test_jumping_bot_converts_a_header_into_a_shot(self):
+        from .engine import (
+            Ball, GameConfig, Intent, Player, World, _apply_kicks,
+            _choose_action, _head_center, _resolve_intent, _sensor_state,
+        )
+
+        config = GameConfig()
+        strategy = {
+            "label": "Header",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [
+                        {"left": "on_ground", "operator": "==", "rightType": "value", "right": False},
+                        {"left": "can_kick", "operator": "==", "rightType": "value", "right": True},
+                    ],
+                    "action": "KICK_HIGH",
+                },
+            ],
+            "default_action": "MOVE_TO_BALL",
+        }
+        validate_strategy(strategy)
+
+        # Airborne, with the ball on the player's head.
+        player = Player(x=500.0, y=config.ground_y - config.player_height - 120.0, face=1)
+        player.on_ground = False
+        head_x, head_y = _head_center(player, config)
+        world = World(
+            players=[player, Player(x=1200.0, y=config.ground_y - config.player_height, face=-1)],
+            ball=Ball(head_x, head_y - config.head_radius - config.ball_radius),
+            remaining_time=40.0,
+        )
+
+        state = _sensor_state(world, 0, config)
+        self.assertTrue(state["can_kick"], "the header must register as kickable")
+
+        _rule, action = _choose_action(strategy, state)
+        self.assertEqual(action, "KICK_HIGH")
+
+        intent = _resolve_intent(action, state, 0, config)
+        _apply_kicks(world, [intent, Intent("IDLE")], config)
+
+        self.assertGreater(world.ball.vx, 0.0, "header should be driven toward the enemy goal")
+        self.assertLess(world.ball.vy, 0.0, "header should be driven upward")
+
 class AuthAndSecurityTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="testplayer", password="securepassword123")
