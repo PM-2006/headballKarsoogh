@@ -8,7 +8,7 @@ import random
 from .validators import validate_strategy
 
 
-PHYSICS_VERSION = "v3.3-directional-clear"
+PHYSICS_VERSION = "v3.4-strategy-hotfix"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -349,22 +349,29 @@ def _kickoff(world: World, rng: random.Random, config: GameConfig, initial: bool
 
 
 def _can_kick(player: Player, ball: Ball, config: GameConfig) -> bool:
-    """True when the player can strike the ball -- off the body OR off the head.
+    """Return whether the player can strike the ball.
 
-    Measuring only from the body centre put the player's own head outside its
-    own kick range: the head sits ``player_height/2 - head_center_y`` above that
-    centre, so a ball resting on it is 75px away while ``kick_reach`` is 68.
-    A bot could jump, physically head the ball, and still be told it cannot
-    kick -- the ball bounced off passively and no KICK rule could ever fire.
-    The head circle is a real striking surface, so it gets the same reach.
+    Preserve the legacy body-centre kick window so existing strategies keep the
+    same ``can_kick`` timing. Headers get only the small top-of-head contact
+    window they actually need; using the full generic ``kick_reach`` around the
+    head made high-priority KICK rules fire too early and pre-empt movement rules.
     """
     if player.kick_cd > 0.0:
         return False
+
     body_x, body_y = _player_center(player, config)
     if hypot(ball.x - body_x, ball.y - body_y) <= config.kick_reach:
         return True
+
     head_x, head_y = _head_center(player, config)
-    return hypot(ball.x - head_x, ball.y - head_y) <= config.kick_reach
+    # Physical head+ball contact is head_radius + ball_radius (51px with the
+    # defaults). Keep the intended 8px pre-contact header window from b17da7d,
+    # but do not extend it to the full 68px generic kick radius.
+    head_reach = config.head_radius + config.ball_radius + 8.0
+    return (
+        ball.y <= head_y
+        and hypot(ball.x - head_x, ball.y - head_y) <= head_reach
+    )
 
 
 def _sensor_state(world: World, team: int, config: GameConfig) -> dict:
