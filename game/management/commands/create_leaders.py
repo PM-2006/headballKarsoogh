@@ -4,15 +4,25 @@ Create the leader (staff) accounts used to run sessions on the real server.
     python manage.py create_leaders
 
 Makes 20 boys' leaders ``BLeader_1`` .. ``BLeader_20`` and 20 girls' leaders
-``GLeader_1`` .. ``GLeader_20``. Each account is ``is_staff`` (which is the flag
-this project uses to mean "not a student": manual rule editor, raw JSON view and
-the message composer) and NEVER ``is_superuser``. Each password is the username
-itself, as requested -- treat the roster as a shared secret.
+``GLeader_1`` .. ``GLeader_20``. Each account is ``is_staff`` AND
+``is_superuser``: superuser is what unlocks the full bot gallery (see
+``api_strategies``, which gates ``all_strategies`` on ``is_superuser``), so a
+leader can line up any bot any user has ever made on either side of a match.
+
+Two things come with that, on purpose:
+  * Every strategy a leader saves becomes an official opponent visible to all
+    students, because the public list matches ``user__is_superuser=True``.
+  * Leaders get the full Django admin and the admin-only config endpoints
+    (session limit, strategy limit, strictness, game on/off, resets).
+
+Each password is the username itself, as requested -- treat the roster as a
+shared secret.
 
 The command is idempotent and safe to re-run: accounts that already exist are
-left alone unless ``--update-existing`` is passed. Superuser accounts are never
-touched, so a name collision with a real admin cannot demote it or reset its
-password.
+left alone unless ``--update-existing`` is passed. The deployment's own admin
+account (``DJANGO_SUPERUSER_USERNAME``, the one ``bootstrap_admin`` manages) is
+never touched, so a name collision cannot reset its password to something
+guessable.
 
 Common invocations:
 
@@ -24,6 +34,7 @@ Common invocations:
 from __future__ import annotations
 
 import csv
+import os
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
@@ -31,7 +42,7 @@ from django.db import transaction
 
 
 class Command(BaseCommand):
-    help = "Create the BLeader_/GLeader_ staff accounts (password = username)."
+    help = "Create the BLeader_/GLeader_ superuser accounts (password = username)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -58,7 +69,8 @@ class Command(BaseCommand):
             "--update-existing", action="store_true",
             help=(
                 "For accounts that already exist: reset the password to the "
-                "username and re-assert is_staff. Without this they are skipped."
+                "username and re-assert is_staff/is_superuser. Without this "
+                "they are skipped."
             ),
         )
         parser.add_argument(
@@ -103,6 +115,12 @@ class Command(BaseCommand):
                 + ", ".join(sorted(duplicates))
             )
 
+        # The leaders are superusers themselves, so "is it a superuser?" can no
+        # longer tell a leader slot apart from the deployment's real admin.
+        # Guard that account by name instead -- it is the one whose password
+        # must never be reset to something as guessable as its username.
+        deploy_admin = (os.environ.get("DJANGO_SUPERUSER_USERNAME") or "").strip()
+
         User = get_user_model()
         created = updated = skipped = protected = 0
 
@@ -113,25 +131,23 @@ class Command(BaseCommand):
             }
 
             for username in usernames:
+                if deploy_admin and username == deploy_admin:
+                    protected += 1
+                    self.stderr.write(self.style.WARNING(
+                        f"skipped  {username} — this is DJANGO_SUPERUSER_USERNAME "
+                        f"(the deployment admin), left untouched."
+                    ))
+                    continue
+
                 user = existing.get(username)
 
                 if user is None:
                     if not dry_run:
-                        user = User(username=username, is_staff=True, is_superuser=False)
+                        user = User(username=username, is_staff=True, is_superuser=True)
                         user.set_password(username)
                         user.save()
                     created += 1
                     self.stdout.write(f"created  {username}")
-                    continue
-
-                # A superuser sharing one of these names is a real admin, not a
-                # leader slot. Resetting its password to its username would hand
-                # the whole server away, so never write to it.
-                if user.is_superuser:
-                    protected += 1
-                    self.stderr.write(self.style.WARNING(
-                        f"skipped  {username} — already exists as a SUPERUSER, left untouched."
-                    ))
                     continue
 
                 if not update_existing:
@@ -144,9 +160,12 @@ class Command(BaseCommand):
 
                 if not dry_run:
                     user.is_staff = True
+                    user.is_superuser = True
                     user.is_active = True
                     user.set_password(username)
-                    user.save(update_fields=["is_staff", "is_active", "password"])
+                    user.save(update_fields=[
+                        "is_staff", "is_superuser", "is_active", "password",
+                    ])
                 updated += 1
                 self.stdout.write(f"updated  {username}")
 
