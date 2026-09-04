@@ -6,7 +6,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
-from .models import GameConfigOverride, Message, Notification, SavedStrategy
+from .models import GameConfigOverride, KnockoutBracket, Message, Notification, SavedStrategy
 
 
 @admin.register(GameConfigOverride)
@@ -140,3 +140,11 @@ class NotificationAdmin(admin.ModelAdmin):
     list_filter = ("read_at",)
     search_fields = ("user__username", "message__title")
     readonly_fields = ("message", "user", "created_at")
+
+
+@admin.register(KnockoutBracket)
+class KnockoutBracketAdmin(admin.ModelAdmin):
+    """Fallback only. The in-app bracket page validates the cascade; this does not."""
+
+    list_display = ("title", "size", "published", "updated_by", "updated_at")
+    readonly_fields = ("updated_at", "updated_by")

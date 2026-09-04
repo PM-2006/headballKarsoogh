@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import views_messaging as inbox
+from . import views_bracket
 
 app_name = "game"
 urlpatterns = [
@@ -36,4 +37,7 @@ urlpatterns = [
     path("api/messages/<int:pk>/", inbox.api_message_detail, name="api_message_detail"),
     path("api/messages/<int:pk>/send/", inbox.api_message_send, name="api_message_send"),
     path("api/messages/<int:pk>/recipients/", inbox.api_message_recipients, name="api_message_recipients"),
+
+    # --- Knockout bracket: everyone reads, admins PATCH ---
+    path("api/bracket/", views_bracket.api_bracket, name="api_bracket"),
 ]

@@ -6,6 +6,7 @@
 <title>گیلبال | GilBall</title>
 <link rel="stylesheet" href="{% static 'game/styles.css' %}">
 <link rel="stylesheet" href="{% static 'game/inbox.css' %}">
+<link rel="stylesheet" href="{% static 'game/bracket.css' %}">
 </head>
 <body>
 <div id="toastWrap" class="toast-wrap"></div>
@@ -56,6 +57,7 @@
     <div class="nav">
       <button id="builderTab" class="active"><span class="nav-ico">🧠</span> ساخت ربات</button>
       <button id="arenaTab"><span class="nav-ico">⚽</span> مسابقه</button>
+      <button id="bracketTab"><span class="nav-ico">🏆</span> جدول حذفی</button>
       {% if is_msg_admin %}
       <button id="messagesTab"><span class="nav-ico">📨</span> پیام‌ها</button>
       {% endif %}
@@ -373,6 +375,52 @@
     <div id="ibxDetailBody" class="ibx-detail-body"></div>
   </div>
 </section>
+<section id="bracketView" class="view">
+  <div class="card">
+    <div class="bk-page-head">
+      <div>
+        <h2 id="bkTitle">🏆 جدول حذفی</h2>
+        <div id="bkMeta" class="bk-meta"></div>
+      </div>
+      <div class="bk-toolbar">
+        <button id="bkRefresh" class="ibx-refresh" type="button"><span class="ibx-spin" aria-hidden="true">⟳</span> تازه‌سازی</button>
+        <span id="bkUpdated" class="ibx-updated">هنوز به‌روزرسانی نشده</span>
+        <span class="bk-zoom" role="group" aria-label="بزرگ‌نمایی جدول">
+          <button id="bkZoomOut" type="button" title="کوچک‌تر" aria-label="کوچک‌تر">−</button>
+          <span id="bkZoomVal" class="bk-zoom-val">۱۰۰٪</span>
+          <button id="bkZoomIn" type="button" title="بزرگ‌تر" aria-label="بزرگ‌تر">+</button>
+          <button id="bkZoomFit" type="button" title="جا دادن در صفحه" aria-label="جا دادن در صفحه">⤢</button>
+        </span>
+        <span id="bkSaveStatus" class="bk-save-status" hidden></span>
+      </div>
+    </div>
+
+    {% comment %}Only rendered for admins (bracket.js unhides it from the API's can_edit); the server
+    refuses PATCH from anyone else regardless.{% endcomment %}
+    <div id="bkAdmin" class="bk-admin" hidden>
+      <button id="bkEditToggle" class="bk-edit-toggle" type="button">✏️ ویرایش جدول</button>
+      <span id="bkEditTools" class="bk-admin" style="padding:0;border:0;background:none;margin:0" hidden>
+        <label>عنوان <input id="bkTitleInput" type="text" maxlength="80" placeholder="جام قهرمانی گیلبال"></label>
+        <label>تعداد تیم‌ها
+          <select id="bkSizeSelect">
+            <option value="2">۲</option><option value="4">۴</option><option value="8">۸</option>
+            <option value="16">۱۶</option><option value="32">۳۲</option><option value="64">۶۴</option>
+          </select>
+        </label>
+        <label title="تا وقتی منتشر نشده، فقط مدیران جدول را می‌بینند">
+          <input id="bkPublished" type="checkbox"><span class="bk-switch" aria-hidden="true"></span> نمایش برای کاربران
+        </label>
+        <button id="bkAutofill" class="mini" type="button" title="جاهای خالی را با نام کاربران به‌صورت تصادفی پر می‌کند">🎲 پر کردن با کاربران</button>
+        <button id="bkResetResults" class="mini danger" type="button">↩ پاک کردن نتایج</button>
+      </span>
+      <datalist id="bkTeamSuggest"></datalist>
+    </div>
+
+    <div id="bkChampion" class="bk-champ pending" hidden></div>
+    <p class="bk-note"><span aria-hidden="true">ℹ️</span> نتایج به‌صورت خودکار به‌روز نمی‌شوند. برای دیدن آخرین تغییرات، دکمهٔ «تازه‌سازی» را بزن.</p>
+    <div id="bkStageWrap"></div>
+  </div>
+</section>
 {% if is_msg_admin %}
 <section id="messagesView" class="view">
   <div class="card">
@@ -453,4 +501,5 @@
 window.IS_MESSAGING_ADMIN = {% if is_msg_admin %}true{% else %}false{% endif %};</script>
 <script src="{% static 'game/game.js' %}"></script>
 <script src="{% static 'game/inbox.js' %}"></script>
+<script src="{% static 'game/bracket.js' %}"></script>
 </body></html>

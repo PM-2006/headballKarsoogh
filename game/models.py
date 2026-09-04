@@ -417,3 +417,53 @@ class Notification(models.Model):
     @property
     def is_read(self) -> bool:
         return self.read_at is not None
+
+
+class KnockoutBracket(models.Model):
+    """Singleton: the tournament's knockout bracket.
+
+    ``teams`` is the first-round draw in bracket order (slot 0 meets slot 1,
+    slot 2 meets slot 3, ...). ``results`` is keyed ``"<round>-<match>"`` (plus
+    ``"third"`` for the third-place play-off) and holds ``{"winner": 0|1|None,
+    "score": [a, b]|None}``. Which team stands in a later-round match is never
+    stored: it is derived by following winners forward, so one corrected result
+    can never leave a stale name further along the bracket. The derivation and
+    its validation live in ``bracket.py``.
+    """
+
+    SIZES = (2, 4, 8, 16, 32, 64)
+
+    singleton_id = models.PositiveSmallIntegerField(default=1, unique=True, editable=False)
+    title = models.CharField(
+        max_length=80, default="جام قهرمانی گیلبال", verbose_name=_("عنوان جدول")
+    )
+    size = models.PositiveSmallIntegerField(
+        default=16,
+        choices=[(n, str(n)) for n in SIZES],
+        verbose_name=_("تعداد تیم‌ها"),
+    )
+    teams = models.JSONField(default=list, blank=True, verbose_name=_("تیم‌های دور اول"))
+    results = models.JSONField(default=dict, blank=True, verbose_name=_("نتایج"))
+    # Off while the draw is being typed in, so users do not watch it half-made.
+    published = models.BooleanField(default=False, verbose_name=_("منتشرشده"))
+    updated_at = models.DateTimeField(auto_now=True, verbose_name=_("آخرین به‌روزرسانی"))
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name=_("آخرین ویرایشگر"),
+    )
+
+    class Meta:
+        verbose_name = _("جدول حذفی")
+        verbose_name_plural = _("جدول حذفی")
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.size} تیم)"
+
+    @classmethod
+    def load(cls) -> "KnockoutBracket":
+        obj, _created = cls.objects.get_or_create(singleton_id=1)
+        return obj
