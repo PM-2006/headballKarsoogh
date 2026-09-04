@@ -144,6 +144,89 @@ class ApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["matches"], 5)
 
+    # A selection the server cannot resolve must fail loudly. Quietly running
+    # some other bot instead makes a perfectly compiled strategy look like the
+    # compiler misread the student's text, with nothing on screen to say so.
+    def test_unknown_preset_is_rejected_not_substituted(self):
+        response = self.client.post(
+            reverse("game:api_simulate"),
+            data={"blue": {"preset": "no_such_preset"}, "red": {"preset": "adaptive"}, "seed": 4},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("frames", response.json())
+
+    def test_missing_strategy_id_is_rejected_not_substituted(self):
+        response = self.client.post(
+            reverse("game:api_simulate"),
+            data={"blue": {"strategy_id": 999999}, "red": {"preset": "adaptive"}, "seed": 4},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("frames", response.json())
+
+    def test_empty_selection_is_rejected_not_substituted(self):
+        response = self.client.post(
+            reverse("game:api_simulate"),
+            data={"blue": {}, "red": {"preset": "adaptive"}, "seed": 4},
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn("frames", response.json())
+
+
+class LongStrategyTests(TestCase):
+    """Strategies compiled from a long prompt must run in full, not be trimmed."""
+
+    @staticmethod
+    def _long_strategy(rule_count, condition_count):
+        from .strategy import condition, rule
+
+        rules = []
+        for index in range(1, rule_count + 1):
+            conditions = [condition("distance_to_ball", "<", 100 + index)]
+            while len(conditions) < condition_count:
+                conditions.append(condition("ball_speed", ">", 10 * len(conditions)))
+            rules.append(rule(index, conditions, "KICK_LOW"))
+        return {"label": "Long Bot", "rules": rules, "default_action": "MOVE_TO_BALL"}
+
+    def test_max_sized_strategy_validates_and_runs(self):
+        from .validators import MAX_CONDITIONS_PER_RULE, MAX_RULES
+
+        strategy = self._long_strategy(MAX_RULES, MAX_CONDITIONS_PER_RULE)
+        validate_strategy(strategy)
+        result = simulate_match(strategy, get_preset("adaptive"), seed=11, record_frames=False)
+        self.assertEqual(result["duration"], 40.0)
+
+    def test_thirty_rule_strategy_is_not_trimmed_by_the_compiler(self):
+        from .services.llm import _enforce_strategy_limits
+
+        strategy = self._long_strategy(30, 4)
+        notes = _enforce_strategy_limits(strategy)
+        self.assertEqual(len(strategy["rules"]), 30)
+        self.assertEqual(notes, [])
+        validate_strategy(strategy)
+
+    def test_partly_numbered_rules_keep_the_models_order(self):
+        from .services.llm import _enforce_strategy_limits
+        from .strategy import condition
+
+        # The model numbered only the first rule. Sinking the unnumbered ones to
+        # the end would reorder the student's instructions.
+        rules = [
+            {"priority": 1, "conditions": [condition("can_kick", "==", True)], "action": "KICK_HIGH"},
+            {"priority": 0, "conditions": [condition("ball_above_me", "==", True)], "action": "JUMP"},
+            {"priority": 0, "conditions": [condition("ball_in_own_half", "==", True)], "action": "KICK_CLEAR"},
+        ]
+        strategy = {"label": "Bot", "rules": rules, "default_action": "IDLE"}
+        _enforce_strategy_limits(strategy)
+        self.assertEqual(
+            [item["action"] for item in strategy["rules"]],
+            ["KICK_HIGH", "JUMP", "KICK_CLEAR"],
+        )
+        self.assertEqual([item["priority"] for item in strategy["rules"]], [1, 2, 3])
+        validate_strategy(strategy)
+
 
 class ConfigTests(TestCase):
     def test_vocabulary_includes_config(self):

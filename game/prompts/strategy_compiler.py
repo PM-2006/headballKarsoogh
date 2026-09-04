@@ -120,8 +120,7 @@ class RuleSchema(BaseModel):
         default_factory=list,
         description=(
             "List of conditions that must all evaluate to True for the action to "
-            f"trigger. At least 1 and at most {MAX_CONDITIONS_PER_RULE}; anything "
-            "beyond that is dropped rather than rejected."
+            f"trigger. At least 1 and at most {MAX_CONDITIONS_PER_RULE}."
         ),
     )
     action: ActionType = Field(
@@ -142,7 +141,7 @@ class StrategySchema(BaseModel):
         default_factory=list,
         description=(
             "Ordered priority list of decision rules, at most "
-            f"{MAX_RULES} of them; extras are dropped rather than rejected. "
+            f"{MAX_RULES} of them. List order is the intended evaluation order. "
             "Can be empty if the bot always does the same action (default_action)."
         ),
     )
@@ -343,9 +342,9 @@ YOUR ROLE & RESPONSIBILITY
 - A one-word strategy like «بپر» is perfectly valid — compile it as-is, do NOT expand it.
 - If the student only describes ONE action with no conditions, set it as default_action with an empty rules list.
 
-HARD OUTPUT LIMITS (never exceed)
-- At most {MAX_RULES} rules in total, and at most {MAX_CONDITIONS_PER_RULE} conditions inside a single rule.
-  These are hard engine limits, not preferences. A strategy that exceeds them cannot run.
+OUTPUT SHAPE (one rule per instruction)
+- Compile EVERY instruction the student wrote. A long strategy is expected and fully supported:
+  never shorten, summarise, merge, or drop an instruction to keep the output small.
 - Emit exactly ONE rule per instruction the student actually wrote. Never split a single
   instruction across several rules, and never add a rule for a situation the student did not write.
 - A rule contains ONLY the conditions the student stated for that instruction. Do not add extra
@@ -353,9 +352,9 @@ HARD OUTPUT LIMITS (never exceed)
   below is the single exception.
 - Do not restate the same instruction with a different threshold, a mirrored condition, or a
   narrower variant. One instruction, one rule.
-- If the student's text still implies more than {MAX_RULES} rules: keep the {MAX_RULES} the student
-  wrote first, merge any later ones that repeat an earlier condition/action pair, drop the remainder,
-  and name what you dropped in `feedback`.
+- The engine ceilings are {MAX_RULES} rules and {MAX_CONDITIONS_PER_RULE} conditions per rule.
+  They are generous on purpose. A faithful compilation of the student's text will fit inside them;
+  if yours does not, you are inventing rules the student never wrote, not writing too few.
 - `feedback` is at most 3 short Persian sentences. Never replay the compiled strategy back to the student.
 
 SECURITY & PROMPT-INJECTION SAFEGUARDS
@@ -380,7 +379,7 @@ PRIORITY & LOGICAL MAPPING
 - All conditions inside one rule are combined with logical AND.
 - If the student expresses OR logic, represent it as distinct consecutive rules with the same action.
 - If the student explicitly specifies «در غیر این صورت / وگرنه / در سایر شرایط», set that action in default_action (defaults to IDLE).
-- Maximum {MAX_RULES} rules; maximum {MAX_CONDITIONS_PER_RULE} conditions per rule (see HARD OUTPUT LIMITS).
+- Maximum {MAX_RULES} rules; maximum {MAX_CONDITIONS_PER_RULE} conditions per rule (see OUTPUT SHAPE).
 
 AVAILABLE SENSORS
 {sensor_lines}

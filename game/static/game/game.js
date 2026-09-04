@@ -779,16 +779,14 @@ let matchToken=0;             // bumped on every run/reset; stale simulate repli
 
 const FA_DIGITS="۰۱۲۳۴۵۶۷۸۹";
 function toFa(n){ return String(n).replace(/[0-9]/g,d=>FA_DIGITS[d]); }
+// Reports what the two team menus actually hold. It deliberately does NOT
+// invent a replacement for an empty menu: the halftime switcher writes the
+// chosen value straight back into these selects (setSelectValueSafely), so an
+// empty value here means something really is unselected, and the caller should
+// say so rather than line up a bot nobody picked.
 function currentSels(){
-  let s1 = $("blueSelect")?.value;
-  let s2 = $("redSelect")?.value;
-  if(!s1 || typeof s1 !== "string" || s1.trim() === "" || s1 === "undefined" || s1 === "null"){
-    s1 = allStrategies[0] ? ("any_" + allStrategies[0].id) : (savedStrategies[0] ? ("saved_" + savedStrategies[0].id) : "predictive");
-  }
-  if(!s2 || typeof s2 !== "string" || s2.trim() === "" || s2 === "undefined" || s2 === "null"){
-    s2 = allStrategies[1] ? ("any_" + allStrategies[1].id) : (publicStrategies[0] ? ("pub_" + publicStrategies[0].id) : "adaptive");
-  }
-  return [s1, s2];
+  const norm = v => (typeof v === "string" && v.trim() && v !== "undefined" && v !== "null") ? v.trim() : "";
+  return [norm($("blueSelect")?.value), norm($("redSelect")?.value)];
 }
 function teamNames(){ const [a,b]=currentSels(); return [teamDisplayName(a),teamDisplayName(b)]; }
 
@@ -2016,24 +2014,27 @@ function teamDisplayName(key){
   return vocabulary?.presets?.[key]||key;
 }
 
+// A selection we cannot resolve must raise, never quietly become some other
+// bot: swapping in a preset makes the arena play a strategy the student never
+// wrote, which reads as the compiler having misunderstood their text.
 function strategyPayload(selection){
   if(!selection || typeof selection !== "string" || selection.trim() === ""){
-    return {preset: "predictive"};
+    throw new Error("استراتژی یکی از تیم‌ها انتخاب نشده است. یک ربات انتخاب کن و دوباره تلاش کن.");
   }
   selection = selection.trim();
   if(selection === "mybot"){
-    if(!myStrategy) return {preset: "predictive"};
+    if(!myStrategy) throw new Error("اول ربات خودت را بساز.");
     return {strategy: myStrategy};
   }
   if(selection.startsWith("saved_")){
     const id = Number(selection.slice(6));
     if(Number.isFinite(id) && id > 0) return {strategy_id: id};
-    return {preset: "predictive"};
+    throw new Error("شناسهٔ استراتژی انتخاب‌شده معتبر نیست. دوباره انتخاب کن.");
   }
   if(selection.startsWith("pub_") || selection.startsWith("any_")){
     const id = Number(selection.slice(4));
     if(Number.isFinite(id) && id > 0) return {strategy_id: id};
-    return {preset: "predictive"};
+    throw new Error("شناسهٔ استراتژی انتخاب‌شده معتبر نیست. دوباره انتخاب کن.");
   }
   return {preset: selection};
 }

@@ -1,8 +1,13 @@
 from __future__ import annotations
 from .strategy import ACTIONS, OPERATORS, SENSORS
 
-MAX_RULES = 15
-MAX_CONDITIONS_PER_RULE = 8
+# Room for a full LLM-written strategy. These used to be 15/8, which is about
+# what a student types by hand but well under what the compiler produces from a
+# long prompt, so real rules were being dropped before the bot ever ran. The
+# engine evaluates rules in a tight loop; at 40x12 a whole 40-second match still
+# spends only a few milliseconds deciding, so the ceiling costs nothing.
+MAX_RULES = 40
+MAX_CONDITIONS_PER_RULE = 12
 MAX_ABS_NUMBER = 100_000
 
 class StrategyValidationError(ValueError):

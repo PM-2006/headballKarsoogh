@@ -44,7 +44,7 @@ from .gameconfig import (
     spec as config_spec,
 )
 from .models import SavedStrategy
-from .strategy import PRESETS, get_preset, vocabulary
+from .strategy import get_preset, vocabulary
 from .validators import StrategyValidationError, validate_strategy
 from .services.llm import (
     LLMConfigurationError,
@@ -121,26 +121,30 @@ def _name_taken_by_other(name: str, user) -> bool:
     )
 
 def _resolve_strategy(payload, key, user=None):
+    # Never substitute a different bot for one we failed to resolve: a match run
+    # with a silently swapped strategy looks like the compiler misread the
+    # student's text. Every branch here either returns the requested strategy or
+    # raises, so a bad selection surfaces as an error instead of wrong gameplay.
     item = payload.get(key)
     if not isinstance(item, dict):
-        return get_preset("predictive")
+        raise StrategyValidationError(f"{key} must be an object.")
     if "preset" in item:
         preset_name = str(item.get("preset") or "").strip().lower()
-        if not preset_name or preset_name not in PRESETS:
-            preset_name = "predictive"
+        if not preset_name:
+            raise StrategyValidationError("استراتژی این تیم انتخاب نشده است. یک ربات انتخاب کن و دوباره تلاش کن.")
         try:
             return get_preset(preset_name)
         except KeyError as exc:
-            return get_preset("predictive")
+            raise StrategyValidationError(f"الگوی ناشناخته: {preset_name}") from exc
     if "strategy_id" in item:
         try:
             strategy_id = int(item["strategy_id"])
         except (ValueError, TypeError):
-            return get_preset("predictive")
+            raise StrategyValidationError(f"شناسه استراتژی {key} نامعتبر است.")
         try:
             saved = SavedStrategy.objects.select_related("user").get(id=strategy_id)
         except SavedStrategy.DoesNotExist:
-            return get_preset("predictive")
+            raise StrategyValidationError(f"استراتژی با شناسه {strategy_id} یافت نشد.")
 
         if user and not (saved.user == user or saved.is_admin_strategy or user.is_staff or user.is_superuser):
             raise StrategyValidationError(f"شما اجازه دسترسی به استراتژی {saved.name} را ندارید.")
@@ -148,7 +152,7 @@ def _resolve_strategy(payload, key, user=None):
 
     strategy = item.get("strategy")
     if strategy is None:
-        return get_preset("predictive")
+        raise StrategyValidationError(f"{key} must contain either 'preset', 'strategy_id', or 'strategy'.")
     return validate_strategy(strategy)
 
 @require_GET

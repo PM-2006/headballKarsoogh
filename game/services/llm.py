@@ -323,16 +323,16 @@ def _enforce_strategy_limits(strategy_dict: dict[str, Any]) -> list[str]:
     if len(kept) != len(rules):
         notes.append("چند قانون بدون شرط بودند و حذف شدند.")
 
-    # Sort by the model's stated priority, keeping list order as the tie-break
-    # and for rules that left priority unset.
-    def _sort_key(pair: tuple[int, dict]) -> tuple[int, int]:
-        index, rule = pair
-        priority = rule.get("priority")
-        if not isinstance(priority, int) or priority < 1:
-            priority = 10**6  # unset priority sinks to the end, order preserved
-        return priority, index
-
-    kept = [rule for _, rule in sorted(enumerate(kept), key=_sort_key)]
+    # The list order and the stated priorities are two encodings of the same
+    # intent. Reorder by priority only when the model numbered *every* rule --
+    # sinking the unnumbered ones to the end of a partly numbered list would
+    # silently reshuffle the student's instructions, which is worse than
+    # ignoring priorities and trusting the order the model emitted.
+    if all(isinstance(rule.get("priority"), int) and rule["priority"] >= 1 for rule in kept):
+        kept = [
+            rule
+            for _, rule in sorted(enumerate(kept), key=lambda pair: (pair[1]["priority"], pair[0]))
+        ]
 
     if len(kept) > MAX_RULES:
         notes.append(
