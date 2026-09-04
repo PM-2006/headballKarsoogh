@@ -80,7 +80,7 @@ See [`doc/auth-and-admin.md`](doc/auth-and-admin.md) for details.
 3. In the **Arena** tab, the server simulates a 60‑second match (`/api/simulate/`) and returns the recorded frames.
 4. The browser replays those frames on a `<canvas>`, with a live status panel, goal celebrations, and a winner screen.
 
-**How a bot "thinks":** every frame the engine builds a snapshot of ~26 sensors (ball position and speed, distances, remaining time, score, `can_kick`, `ball_above_me`, …). It walks the bot's rules in priority order and fires the first rule whose conditions are all true; if none match, it uses the default action. Actions include `MOVE_TO_BALL`, `MOVE_TO_GOAL`, `JUMP`, `KICK_LOW`, `KICK_HIGH`, `KICK_CLEAR`, and more.
+**How a bot "thinks":** every frame the engine builds a snapshot of ~26 sensors (ball position and speed, distances, remaining time, score, `can_kick`, `ball_above_me`, …). It walks the bot's rules in priority order and fires the first rule whose conditions are all true; if none match, it uses the default action. Actions include `MOVE_TO_BALL`, `MOVE_TO_GOAL`, `MOVE_TO_ENEMY_GOAL`, `JUMP`, `KICK_LOW`, `KICK_HIGH`, `KICK_CLEAR`, and more. Every `MOVE_TO_*` action is mirrored per team, because a bot plays both ends of the pitch; `MOVE_LEFT`/`MOVE_RIGHT` are the only screen-absolute ones and mean the viewer's left and right.
 
 Full details: [`doc/strategy-system.md`](doc/strategy-system.md) and [`doc/game-engine.md`](doc/game-engine.md).
 

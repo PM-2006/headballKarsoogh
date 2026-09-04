@@ -136,7 +136,8 @@ function condInstanceLabel(ci){
   return def.label||ci.key;
 }
 const simpleActions = {
-  MOVE_TO_BALL:"به سمت توپ برو",MOVE_TO_GOAL:"برگرد سمت دروازه",MOVE_TO_CENTER:"به مرکز زمین برو",
+  MOVE_TO_BALL:"به سمت توپ برو",MOVE_TO_GOAL:"برگرد سمت دروازه خودی",
+  MOVE_TO_ENEMY_GOAL:"برو سمت دروازه حریف",MOVE_TO_CENTER:"به مرکز زمین برو",
   JUMP:"بپر",KICK_LOW:"شوت زمینی بزن",KICK_HIGH:"شوت هوایی بزن",KICK_STRAIGHT:"شوت مستقیم بزن",KICK_CLEAR:"توپ را محکم به بالا دفع کن",IDLE:"صبر کن"
 };
 let simpleRules = [];
@@ -1445,6 +1446,7 @@ function showWinner(frame){
 const ACT_FA={
   MOVE_LEFT:{t:"حرکت به چپ",i:"⬅️"},MOVE_RIGHT:{t:"حرکت به راست",i:"➡️"},
   MOVE_TO_BALL:{t:"به سمت توپ",i:"🏃"},MOVE_TO_GOAL:{t:"دفاع از دروازه",i:"🛡️"},
+  MOVE_TO_ENEMY_GOAL:{t:"حمله به دروازه حریف",i:"⚔️"},
   MOVE_TO_CENTER:{t:"به مرکز زمین",i:"🎯"},JUMP:{t:"پرش",i:"⬆️"},
   KICK_LOW:{t:"شوت زمینی",i:"⚡"},KICK_HIGH:{t:"شوت هوایی",i:"🚀"},
   KICK_STRAIGHT:{t:"شوت مستقیم",i:"🎯"},

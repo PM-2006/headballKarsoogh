@@ -14,9 +14,14 @@ SENSORS = {
     "ball_above_me": "boolean", "ball_moving_toward_me": "boolean",
 }
 OPERATORS = ("<", "<=", ">", ">=", "==", "!=")
+# MOVE_LEFT and MOVE_RIGHT are the only screen-absolute actions: they mean the
+# viewer's left and right, not the bot's. Everything else -- MOVE_TO_GOAL,
+# MOVE_TO_ENEMY_GOAL, MOVE_TO_CENTER -- is mirrored per team, which is what a
+# bot that plays both sides of the pitch actually needs.
 ACTIONS = (
-    "MOVE_LEFT", "MOVE_RIGHT", "MOVE_TO_BALL", "MOVE_TO_GOAL", "MOVE_TO_CENTER",
-    "JUMP", "KICK_LOW", "KICK_HIGH", "KICK_STRAIGHT", "KICK_CLEAR", "IDLE",
+    "MOVE_LEFT", "MOVE_RIGHT", "MOVE_TO_BALL", "MOVE_TO_GOAL", "MOVE_TO_ENEMY_GOAL",
+    "MOVE_TO_CENTER", "JUMP", "KICK_LOW", "KICK_HIGH", "KICK_STRAIGHT", "KICK_CLEAR",
+    "IDLE",
 )
 
 def condition(left, operator, right, right_type="value"):

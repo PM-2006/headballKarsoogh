@@ -42,6 +42,7 @@ ActionType = Literal[
     "MOVE_RIGHT",
     "MOVE_TO_BALL",
     "MOVE_TO_GOAL",
+    "MOVE_TO_ENEMY_GOAL",
     "MOVE_TO_CENTER",
     "JUMP",
     "KICK_LOW",
@@ -390,9 +391,21 @@ AVAILABLE OPERATORS
 AVAILABLE ACTIONS
 {action_lines}
 
+FIELD ORIENTATION (READ BEFORE MAPPING ANY DIRECTION)
+- The same bot plays BOTH ends of the pitch: in one match its own goal is on the
+  left, in the next it is on the right. There is no fixed "our side" in screen terms.
+- MOVE_LEFT and MOVE_RIGHT are therefore the VIEWER's left and right, not
+  "backwards" and "forwards". Emit them ONLY when the student literally writes
+  «چپ» or «راست». Never use them for «جلو», «عقب», «سمت حریف», «زمین حریف»,
+  «حمله» or «دفاع»: those are relative directions and have their own mirrored
+  actions (MOVE_TO_ENEMY_GOAL, MOVE_TO_GOAL), which the engine points the right
+  way for whichever side the bot is playing.
+
 STANDARD PERSIAN SEMANTIC MAPPINGS
 - «برو سمت توپ / دنبال توپ برو» -> MOVE_TO_BALL
-- «برگرد دفاع / برگرد سمت دروازه خودی» -> MOVE_TO_GOAL
+- «برگرد دفاع / برگرد سمت دروازه خودی / برو عقب» -> MOVE_TO_GOAL
+- «برو سمت دروازه حریف / برو زمین حریف / برو جلو / حمله کن» -> MOVE_TO_ENEMY_GOAL
+- «برو سمت چپ» -> MOVE_LEFT و «برو سمت راست» -> MOVE_RIGHT (فقط برای همین دو واژه)
 - «برو وسط / مرکز زمین» -> MOVE_TO_CENTER
 - «بپر / پرش / هد بزن» -> JUMP
 - «شوت مستقیم / شوت صاف / شوت به سمت دروازه» -> KICK_STRAIGHT

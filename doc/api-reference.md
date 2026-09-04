@@ -39,7 +39,7 @@ POST  /api/compile-strategy/      # ترجمه متن فارسی به استرا
   },
   "operators": ["<", "<=", ">", ">=", "==", "!="],
   "actions": [
-    "MOVE_LEFT", "MOVE_RIGHT", "MOVE_TO_BALL", "MOVE_TO_GOAL", 
+    "MOVE_LEFT", "MOVE_RIGHT", "MOVE_TO_BALL", "MOVE_TO_GOAL", "MOVE_TO_ENEMY_GOAL",
     "MOVE_TO_CENTER", "JUMP", "KICK_LOW", "KICK_HIGH", "KICK_CLEAR", "IDLE"
   ],
   "presets": {

@@ -166,6 +166,98 @@ class KickMechanicsTests(TestCase):
         self.assertGreater(world.ball.vx, 0.0, "header should be driven toward the enemy goal")
         self.assertLess(world.ball.vy, 0.0, "header should be driven upward")
 
+class MovementDirectionTests(TestCase):
+    """Which way each movement action sends each team.
+
+    Every team-relative action must mirror: the bot that defends the right-hand
+    goal has to run the opposite way from the one defending the left. Only
+    MOVE_LEFT/MOVE_RIGHT are screen-absolute, and that is deliberate.
+    """
+
+    def directions(self, action):
+        from .engine import GameConfig, _resolve_intent
+
+        config = GameConfig()
+        state = {"my_x": config.width / 2, "ball_x": config.width / 2, "on_ground": True}
+        return tuple(
+            _resolve_intent(action, dict(state), team, config).move_dir for team in (0, 1)
+        )
+
+    def test_defending_runs_toward_each_team_s_own_goal(self):
+        # Team 0 defends x=0, team 1 defends x=width.
+        self.assertEqual(self.directions("MOVE_TO_GOAL"), (-1, 1))
+
+    def test_attacking_runs_toward_each_team_s_enemy_goal(self):
+        self.assertEqual(self.directions("MOVE_TO_ENEMY_GOAL"), (1, -1))
+
+    def test_attacking_is_the_exact_mirror_of_defending(self):
+        for defend, attack in zip(
+            self.directions("MOVE_TO_GOAL"), self.directions("MOVE_TO_ENEMY_GOAL")
+        ):
+            self.assertEqual(defend, -attack)
+
+    def test_left_and_right_stay_absolute_for_both_teams(self):
+        # They mean the viewer's left and right, so they must NOT mirror --
+        # which is exactly why they are the wrong answer for «برو سمت حریف».
+        self.assertEqual(self.directions("MOVE_LEFT"), (-1, -1))
+        self.assertEqual(self.directions("MOVE_RIGHT"), (1, 1))
+
+    def test_attacking_stops_in_front_of_the_enemy_goal(self):
+        from .engine import GameConfig, _resolve_intent
+
+        config = GameConfig()
+        for team, x in ((0, config.width - config.goal_depth - 42.0), (1, config.goal_depth + 42.0)):
+            state = {"my_x": x, "ball_x": x, "on_ground": True}
+            self.assertEqual(
+                _resolve_intent("MOVE_TO_ENEMY_GOAL", state, team, config).move_dir,
+                0,
+                "a bot already at the enemy goal should hold its position",
+            )
+
+    def test_the_action_is_accepted_by_the_validator(self):
+        strategy = {
+            "label": "Attacker",
+            "rules": [
+                {
+                    "priority": 1,
+                    "conditions": [
+                        {"left": "ball_in_enemy_half", "operator": "==", "rightType": "value", "right": True}
+                    ],
+                    "action": "MOVE_TO_ENEMY_GOAL",
+                }
+            ],
+            "default_action": "MOVE_TO_ENEMY_GOAL",
+        }
+        validate_strategy(strategy)
+
+    def test_the_same_bot_attacks_the_right_end_from_either_side(self):
+        """End to end: sensors -> rule -> intent -> movement, on both sides.
+
+        One attacking bot, played once from each end against the same keeper.
+        It has to end up deep in the opponent's third both times. Written as
+        MOVE_RIGHT it would only work from the left -- the bug students hit.
+        """
+        from .engine import get_game_config, simulate_match
+
+        config = get_game_config()
+        attacker = {"label": "Attacker", "rules": [], "default_action": "MOVE_TO_ENEMY_GOAL"}
+        keeper = {"label": "Keeper", "rules": [], "default_action": "MOVE_TO_GOAL"}
+
+        as_team0 = simulate_match(attacker, keeper, seed=3, record_frames=True)["frames"]
+        as_team1 = simulate_match(keeper, attacker, seed=3, record_frames=True)["frames"]
+
+        self.assertGreater(
+            max(f["players"][0]["x"] for f in as_team0),
+            config.width * 0.6,
+            "playing from the left, it must push into the right-hand third",
+        )
+        self.assertLess(
+            min(f["players"][1]["x"] for f in as_team1),
+            config.width * 0.4,
+            "the same bot from the right must push into the left-hand third",
+        )
+
+
 class AuthAndSecurityTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="testplayer", password="securepassword123")

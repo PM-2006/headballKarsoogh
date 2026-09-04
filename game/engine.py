@@ -483,6 +483,21 @@ def _resolve_intent(action: str, state: dict, team: int, config: GameConfig) -> 
             action,
             move_dir=_direction_to_target(state["my_x"], target, config.move_deadzone),
         )
+    if action == "MOVE_TO_ENEMY_GOAL":
+        # The mirror of MOVE_TO_GOAL. Every other movement action is relative to
+        # the team's own end, and a bot plays each side in turn (batch_matches
+        # swaps them), so "attack" has to be a direction the engine derives --
+        # never a fixed MOVE_RIGHT, which would run the right-hand team back
+        # into its own net.
+        target = (
+            config.width - config.goal_depth - 42.0
+            if team == 0
+            else config.goal_depth + 42.0
+        )
+        return Intent(
+            action,
+            move_dir=_direction_to_target(state["my_x"], target, config.move_deadzone),
+        )
     if action == "MOVE_TO_CENTER":
         target = config.width / 2 + (-80.0 if team == 0 else 80.0)
         return Intent(
