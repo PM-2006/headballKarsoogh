@@ -420,7 +420,11 @@ class Notification(models.Model):
 
 
 class KnockoutBracket(models.Model):
-    """Singleton: the tournament's knockout bracket.
+    """One knockout bracket per division -- one for the boys, one for the girls.
+
+    The two draws are wholly independent rows: separate teams, results, titles
+    and publish switches. ``division`` is unique, so each one is a singleton of
+    its own and ``load(division)`` is the only way anything gets a bracket.
 
     ``teams`` is the first-round draw in bracket order (slot 0 meets slot 1,
     slot 2 meets slot 3, ...). ``results`` is keyed ``"<round>-<match>"`` (plus
@@ -433,7 +437,22 @@ class KnockoutBracket(models.Model):
 
     SIZES = (2, 4, 8, 16, 32, 64)
 
-    singleton_id = models.PositiveSmallIntegerField(default=1, unique=True, editable=False)
+    BOYS = "boys"
+    GIRLS = "girls"
+    DIVISIONS = ((BOYS, _("پسران")), (GIRLS, _("دختران")))
+    DIVISION_KEYS = (BOYS, GIRLS)
+    DEFAULT_TITLES = {
+        BOYS: "جام قهرمانی پسران",
+        GIRLS: "جام قهرمانی دختران",
+    }
+
+    division = models.CharField(
+        max_length=8,
+        choices=DIVISIONS,
+        default=BOYS,
+        unique=True,
+        verbose_name=_("بخش"),
+    )
     title = models.CharField(
         max_length=80, default="جام قهرمانی گیلبال", verbose_name=_("عنوان جدول")
     )
@@ -458,12 +477,18 @@ class KnockoutBracket(models.Model):
 
     class Meta:
         verbose_name = _("جدول حذفی")
-        verbose_name_plural = _("جدول حذفی")
+        verbose_name_plural = _("جدول‌های حذفی")
+        ordering = ("division",)
 
     def __str__(self) -> str:
-        return f"{self.title} ({self.size} تیم)"
+        return f"{self.get_division_display()} — {self.title} ({self.size} تیم)"
 
     @classmethod
-    def load(cls) -> "KnockoutBracket":
-        obj, _created = cls.objects.get_or_create(singleton_id=1)
+    def load(cls, division: str = BOYS) -> "KnockoutBracket":
+        """The bracket of one division, created on first sight with its own title."""
+        if division not in cls.DIVISION_KEYS:
+            raise ValueError(f"unknown division: {division!r}")
+        obj, _created = cls.objects.get_or_create(
+            division=division, defaults={"title": cls.DEFAULT_TITLES[division]}
+        )
         return obj

@@ -146,5 +146,6 @@ class NotificationAdmin(admin.ModelAdmin):
 class KnockoutBracketAdmin(admin.ModelAdmin):
     """Fallback only. The in-app bracket page validates the cascade; this does not."""
 
-    list_display = ("title", "size", "published", "updated_by", "updated_at")
+    list_display = ("division", "title", "size", "published", "updated_by", "updated_at")
+    list_filter = ("division", "published")
     readonly_fields = ("updated_at", "updated_by")

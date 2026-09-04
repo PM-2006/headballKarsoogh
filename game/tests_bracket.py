@@ -199,3 +199,84 @@ class BracketApiTests(TestCase):
         response, _ = self.patch(teams={"2": "C"}, results={"1-0": {"winner": 0}})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(KnockoutBracket.load().teams[2], "")
+
+
+class DivisionTests(TestCase):
+    """The boys' and girls' draws are two rows that never touch each other."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(username="admin", is_staff=True)
+        self.user = User.objects.create_user(username="user")
+        self.url = reverse("game:api_bracket")
+
+    def patch(self, division, **payload):
+        response = self.client.patch(
+            self.url + "?division=" + division,
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        return response, json.loads(response.content)
+
+    def get(self, division=None):
+        url = self.url if division is None else self.url + "?division=" + division
+        return json.loads(self.client.get(url).content)
+
+    def test_each_division_has_its_own_bracket(self):
+        self.client.force_login(self.admin)
+        self.patch("boys", size=4, teams={"0": "A", "1": "B", "2": "C", "3": "D"})
+        self.patch("girls", size=8, teams={"0": "X"})
+
+        boys, girls = self.get("boys"), self.get("girls")
+        self.assertEqual((boys["division"], boys["size"], boys["teams"][0]), ("boys", 4, "A"))
+        self.assertEqual((girls["division"], girls["size"], girls["teams"][0]), ("girls", 8, "X"))
+        self.assertEqual(KnockoutBracket.objects.count(), 2)
+
+    def test_results_do_not_leak_between_divisions(self):
+        self.client.force_login(self.admin)
+        for division in ("boys", "girls"):
+            self.patch(division, size=2, teams={"0": "A", "1": "B"})
+        self.patch("boys", results={"0-0": {"winner": 0, "score": [3, 1]}})
+        self.assertEqual(self.get("boys")["champion"], "A")
+        self.assertIsNone(self.get("girls")["champion"])
+
+    def test_publishing_one_division_does_not_publish_the_other(self):
+        self.client.force_login(self.admin)
+        self.patch("boys", published=True, teams={"0": "Lions"})
+        self.client.force_login(self.user)
+        self.assertTrue(self.get("boys")["published"])
+        girls = self.get("girls")
+        self.assertFalse(girls["published"])
+        self.assertNotIn("teams", girls)
+
+    def test_each_division_starts_with_its_own_title(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.get("boys")["title"], KnockoutBracket.DEFAULT_TITLES["boys"])
+        self.assertEqual(self.get("girls")["title"], KnockoutBracket.DEFAULT_TITLES["girls"])
+
+    def test_missing_division_means_the_boys_draw(self):
+        self.client.force_login(self.admin)
+        self.patch("boys", teams={"0": "A"})
+        self.assertEqual(self.get()["division"], "boys")
+        self.assertEqual(self.get()["teams"][0], "A")
+
+    def test_unknown_division_is_400(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(self.url + "?division=nope").status_code, 400)
+        response, _ = self.patch("nope", title="x")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(KnockoutBracket.objects.filter(division="nope").count(), 0)
+
+    def test_division_may_travel_in_the_body(self):
+        self.client.force_login(self.admin)
+        response = self.client.patch(
+            self.url,
+            data=json.dumps({"division": "girls", "teams": {"0": "Falcons"}}),
+            content_type="application/json",
+        )
+        self.assertEqual(json.loads(response.content)["division"], "girls")
+        self.assertEqual(KnockoutBracket.load("girls").teams[0], "Falcons")
+        self.assertEqual(KnockoutBracket.load("boys").teams, [])
+
+    def test_load_refuses_an_unknown_division(self):
+        with self.assertRaises(ValueError):
+            KnockoutBracket.load("teachers")

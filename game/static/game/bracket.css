@@ -22,6 +22,22 @@
 .bk-save-status.saved{color:#9df0cf;background:rgba(47,224,166,.13);border-color:#1f7d55}
 .bk-save-status[hidden]{display:none}
 
+/* division tabs: two separate draws, boys and girls */
+.bk-divisions{display:flex;gap:10px;flex-wrap:wrap;margin:2px 0 14px}
+.bk-div-tab{display:flex;align-items:center;gap:10px;flex:1 1 200px;min-width:0;padding:10px 14px;border-radius:14px;text-align:start;
+  border:1px solid var(--line);background:linear-gradient(180deg,#101f38,#0c1729);color:var(--muted);transition:.18s}
+.bk-div-tab:hover{color:#fff;border-color:#2f5a86;transform:translateY(-1px)}
+.bk-div-ico{font-size:20px;flex:none;filter:grayscale(.5) opacity(.65)}
+.bk-div-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.bk-div-tab b{font-size:13.5px;font-weight:900;color:inherit;white-space:nowrap}
+.bk-div-hint{font-size:11px;font-weight:700;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:14px}
+.bk-div-tab.on{color:#fff;border-color:transparent;background:linear-gradient(180deg,#1b3f6d,#12294a);
+  box-shadow:0 14px 30px -18px #39a4ff,inset 0 0 0 1px #3c7ec0}
+.bk-div-tab.on .bk-div-ico{filter:none}
+.bk-div-tab.on .bk-div-hint{color:#bcd4f5}
+.bk-div-tab:focus-visible{outline:2px solid #39a4ff88;outline-offset:2px}
+@media(max-width:520px){.bk-div-tab{flex:1 1 100%}}
+
 .bk-admin{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;margin-bottom:12px;border-radius:14px;
   border:1px solid #2f5a86;background:linear-gradient(180deg,#0e2440,#0b1a30)}
 .bk-admin[hidden]{display:none}

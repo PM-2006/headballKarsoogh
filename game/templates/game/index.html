@@ -395,6 +395,19 @@
       </div>
     </div>
 
+    {% comment %}Two independent draws. Each tab has its own bracket on the server
+    (?division=boys / ?division=girls) with its own teams, results and publish switch.{% endcomment %}
+    <div class="bk-divisions" role="tablist" aria-label="بخش‌های جدول حذفی">
+      <button class="bk-div-tab on" type="button" role="tab" data-division="boys" aria-selected="true" aria-controls="bkStageWrap">
+        <span class="bk-div-ico" aria-hidden="true">🧢</span>
+        <span class="bk-div-text"><b>جدول پسران</b><small class="bk-div-hint"></small></span>
+      </button>
+      <button class="bk-div-tab" type="button" role="tab" data-division="girls" aria-selected="false" aria-controls="bkStageWrap" tabindex="-1">
+        <span class="bk-div-ico" aria-hidden="true">🎀</span>
+        <span class="bk-div-text"><b>جدول دختران</b><small class="bk-div-hint"></small></span>
+      </button>
+    </div>
+
     {% comment %}Only rendered for admins (bracket.js unhides it from the API's can_edit); the server
     refuses PATCH from anyone else regardless.{% endcomment %}
     <div id="bkAdmin" class="bk-admin" hidden>

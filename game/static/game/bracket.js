@@ -1,4 +1,4 @@
-/* ===== Knockout bracket: view for everyone, inline editing for admins =====
+/* ===== Knockout brackets: view for everyone, inline editing for admins =====
  *
  * Loaded after game.js and reuses its globals ($, csrf, showToast, switchView,
  * toFa). Same freshness model as the inbox: no realtime, an explicit Refresh
@@ -9,6 +9,10 @@
  * derives it on the server -- by following winners forward from the draw. The
  * server is the authority (every edit is a PATCH whose response replaces local
  * state), this copy only exists so the page can paint without a round trip.
+ *
+ * There are two independent draws -- boys and girls. Each keeps its own state
+ * (data, freshness, edit mode) in bk.views; only the selected one is on
+ * screen, and the other is not even fetched until its tab is first opened.
  */
 (function () {
   "use strict";
@@ -35,17 +39,29 @@
   const MIN_AUTO_REFETCH_MS = 20000;
   const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1];
 
-  const bk = {
+  const DIVISIONS = ["boys", "girls"];
+
+  // One of these per division; only the selected one is ever rendered.
+  const newView = () => ({
     data: null,
     fetchedAt: null,
     loading: false,
     loadedOnce: false,
     error: null,
     editing: false,
+  });
+
+  const bk = {
+    division: "boys",
+    views: { boys: newView(), girls: newView() },
     zoom: 1,
     saving: 0,
     savedTimer: null,
   };
+
+  // The state of the division on screen -- or of a named one, for a fetch
+  // still in flight after the user has moved to the other tab.
+  const S = (division) => bk.views[division || bk.division];
 
   /* ------------------------------------------------------------- plumbing */
 
@@ -93,20 +109,20 @@
 
   /* ----------------------------------------------------------- derivation */
 
-  const rounds = () => Math.log2(bk.data.size);
-  const matchesIn = (r) => bk.data.size >> (r + 1);
+  const rounds = () => Math.log2(S().data.size);
+  const matchesIn = (r) => S().data.size >> (r + 1);
   const key = (r, i) => r + "-" + i;
 
   function decided(k) {
-    const entry = bk.data.results[k];
+    const entry = S().data.results[k];
     return entry && (entry.winner === 0 || entry.winner === 1) ? entry.winner : null;
   }
   function scoreOf(k) {
-    const entry = bk.data.results[k];
+    const entry = S().data.results[k];
     return entry && Array.isArray(entry.score) ? entry.score : null;
   }
   function participants(r, i) {
-    if (r === 0) return [bk.data.teams[2 * i] || null, bk.data.teams[2 * i + 1] || null];
+    if (r === 0) return [S().data.teams[2 * i] || null, S().data.teams[2 * i + 1] || null];
     return [winnerName(r - 1, 2 * i), winnerName(r - 1, 2 * i + 1)];
   }
   function winnerName(r, i) {
@@ -228,7 +244,7 @@
   }
 
   function matchHTML(k, sides, extraClass, label) {
-    const editable = bk.editing && bk.data.can_edit;
+    const editable = S().editing && S().data.can_edit;
     const winner = decided(k);
     const score = scoreOf(k);
     const bothKnown = sides[0] !== null && sides[1] !== null;
@@ -271,20 +287,22 @@
     const champ = byId("bkChampion");
     if (!stageWrap) return;
 
-    byId("bkUpdated").textContent = bk.fetchedAt
-      ? "به‌روزرسانی: " + relTime(bk.fetchedAt.toISOString())
+    paintDivisionTabs();
+
+    byId("bkUpdated").textContent = S().fetchedAt
+      ? "به‌روزرسانی: " + relTime(S().fetchedAt.toISOString())
       : "هنوز به‌روزرسانی نشده";
 
-    if (!bk.data) {
+    if (!S().data) {
       champ.hidden = true;
-      stageWrap.innerHTML = bk.loading ? skeletonHTML() : bk.error
+      stageWrap.innerHTML = S().loading ? skeletonHTML() : S().error
         ? emptyHTML("⚠️", "جدول بارگذاری نشد.<br>دکمهٔ «تازه‌سازی» را بزن.")
         : "";
       byId("bkAdmin").hidden = true;
       return;
     }
 
-    const d = bk.data;
+    const d = S().data;
     byId("bkTitle").textContent = d.title || "جدول حذفی";
     const meta = [];
     if (d.size) meta.push(faDigits(d.size) + " تیم");
@@ -355,7 +373,7 @@
     const focus = captureFocus();
     stageWrap.innerHTML =
       '<div class="bk-scroll" id="bkScroll"><div class="bk-zoomwrap" id="bkZoomWrap">' +
-      '<div class="bk-stage' + (bk.editing && d.can_edit ? " bk-editing" : "") + '" id="bkStage" style="--cols:' + cols.length + '">' +
+      '<div class="bk-stage' + (S().editing && d.can_edit ? " bk-editing" : "") + '" id="bkStage" style="--cols:' + cols.length + '">' +
       '<div class="bk-head">' + head + "</div>" +
       '<div class="bk-grid" id="bkGrid">' + grid + "</div>" +
       foot +
@@ -365,16 +383,55 @@
     applyZoom();
   }
 
+  /* ------------------------------------------------------ division tabs */
+
+  // The hint under a tab: enough to tell the two draws apart without opening
+  // both -- the champion once there is one, otherwise where the draw stands.
+  function tabHint(division) {
+    const view = S(division);
+    const d = view.data;
+    if (!d) return view.loading ? "در حال بارگذاری…" : view.error ? "بارگذاری نشد" : "";
+    if (d.champion) return "🏆 " + d.champion;
+    if (!d.published) return d.can_edit ? "پیش‌نویس" : "منتشر نشده";
+    return d.size ? faDigits(d.size) + " تیم" : "";
+  }
+
+  function paintDivisionTabs() {
+    DIVISIONS.forEach((division) => {
+      const btn = document.querySelector('.bk-div-tab[data-division="' + division + '"]');
+      if (!btn) return;
+      const active = division === bk.division;
+      btn.classList.toggle("on", active);
+      btn.setAttribute("aria-selected", String(active));
+      btn.tabIndex = active ? 0 : -1;
+      const hint = btn.querySelector(".bk-div-hint");
+      if (hint) hint.textContent = tabHint(division);
+    });
+  }
+
+  function switchDivision(division) {
+    if (!bk.views[division] || division === bk.division) return;
+    bk.division = division;
+    render();
+    paintRefresh();
+    // Each draw is fetched only when someone actually opens it.
+    load({ quiet: true, auto: true });
+    requestAnimationFrame(() => {
+      drawLines();
+      applyZoom();
+    });
+  }
+
   function paintAdminBar() {
     const bar = byId("bkAdmin");
-    const d = bk.data;
+    const d = S().data;
     if (!bar) return;
     bar.hidden = !(d && d.can_edit);
     if (bar.hidden) return;
     const editBtn = byId("bkEditToggle");
-    editBtn.classList.toggle("on", bk.editing);
-    editBtn.textContent = bk.editing ? "✅ پایان ویرایش" : "✏️ ویرایش جدول";
-    byId("bkEditTools").hidden = !bk.editing;
+    editBtn.classList.toggle("on", S().editing);
+    editBtn.textContent = S().editing ? "✅ پایان ویرایش" : "✏️ ویرایش جدول";
+    byId("bkEditTools").hidden = !S().editing;
     if (document.activeElement !== byId("bkTitleInput")) byId("bkTitleInput").value = d.title || "";
     byId("bkSizeSelect").value = String(d.size);
     byId("bkPublished").checked = !!d.published;
@@ -387,7 +444,7 @@
   function drawLines() {
     const grid = byId("bkGrid");
     const svg = grid && grid.querySelector(".bk-lines");
-    if (!grid || !svg || !bk.data) return;
+    if (!grid || !svg || !S().data) return;
     const R = rounds();
     const path = championPath();
     const w = grid.scrollWidth;
@@ -483,32 +540,38 @@
 
   /* ------------------------------------------------------------ loading */
 
-  async function load({ quiet = false, auto = false } = {}) {
-    if (bk.loading) return;
-    if (auto && bk.fetchedAt && Date.now() - bk.fetchedAt < MIN_AUTO_REFETCH_MS) return;
-    bk.loading = true;
+  const apiURL = (division) => "/api/bracket/?division=" + encodeURIComponent(division);
+
+  function paintRefresh() {
     const btn = byId("bkRefresh");
-    if (btn) {
-      btn.disabled = true;
-      btn.classList.add("busy");
-    }
-    if (!bk.loadedOnce) render();
+    if (!btn) return;
+    btn.disabled = S().loading;
+    btn.classList.toggle("busy", S().loading);
+  }
+
+  // A fetch is always for one named division: the user may switch tabs while
+  // it is in the air, and the answer must land in the state it was asked for.
+  async function load({ quiet = false, auto = false, division = bk.division } = {}) {
+    const view = S(division);
+    if (view.loading) return;
+    if (auto && view.fetchedAt && Date.now() - view.fetchedAt < MIN_AUTO_REFETCH_MS) return;
+    view.loading = true;
+    paintRefresh();
+    if (!view.loadedOnce && division === bk.division) render();
     try {
-      bk.data = await api("/api/bracket/");
-      bk.fetchedAt = new Date();
-      bk.loadedOnce = true;
-      bk.error = null;
+      view.data = await api(apiURL(division));
+      view.fetchedAt = new Date();
+      view.loadedOnce = true;
+      view.error = null;
     } catch (e) {
-      bk.error = e.message;
+      view.error = e.message;
       if (!quiet) toast(e.message, "err");
     } finally {
-      bk.loading = false;
-      if (btn) {
-        btn.disabled = false;
-        btn.classList.remove("busy");
-      }
+      view.loading = false;
+      paintRefresh();
     }
-    render();
+    if (division === bk.division) render();
+    else paintDivisionTabs();
   }
 
   function paintSaveStatus(saved) {
@@ -534,19 +597,22 @@
   // Every edit is one small PATCH; the response is the whole bracket and
   // simply replaces what we have, so the screen is always the server's truth.
   async function patch(body) {
+    const division = bk.division;
+    const view = S(division);
     bk.saving += 1;
     paintSaveStatus();
     let ok = false;
     try {
-      bk.data = await api("/api/bracket/", { method: "PATCH", body });
-      bk.fetchedAt = new Date();
+      view.data = await api(apiURL(division), { method: "PATCH", body });
+      view.fetchedAt = new Date();
       ok = true;
-      render();
+      if (division === bk.division) render();
+      else paintDivisionTabs();
     } catch (e) {
       toast(e.message, "err");
       // The server refused, so what is on screen may no longer be what is
       // stored. Resync rather than leave a rejected value looking saved.
-      await load({ quiet: true });
+      await load({ quiet: true, division });
     } finally {
       bk.saving -= 1;
       paintSaveStatus(ok);
@@ -568,6 +634,17 @@
 
   function wire() {
     byId("bkRefresh")?.addEventListener("click", () => load());
+    document.querySelectorAll(".bk-div-tab").forEach((btn) => {
+      btn.addEventListener("click", () => switchDivision(btn.dataset.division));
+      btn.addEventListener("keydown", (e) => {
+        // Arrow keys move between the two tabs, as a tablist should.
+        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+        e.preventDefault();
+        const other = DIVISIONS.find((d) => d !== bk.division);
+        switchDivision(other);
+        document.querySelector('.bk-div-tab[data-division="' + other + '"]')?.focus();
+      });
+    });
     byId("bkZoomOut")?.addEventListener("click", () => zoomStep(-1));
     byId("bkZoomIn")?.addEventListener("click", () => zoomStep(1));
     byId("bkZoomFit")?.addEventListener("click", zoomFit);
@@ -590,29 +667,29 @@
     });
 
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible" && bk.loadedOnce) load({ quiet: true, auto: true });
+      if (document.visibilityState === "visible" && S().loadedOnce) load({ quiet: true, auto: true });
     });
     setInterval(() => {
       const el = byId("bkUpdated");
-      if (el && bk.fetchedAt) el.textContent = "به‌روزرسانی: " + relTime(bk.fetchedAt.toISOString());
+      if (el && S().fetchedAt) el.textContent = "به‌روزرسانی: " + relTime(S().fetchedAt.toISOString());
     }, 30000);
 
     // ---- admin bar
     byId("bkEditToggle")?.addEventListener("click", () => {
-      bk.editing = !bk.editing;
+      S().editing = !S().editing;
       render();
     });
     byId("bkTitleInput")?.addEventListener("change", (e) => patch({ title: e.target.value }));
     byId("bkPublished")?.addEventListener("change", (e) => patch({ published: e.target.checked }));
     byId("bkSizeSelect")?.addEventListener("change", (e) => {
       const size = parseInt(e.target.value, 10);
-      if (size === bk.data.size) return;
-      const hasResults = Object.keys(bk.data.results || {}).length > 0;
+      if (size === S().data.size) return;
+      const hasResults = Object.keys(S().data.results || {}).length > 0;
       if (
         hasResults &&
         !confirm("با تغییر تعداد تیم‌ها، همهٔ نتایج پاک می‌شود (نام تیم‌ها می‌ماند). ادامه می‌دهی؟")
       ) {
-        e.target.value = String(bk.data.size);
+        e.target.value = String(S().data.size);
         return;
       }
       patch({ size });
@@ -621,7 +698,7 @@
       if (confirm("همهٔ نتایج پاک شود؟ نام تیم‌ها دست‌نخورده می‌ماند.")) patch({ reset_results: true });
     });
     byId("bkAutofill")?.addEventListener("click", () => {
-      const d = bk.data;
+      const d = S().data;
       const used = new Set(d.teams.filter(Boolean));
       const pool = (d.suggestions || []).filter((u) => !used.has(u));
       for (let i = pool.length - 1; i > 0; i--) {
